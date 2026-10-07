@@ -7,3 +7,5 @@ next-env.d.ts
 .env*.local
 .vercel
 .DS_Store
+
+install-log.txt
