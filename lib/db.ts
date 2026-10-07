@@ -1,0 +1,39 @@
+import { Pool, type PoolClient } from 'pg'
+
+const globalForDb = globalThis as unknown as { stratiosPool?: Pool }
+
+export function isDatabaseConfigured(): boolean {
+  return Boolean(process.env.DATABASE_URL)
+}
+
+function getPool(): Pool {
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is not set')
+  }
+  if (!globalForDb.stratiosPool) {
+    globalForDb.stratiosPool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 })
+  }
+  return globalForDb.stratiosPool
+}
+
+/**
+ * Runs `fn` in a transaction scoped to one organization.
+ * The organization ID is stored in a transaction-local setting that the
+ * row-level security policies read, so queries inside `fn` can only see and
+ * write that organization's rows.
+ */
+export async function withOrg<T>(orgId: string, fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect()
+  try {
+    await client.query('begin')
+    await client.query("select set_config('app.org_id', $1, true)", [orgId])
+    const result = await fn(client)
+    await client.query('commit')
+    return result
+  } catch (error) {
+    await client.query('rollback').catch(() => {})
+    throw error
+  } finally {
+    client.release()
+  }
+}
