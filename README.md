@@ -31,9 +31,16 @@ start of the application: sign-in, invite-only organizations, and an organizatio
 ## How organizations work
 
 - An **organization** is a company account. Every asset row stores its organization ID.
-- The first person signs up and creates the organization; they become its admin.
+- After sign-up, `/onboarding` looks at the domain of the person's verified email address.
+  - **New domain:** they are prompted to set up their organization and become its admin. The domain
+    is saved on the organization (Clerk public metadata, `domain`).
+  - **Domain already registered:** they are told to ask an admin of that organization for an invitation.
+    They are not added automatically.
+  - **Public email providers** (gmail.com, outlook.com, ...) are never matched; see `lib/domains.ts`.
 - Colleagues join through an **email invitation** from an admin (`/dashboard/members`).
-- A signed-in user without an active organization is sent to `/select-organization`.
+- People who already have a membership or a pending invitation go to `/select-organization`.
+- In Clerk, turn off the setting that lets users create organizations themselves, so the only way to
+  create one is the onboarding screen.
 
 ## How data is isolated
 

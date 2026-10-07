@@ -8,7 +8,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { isAuthenticated, orgId, redirectToSignIn } = await auth()
   if (!isAuthenticated) return redirectToSignIn()
   // Everything in the app belongs to an organization, so one must be active.
-  if (!orgId) redirect('/select-organization')
+  if (!orgId) redirect('/onboarding')
 
   return (
     <>

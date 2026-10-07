@@ -1,7 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
 // Everything under these paths requires a signed-in user.
-const isProtectedRoute = createRouteMatcher(['/dashboard(.*)', '/select-organization(.*)'])
+const isProtectedRoute = createRouteMatcher(['/dashboard(.*)', '/onboarding(.*)', '/select-organization(.*)'])
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) await auth.protect()
