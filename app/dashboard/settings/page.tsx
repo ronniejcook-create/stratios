@@ -4,7 +4,7 @@ import { applyGeneratedColors, applyGeneratedGraphColors, applyGraphPreset, appl
 import { AiIcon } from '@/components/AiIcon'
 import { GRAPH_PRESETS, SITE_PRESETS } from '@/lib/presets'
 import { GraphColorsEditor } from './GraphColorsEditor'
-import { deriveChartColors, displayChartColors, fitToSurface, parseChartColors } from '@/lib/chartColors'
+import { chartColorsFromSite, displayChartColors, fitToSurface, parseChartColors } from '@/lib/chartColors'
 import { SwatchField } from './SwatchField'
 import { SubmitButton } from './SubmitButton'
 
@@ -47,14 +47,13 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const generatedPrimary = normalizeHex(generatedRaw?.primary)
   const generatedAccent = normalizeHex(generatedRaw?.accent)
   const storedChart = parseChartColors(organization.publicMetadata?.chartColors)
-  const chartColors = displayChartColors(storedChart, brand, mode, theme.surface)
-  const generatedChart = parseChartColors({ ...(organization.publicMetadata?.generatedChart as object | undefined), source: 'history' })
-  const generatedChartColors = fitToSurface(generatedChart?.colors ?? deriveChartColors(brand, mode), theme.surface)
+  const chartColors = displayChartColors(storedChart, theme, brand, mode)
+  const generatedChartColors = fitToSurface(chartColorsFromSite(theme, brand, mode), theme.surface)
   const chartSource =
     storedChart?.source === 'history' ? 'These are graph colors this organization has used in the past.' :
     storedChart?.source === 'manual' ? 'These graph colors were set by hand.' :
     storedChart?.source === 'preset' ? `These graph colors are the ${storedChart.name ?? 'chosen'} palette.` :
-    'These are muted graph colors built from your brand colors.'
+    'These graph colors are generated from your site colors.'
   const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
 
   return (
@@ -183,7 +182,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 </form>
               ))}
             </div>
-            <p className="note">Generated Brand Colors are the graph colors from your organization&apos;s past reports found at set-up, or muted colors built from your brand colors if none were found.</p>
+            <p className="note">Generated Brand Colors are built from your site colors: your accent color first, then muted shades related to your site&apos;s colors. They follow any change to the site colors.</p>
           </div>
         ) : null}
       </section>

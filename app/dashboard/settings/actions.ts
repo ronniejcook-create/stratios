@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { generateBrandTheme, saveChartColors, saveGeneratedBrand, saveOrgTheme } from '@/lib/brandColors'
-import { CHART_SLOTS, parseChartColors } from '@/lib/chartColors'
+import { CHART_SLOTS } from '@/lib/chartColors'
 import { GRAPH_PRESETS, SITE_PRESETS } from '@/lib/presets'
 import { DEFAULT_BRAND, THEME_ROLES, deriveTheme, ensureReadable, normalizeHex, parseBrandSettings, parseTheme, type OrgTheme } from '@/lib/theme'
 
@@ -176,18 +176,11 @@ export async function applyGraphPreset(formData: FormData): Promise<void> {
   done('graph-preset')
 }
 
-/**
- * Applies the organization's generated graph colors: the colors from its past
- * reports found at set-up, or, if none were found, muted colors built from
- * its brand colors. Nothing is looked up again.
- */
+/** Switches graphs back to the colors generated from the site colors (nothing is looked up). */
 export async function applyGeneratedGraphColors(): Promise<void> {
   const orgId = await requireAdmin()
   try {
-    const client = await clerkClient()
-    const organization = await client.organizations.getOrganization({ organizationId: orgId })
-    const generated = parseChartColors({ ...(organization.publicMetadata?.generatedChart as object | undefined), source: 'history' })
-    await saveChartColors(orgId, generated ? { colors: generated.colors, source: 'history' } : null)
+    await saveChartColors(orgId, null)
   } catch (error) {
     console.error('applyGeneratedGraphColors failed', error)
     done('failed')

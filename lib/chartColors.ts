@@ -1,4 +1,4 @@
-import { DEFAULT_BRAND, contrast, normalizeHex, type BrandColors, type ThemeMode } from './theme'
+import { DEFAULT_BRAND, contrast, normalizeHex, type BrandColors, type OrgTheme, type ThemeMode } from './theme'
 
 export const CHART_SLOTS = 8
 
@@ -176,8 +176,21 @@ export function fitToSurface(colors: string[], surface: string): string[] {
   })
 }
 
+/**
+ * Graph colors generated from the organization's site colors: muted shades
+ * fanned out from the hues of its site background and accent, with the site
+ * accent itself as Color 1 when that keeps neighbouring slices easy to tell apart.
+ */
+export function chartColorsFromSite(theme: OrgTheme, brand: BrandColors | null, mode: ThemeMode): string[] {
+  const seed = { primary: brand?.primary ?? theme.background, accent: theme.accent }
+  const derived = deriveChartColors(seed, mode)
+  const withAccent = derived.map((c, i) => (i === 1 ? theme.accent : c))
+  if (separation(withAccent) < 1) return derived
+  return [...withAccent.slice(1), withAccent[0]]
+}
+
 /** The graph colors to show: hand-picked ones exactly, others fitted to the panel color. */
-export function displayChartColors(stored: StoredChartColors | null, brand: BrandColors | null, mode: ThemeMode, surface: string): string[] {
+export function displayChartColors(stored: StoredChartColors | null, theme: OrgTheme, brand: BrandColors | null, mode: ThemeMode): string[] {
   if (stored?.source === 'manual') return stored.colors
-  return fitToSurface(stored?.colors ?? deriveChartColors(brand, mode), surface)
+  return fitToSurface(stored?.colors ?? chartColorsFromSite(theme, brand, mode), theme.surface)
 }
