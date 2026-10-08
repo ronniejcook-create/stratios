@@ -1,5 +1,5 @@
 import { clerkClient } from '@clerk/nextjs/server'
-import { THEME_ROLES, ensureReadable, normalizeHex, parseTheme, type OrgTheme } from './theme'
+import { deriveTheme, normalizeHex, type OrgTheme } from './theme'
 
 const DOMAIN = /^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
 
@@ -107,31 +107,28 @@ export async function generateBrandTheme(domain: string): Promise<BrandThemeResu
   if (!DOMAIN.test(domain)) return { theme: null, error: `"${domain}" is not a website domain that can be looked up.` }
 
   const site = await readWebsite(domain)
-  const roles = THEME_ROLES.map((r) => `- ${r.key}: ${r.label}`).join('\n')
   const websiteRead = site.title !== null || site.colors.length > 0
-  const prompt = `Choose a color scheme for a web application used by the employees of the organization that owns the domain "${domain}". It must feel unmistakably like their own brand.
+  const prompt = `Identify the brand colors of the organization that owns the domain "${domain}".
 
-First, use what you know about this organization and its brand identity (logo, signature colors). Well-known companies have recognizable brand colors; use them.
+Use what you know about this organization's brand identity (logo, signature colors) first. Well-known companies have recognizable brand colors; use them.
 ${websiteRead ? `What we found on https://${domain} (use this to confirm or refine):
 - Page title: ${site.title ?? 'unknown'}
 - theme-color meta tag: ${site.themeColor ?? 'none'}
 - Most used colors (count in brackets): ${site.colors.length ? site.colors.join(', ') : 'none found'}` : `Their website could not be read, so rely on what you know about the brand.`}
 
-Return ten colors as #rrggbb hex for these roles:
-${roles}
+Return two colors as #rrggbb hex:
+- primary: the organization's main signature brand color (it may be dark).
+- accent: a vivid brand color that stands out clearly on a very dark background tinted with the primary color, for buttons and links. Use the brand's own bright or secondary color if it has one; otherwise a lighter, more vivid version of the primary.
 
-Rules:
-- "accent" must be the organization's signature brand color, or a lighter or darker tint of it if needed for contrast, so it is instantly recognizable.
-- Tint the backgrounds toward the brand (for example a deep brand-colored dark background, or a light background with brand-colored accents), not a generic grey or navy, unless the brand itself is grey or navy.
-- "heading" and "text" must contrast with background, backgroundDeep and surface by at least 7:1; "mutedText" by at least 4.5:1; "accent" by at least 3:1.
-- "accentText" must contrast with "accent" by at least 4.5:1.
-- background, backgroundDeep and surface are close in lightness; border is subtle; borderStrong is clearly visible.
-- Only if you genuinely do not know the organization and found no colors, return a calm, professional scheme.`
+If you genuinely do not know the organization and found no colors, return primary #0f1d31 and accent #2ccbe8.`
 
   const schema = {
     type: 'object',
-    properties: Object.fromEntries(THEME_ROLES.map((r) => [r.key, { type: 'string', description: `${r.label}, as #rrggbb` }])),
-    required: THEME_ROLES.map((r) => r.key),
+    properties: {
+      primary: { type: 'string', description: 'Main brand color, #rrggbb' },
+      accent: { type: 'string', description: 'Vivid brand color for buttons on dark backgrounds, #rrggbb' },
+    },
+    required: ['primary', 'accent'],
     additionalProperties: false,
   }
 
@@ -148,7 +145,7 @@ Rules:
       },
       body: JSON.stringify({
         model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
-        max_tokens: 1024,
+        max_tokens: 256,
         messages: [{ role: 'user', content: prompt }],
         output_config: { format: { type: 'json_schema', schema } },
       }),
@@ -162,10 +159,12 @@ Rules:
     const data = (await response.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string }
     const text = data.content?.find((block) => block.type === 'text')?.text
     if (!text) return { theme: null, error: `Claude returned no colors (stop reason: ${data.stop_reason ?? 'unknown'}).` }
-    const theme = parseTheme(JSON.parse(text))
-    if (!theme) return { theme: null, error: 'Claude returned colors in an unexpected format.' }
+    const parsed = JSON.parse(text) as { primary?: unknown; accent?: unknown }
+    const primary = normalizeHex(parsed.primary)
+    const accent = normalizeHex(parsed.accent)
+    if (!primary || !accent) return { theme: null, error: 'Claude returned colors in an unexpected format.' }
     return {
-      theme: ensureReadable(theme),
+      theme: deriveTheme(primary, accent),
       note: websiteRead ? undefined : `${domain} could not be read (many large sites block automated visits), so the colors are based on what Claude knows about the brand.`,
     }
   } catch (error) {

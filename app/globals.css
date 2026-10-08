@@ -234,3 +234,6 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
   margin-left: -6px; font-family: var(--font-body), sans-serif; font-style: italic; font-weight: 400;
   font-size: 19px; color: var(--muted); max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* Signed-in header sits on the deeper background for a little depth. */
+.org-theme .site-header { background: var(--bg-deep); }

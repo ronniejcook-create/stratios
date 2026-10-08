@@ -100,7 +100,7 @@ export function ensureReadable(input: OrgTheme): OrgTheme {
   if (worst(theme.mutedText) < 4.5) theme.mutedText = theme.text
   if (worst(theme.accent) < 3) theme.accent = shiftUntil(theme.accent, isDark(theme.surface) ? '#ffffff' : '#000000', (c) => worst(c) >= 3)
   if (contrast(theme.accentText, theme.accent) < 4.5) theme.accentText = readableOn(theme.accent)
-  if (worst(theme.borderStrong) < 3) theme.borderStrong = theme.mutedText
+  if (worst(theme.borderStrong) < 3) theme.borderStrong = shiftUntil(theme.borderStrong, isDark(theme.surface) ? '#ffffff' : '#000000', (c) => worst(c) >= 3)
   return theme
 }
 
@@ -112,4 +112,52 @@ export function themeToStyle(theme: OrgTheme): CSSProperties {
   style['--danger'] = dark ? '#ff9d8a' : '#b42318'
   style['--success'] = dark ? '#8fe3b0' : '#146c3a'
   return style as CSSProperties
+}
+
+function hexToHsl(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  if (max === min) return [0, 0, l]
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  let h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+  h *= 60
+  return [h, s, l]
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const k = (n: number) => (n + h / 30) % 12
+  const a = s * Math.min(l, 1 - l)
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
+  return '#' + [0, 8, 4].map((n) => Math.round(f(n) * 255).toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Builds a full scheme in the Stratios style (deep, dark backgrounds with
+ * light text) from an organization's two brand colors: `primary` sets the hue
+ * of the backgrounds, `accent` becomes the buttons and links.
+ * Saturation and lightness follow the Stratios palette, so every organization
+ * gets the same look, tinted to its brand.
+ */
+export function deriveTheme(primary: string, accent: string): OrgTheme {
+  const [hue, brandSat] = hexToHsl(primary)
+  // Neutral brands (grey, black) stay neutral; colorful ones are tinted like Stratios's navy.
+  const sat = (target: number) => Math.min(target, brandSat < 0.12 ? brandSat : target)
+  const theme: OrgTheme = {
+    background: hslToHex(hue, sat(0.53), 0.125),
+    backgroundDeep: hslToHex(hue, sat(0.55), 0.09),
+    surface: hslToHex(hue, sat(0.5), 0.16),
+    border: hslToHex(hue, sat(0.36), 0.23),
+    borderStrong: hslToHex(hue, sat(0.19), 0.44),
+    heading: '#ffffff',
+    text: hslToHex(hue, sat(0.52), 0.935),
+    mutedText: hslToHex(hue, sat(0.3), 0.79),
+    accent,
+    accentText: '#ffffff',
+  }
+  return ensureReadable(theme)
 }
