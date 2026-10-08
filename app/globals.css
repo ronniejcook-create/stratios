@@ -545,8 +545,8 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 /* Screens: the tabs across the top of an asset */
 .screen-tabs { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); }
 .screen-tab {
-  padding: 8px 12px; margin-bottom: -1px; border-bottom: 2px solid transparent;
-  font-size: 14px; font-weight: 500; color: var(--muted); text-decoration: none;
+  padding: 8px 12px; margin-bottom: -1px; background: none; border: 0; border-bottom: 2px solid transparent;
+  font: inherit; font-size: 14px; font-weight: 500; color: var(--muted); text-decoration: none; cursor: pointer;
 }
 .screen-tab:hover { color: var(--heading); }
 .screen-tab.active { color: var(--heading); border-bottom-color: var(--accent); }

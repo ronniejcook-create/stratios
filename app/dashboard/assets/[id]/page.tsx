@@ -11,6 +11,7 @@ import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordT
 import { AddAddressForm, AddChildForm } from './AddForms'
 import { FieldGroup, type FieldView, type Target } from './FieldGroup'
 import { ListSection } from './ListSection'
+import { ScreenTabs } from './ScreenTabs'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,8 +99,6 @@ export default async function AssetPage({
   const user = await currentUser()
   const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.primaryEmailAddress?.emailAddress || ''
 
-  const screen = screens.find((candidate) => candidate.key === screenKey) ?? screens[0]
-  const isFirstScreen = !screen || screen.id === screens[0]?.id
   const fieldById = new Map(fields.map((field) => [field.id, field]))
   const placed = new Set(screens.flatMap((candidate) => candidate.sections.flatMap((section) => section.fieldIds)))
 
@@ -174,19 +173,154 @@ export default async function AssetPage({
     return <FieldGroup target={targetOf(record)} fields={sectionFields.map((field) => viewOf(field, record))} style={section.displayStyle === 'tiles' ? 'tiles' : 'form'} />
   }
 
-  const sectionsFor = (type: RecordType) => (screen ? screen.sections.filter((section) => section.appliesTo === type) : [])
-  /** Fields that aren't in any section yet (for example ones an organization added) show on the first screen. */
-  const unplacedFor = (type: RecordType) =>
-    isFirstScreen ? fields.filter((field) => field.appliesTo === type && !field.listId && !placed.has(field.id)) : []
-
   const assetRecord: RecordContext = { type: 'asset', id: tree.id, name: tree.name, ref: `asset:${tree.key}`, core: { name: tree.name } }
-  const assetSections = sectionsFor('asset')
-  const propertySections = sectionsFor('property')
-  const buildingSections = sectionsFor('building')
-  const showProperties = isFirstScreen || propertySections.length > 0 || buildingSections.length > 0
-  const showBuildings = isFirstScreen || buildingSections.length > 0
   const propertyCount = tree.properties.length
-  const assetUnplaced = unplacedFor('asset')
+
+  /** Everything one screen shows: its sections for the asset, each property and each building. */
+  const screenContent = (screen: Screen, isFirstScreen: boolean) => {
+    const sectionsFor = (type: RecordType) => screen.sections.filter((section) => section.appliesTo === type)
+    /** Fields that aren't in any section yet (for example ones an organization added) show on the first screen. */
+    const unplacedFor = (type: RecordType) =>
+      isFirstScreen ? fields.filter((field) => field.appliesTo === type && !field.listId && !placed.has(field.id)) : []
+
+    const assetSections = sectionsFor('asset')
+    const propertySections = sectionsFor('property')
+    const buildingSections = sectionsFor('building')
+    const showProperties = isFirstScreen || propertySections.length > 0 || buildingSections.length > 0
+    const showBuildings = isFirstScreen || buildingSections.length > 0
+    const assetUnplaced = unplacedFor('asset')
+
+    return (
+      <>
+        {assetSections.map((section) => (
+          <section key={section.id} className="panel">
+            <h2>{section.name}</h2>
+            {sectionBody(section, assetRecord)}
+          </section>
+        ))}
+        {assetUnplaced.length > 0 ? (
+          <section className="panel">
+            <h2>Other Fields</h2>
+            <FieldGroup target={targetOf(assetRecord)} fields={assetUnplaced.map((field) => viewOf(field, assetRecord))} />
+          </section>
+        ) : null}
+
+        {showProperties
+          ? tree.properties.map((property) => {
+              const propertyRecord: RecordContext = {
+                type: 'property',
+                id: property.id,
+                name: property.name,
+                ref: `property:${property.key}`,
+                core: { name: property.name, property_type: property.propertyType },
+              }
+              const propertyUnplaced = unplacedFor('property')
+              return (
+                <section key={property.id} className="panel record">
+                  <div className="record-head">
+                    <span className="record-kind">Property</span>
+                    <h2>{property.name}</h2>
+                    <span className="record-key" title="The permanent key used by agents and formulas">{propertyRecord.ref}</span>
+                  </div>
+                  {isFirstScreen ? (
+                    <div className="record-addresses">
+                      <AddressList addresses={property.addresses} />
+                      <AddAddressForm ownerType="property" ownerId={property.id} assetId={tree.id} />
+                    </div>
+                  ) : null}
+
+                  {propertySections.map((section) => (
+                    <div key={section.id} className="record-group">
+                      <h3>{section.name}</h3>
+                      {sectionBody(section, propertyRecord)}
+                    </div>
+                  ))}
+                  {propertyUnplaced.length > 0 ? (
+                    <div className="record-group">
+                      <h3>Other Fields</h3>
+                      <FieldGroup target={targetOf(propertyRecord)} fields={propertyUnplaced.map((field) => viewOf(field, propertyRecord))} />
+                    </div>
+                  ) : null}
+
+                  {showBuildings
+                    ? property.buildings.map((building) => {
+                        const buildingRecord: RecordContext = {
+                          type: 'building',
+                          id: building.id,
+                          name: building.name,
+                          ref: `${propertyRecord.ref}/building:${building.key}`,
+                          core: { name: building.name },
+                        }
+                        const buildingUnplaced = unplacedFor('building')
+                        return (
+                          <div key={building.id} className="subrecord">
+                            <div className="record-head">
+                              <span className="record-kind">Building</span>
+                              <h3>{building.name}</h3>
+                            </div>
+                            {isFirstScreen ? (
+                              <div className="record-addresses">
+                                <AddressList addresses={building.addresses} />
+                                <AddAddressForm ownerType="building" ownerId={building.id} assetId={tree.id} />
+                              </div>
+                            ) : null}
+
+                            {buildingSections.map((section) => (
+                              <div key={section.id} className="record-group">
+                                <h4>{section.name}</h4>
+                                {sectionBody(section, buildingRecord)}
+                              </div>
+                            ))}
+                            {buildingUnplaced.length > 0 ? (
+                              <div className="record-group">
+                                <h4>Other Fields</h4>
+                                <FieldGroup target={targetOf(buildingRecord)} fields={buildingUnplaced.map((field) => viewOf(field, buildingRecord))} />
+                              </div>
+                            ) : null}
+
+                            {isFirstScreen ? (
+                              <div className="record-group">
+                                <h4>Floors and Units</h4>
+                                {building.floors.length === 0 ? <p className="note">No floors added yet. Add them only if you need unit-level detail.</p> : null}
+                                <ul className="floor-list">
+                                  {building.floors.map((floor) => (
+                                    <li key={floor.id}>
+                                      <span className="floor-name">{floor.name}</span>
+                                      <span className="unit-chips">
+                                        {floor.units.map((unit) => (
+                                          <span key={unit.id} className="unit-chip" title={unit.addresses.map(formatAddress).join('; ') || undefined}>{unit.name}</span>
+                                        ))}
+                                      </span>
+                                      <AddChildForm type="unit" parentId={floor.id} assetId={tree.id} />
+                                    </li>
+                                  ))}
+                                </ul>
+                                <AddChildForm type="floor" parentId={building.id} assetId={tree.id} />
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      })
+                    : null}
+
+                  {isFirstScreen ? (
+                    <div className="record-add">
+                      <AddChildForm type="building" parentId={property.id} assetId={tree.id} />
+                    </div>
+                  ) : null}
+                </section>
+              )
+            })
+          : null}
+
+        {isFirstScreen ? (
+          <div className="record-add">
+            <AddChildForm type="property" parentId={tree.id} assetId={tree.id} propertyTypes={PROPERTY_TYPES} />
+          </div>
+        ) : null}
+      </>
+    )
+  }
 
   return (
     <>
@@ -201,150 +335,11 @@ export default async function AssetPage({
         <span className="record-key" title="The permanent key used by agents and formulas">asset:{tree.key}</span>
       </p>
 
-      {screens.length > 1 ? (
-        <nav className="screen-tabs" aria-label="Screens">
-          {screens.map((candidate) => {
-            const active = candidate.id === screen?.id
-            return (
-              <Link
-                key={candidate.id}
-                href={candidate.id === screens[0].id ? `/dashboard/assets/${tree.id}` : `/dashboard/assets/${tree.id}?screen=${candidate.key}`}
-                className={`screen-tab${active ? ' active' : ''}`}
-                aria-current={active ? 'page' : undefined}
-              >
-                {candidate.name}
-              </Link>
-            )
-          })}
-        </nav>
-      ) : null}
-
-      {assetSections.map((section) => (
-        <section key={section.id} className="panel">
-          <h2>{section.name}</h2>
-          {sectionBody(section, assetRecord)}
-        </section>
-      ))}
-      {assetUnplaced.length > 0 ? (
-        <section className="panel">
-          <h2>Other Fields</h2>
-          <FieldGroup target={targetOf(assetRecord)} fields={assetUnplaced.map((field) => viewOf(field, assetRecord))} />
-        </section>
-      ) : null}
-
-      {showProperties
-        ? tree.properties.map((property) => {
-            const propertyRecord: RecordContext = {
-              type: 'property',
-              id: property.id,
-              name: property.name,
-              ref: `property:${property.key}`,
-              core: { name: property.name, property_type: property.propertyType },
-            }
-            const propertyUnplaced = unplacedFor('property')
-            return (
-              <section key={property.id} className="panel record">
-                <div className="record-head">
-                  <span className="record-kind">Property</span>
-                  <h2>{property.name}</h2>
-                  <span className="record-key" title="The permanent key used by agents and formulas">{propertyRecord.ref}</span>
-                </div>
-                {isFirstScreen ? (
-                  <div className="record-addresses">
-                    <AddressList addresses={property.addresses} />
-                    <AddAddressForm ownerType="property" ownerId={property.id} assetId={tree.id} />
-                  </div>
-                ) : null}
-
-                {propertySections.map((section) => (
-                  <div key={section.id} className="record-group">
-                    <h3>{section.name}</h3>
-                    {sectionBody(section, propertyRecord)}
-                  </div>
-                ))}
-                {propertyUnplaced.length > 0 ? (
-                  <div className="record-group">
-                    <h3>Other Fields</h3>
-                    <FieldGroup target={targetOf(propertyRecord)} fields={propertyUnplaced.map((field) => viewOf(field, propertyRecord))} />
-                  </div>
-                ) : null}
-
-                {showBuildings
-                  ? property.buildings.map((building) => {
-                      const buildingRecord: RecordContext = {
-                        type: 'building',
-                        id: building.id,
-                        name: building.name,
-                        ref: `${propertyRecord.ref}/building:${building.key}`,
-                        core: { name: building.name },
-                      }
-                      const buildingUnplaced = unplacedFor('building')
-                      return (
-                        <div key={building.id} className="subrecord">
-                          <div className="record-head">
-                            <span className="record-kind">Building</span>
-                            <h3>{building.name}</h3>
-                          </div>
-                          {isFirstScreen ? (
-                            <div className="record-addresses">
-                              <AddressList addresses={building.addresses} />
-                              <AddAddressForm ownerType="building" ownerId={building.id} assetId={tree.id} />
-                            </div>
-                          ) : null}
-
-                          {buildingSections.map((section) => (
-                            <div key={section.id} className="record-group">
-                              <h4>{section.name}</h4>
-                              {sectionBody(section, buildingRecord)}
-                            </div>
-                          ))}
-                          {buildingUnplaced.length > 0 ? (
-                            <div className="record-group">
-                              <h4>Other Fields</h4>
-                              <FieldGroup target={targetOf(buildingRecord)} fields={buildingUnplaced.map((field) => viewOf(field, buildingRecord))} />
-                            </div>
-                          ) : null}
-
-                          {isFirstScreen ? (
-                            <div className="record-group">
-                              <h4>Floors and Units</h4>
-                              {building.floors.length === 0 ? <p className="note">No floors added yet. Add them only if you need unit-level detail.</p> : null}
-                              <ul className="floor-list">
-                                {building.floors.map((floor) => (
-                                  <li key={floor.id}>
-                                    <span className="floor-name">{floor.name}</span>
-                                    <span className="unit-chips">
-                                      {floor.units.map((unit) => (
-                                        <span key={unit.id} className="unit-chip" title={unit.addresses.map(formatAddress).join('; ') || undefined}>{unit.name}</span>
-                                      ))}
-                                    </span>
-                                    <AddChildForm type="unit" parentId={floor.id} assetId={tree.id} />
-                                  </li>
-                                ))}
-                              </ul>
-                              <AddChildForm type="floor" parentId={building.id} assetId={tree.id} />
-                            </div>
-                          ) : null}
-                        </div>
-                      )
-                    })
-                  : null}
-
-                {isFirstScreen ? (
-                  <div className="record-add">
-                    <AddChildForm type="building" parentId={property.id} assetId={tree.id} />
-                  </div>
-                ) : null}
-              </section>
-            )
-          })
-        : null}
-
-      {isFirstScreen ? (
-        <div className="record-add">
-          <AddChildForm type="property" parentId={tree.id} assetId={tree.id} propertyTypes={PROPERTY_TYPES} />
-        </div>
-      ) : null}
+      <ScreenTabs
+        screens={screens.map((screen, index) => ({ key: screen.key, name: screen.name, content: screenContent(screen, index === 0) }))}
+        initialKey={screenKey ?? ''}
+        basePath={`/dashboard/assets/${tree.id}`}
+      />
     </>
   )
 }

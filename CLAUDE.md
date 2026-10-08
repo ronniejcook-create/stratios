@@ -85,7 +85,8 @@ work and how data is isolated; this file covers how we work and where things sta
     field_definitions; the standard layout and the Comments and Critical Dates lists on assets and
     properties). `lib/layout.ts` reads screens and sections; `lib/lists.ts` reads and saves list
     rows (each cell goes through `saveManualValue` with a `rowId`, so it has history; removing a
-    row hides it, nothing is deleted). The asset page has screen tabs (`?screen=key`): Overview,
+    row hides it, nothing is deleted). The asset page has screen tabs (`ScreenTabs.tsx`; every screen is rendered up front and
+    switched in the browser, because a server round trip per tab felt sluggish): Overview,
     Financials (KPIs as tiles), Dates and Commentary (lists, `ListSection.tsx`). Fields not placed
     in any section show under "Other Fields" on the first screen.
   - Click-to-reference: clicking a field's name or a list row's number adds its permanent address
