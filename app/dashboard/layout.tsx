@@ -10,7 +10,7 @@ import { displayChartColors, parseChartColors } from '@/lib/chartColors'
 import { getOrgSettings } from '@/lib/orgSettings'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, userId, orgId, redirectToSignIn } = await auth()
+  const { isAuthenticated, userId, orgId, orgRole, redirectToSignIn } = await auth()
   if (!isAuthenticated || !userId) return redirectToSignIn()
   // Everything in the app belongs to an organization, so one must be active.
   if (!orgId) redirect('/onboarding')
@@ -32,6 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="org-theme" style={style}>
       <AppShell
+        isAdmin={orgRole === 'org:admin'}
         brand={
           <Link href="/dashboard" className="brand">
             <Logo size={24} />
@@ -41,7 +42,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         }
         tools={
           <>
-            <OrgMenu current={current} organizations={organizations} />
+            <OrgMenu current={current} organizations={organizations} isAdmin={orgRole === 'org:admin'} />
             <AccountMenu />
           </>
         }

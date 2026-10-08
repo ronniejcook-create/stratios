@@ -17,7 +17,7 @@ function PanelIcon({ side }: { side: 'left' | 'right' }) {
  * The signed-in workspace: a top bar, navigation on the left, the page in the
  * middle and the AI agent panel on the right. Either side column can be hidden.
  */
-export function AppShell({ brand, tools, children }: { brand: ReactNode; tools: ReactNode; children: ReactNode }) {
+export function AppShell({ brand, tools, isAdmin, children }: { brand: ReactNode; tools: ReactNode; isAdmin: boolean; children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(true)
   const [agentOpen, setAgentOpen] = useState(true)
 
@@ -50,7 +50,7 @@ export function AppShell({ brand, tools, children }: { brand: ReactNode; tools: 
         </div>
       </header>
       <aside className="shell-nav" aria-label="Navigation">
-        <SideNav />
+        <SideNav isAdmin={isAdmin} />
       </aside>
       <main className="shell-main app-main">{children}</main>
       <aside className="shell-agent" aria-label="AI agents">

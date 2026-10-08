@@ -10,7 +10,7 @@ const icon = (path: ReactNode) => (
   </svg>
 )
 
-const SECTIONS: { title: string; items: { label: string; href: string; icon: ReactNode }[] }[] = [
+const SECTIONS: { title: string; adminOnly?: boolean; items: { label: string; href: string; icon: ReactNode }[] }[] = [
   {
     title: 'Portfolio',
     items: [
@@ -18,7 +18,8 @@ const SECTIONS: { title: string; items: { label: string; href: string; icon: Rea
     ],
   },
   {
-    title: 'Organization',
+    title: 'Administration',
+    adminOnly: true,
     items: [
       { label: 'Members', href: '/dashboard/members', icon: icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5" /><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.6.8 2.6 2.5 3 5.2" /></>) },
       { label: 'Brand colors', href: '/dashboard/settings', icon: icon(<><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z" /><circle cx="7.5" cy="11" r="1" /><circle cx="10.5" cy="7.5" r="1" /><circle cx="15" cy="8" r="1" /></>) },
@@ -26,13 +27,13 @@ const SECTIONS: { title: string; items: { label: string; href: string; icon: Rea
   },
 ]
 
-/** The left-hand navigation, with a filter box. */
-export function SideNav() {
+/** The left-hand navigation, with a filter box. Administration is shown to administrators only. */
+export function SideNav({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname()
   const [filter, setFilter] = useState('')
   const term = filter.trim().toLowerCase()
 
-  const sections = SECTIONS.map((section) => ({
+  const sections = SECTIONS.filter((section) => isAdmin || !section.adminOnly).map((section) => ({
     ...section,
     items: section.items.filter((item) => !term || item.label.toLowerCase().includes(term)),
   })).filter((section) => section.items.length > 0)

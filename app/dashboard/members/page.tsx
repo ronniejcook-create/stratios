@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { changeRole, removeMember, revokeInvitation } from './actions'
 import { InviteForm } from './InviteForm'
@@ -17,6 +18,8 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
   const { userId, orgId, orgRole } = await auth()
   if (!userId || !orgId) return null // the layout redirects before this renders
   const isAdmin = orgRole === 'org:admin'
+  // Administration pages are for administrators only.
+  if (!isAdmin) redirect('/dashboard')
   const { error } = await searchParams
 
   const client = await clerkClient()

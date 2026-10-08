@@ -8,7 +8,7 @@ import { Menu } from './Menu'
 type Org = { id: string; name: string }
 
 /** Shows the active organization and lets people who belong to several switch. */
-export function OrgMenu({ current, organizations }: { current: Org; organizations: Org[] }) {
+export function OrgMenu({ current, organizations, isAdmin }: { current: Org; organizations: Org[]; isAdmin: boolean }) {
   const { setActive } = useClerk()
   const [switching, setSwitching] = useState(false)
   const others = organizations.filter((org) => org.id !== current.id)
@@ -37,8 +37,12 @@ export function OrgMenu({ current, organizations }: { current: Org; organization
     >
       <div className="menu-heading">Organization</div>
       <div className="menu-current">{current.name}</div>
-      <Link href="/dashboard/members" className="menu-item">Members and invitations</Link>
-      <Link href="/dashboard/settings" className="menu-item">Brand colors</Link>
+      {isAdmin ? (
+        <>
+          <Link href="/dashboard/members" className="menu-item">Members and invitations</Link>
+          <Link href="/dashboard/settings" className="menu-item">Brand colors</Link>
+        </>
+      ) : null}
       {others.length > 0 ? (
         <>
           <div className="menu-heading menu-divider">Switch to</div>

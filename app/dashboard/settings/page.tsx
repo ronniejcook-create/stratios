@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { DEFAULT_THEME, normalizeHex, parseBrandSettings, parseTheme } from '@/lib/theme'
 import { getGeneratedBrand, saveColors, saveGraphColors } from './actions'
@@ -23,6 +24,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const { orgId, orgRole } = await auth()
   if (!orgId) return null // the layout redirects before this renders
   const isAdmin = orgRole === 'org:admin'
+  // Administration pages are for administrators only.
+  if (!isAdmin) redirect('/dashboard')
   const { status, detail } = await searchParams
   const message = status ? MESSAGES[status] : undefined
 
