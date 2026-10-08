@@ -98,10 +98,18 @@ export function ensureReadable(input: OrgTheme): OrgTheme {
   if (worst(theme.heading) < 7) theme.heading = readableOn(theme.surface)
   if (worst(theme.text) < 4.5) theme.text = theme.heading
   if (worst(theme.mutedText) < 4.5) theme.mutedText = theme.text
-  if (worst(theme.accent) < 3) theme.accent = shiftUntil(theme.accent, isDark(theme.surface) ? '#ffffff' : '#000000', (c) => worst(c) >= 3)
+  // On dark schemes a too-dark accent is lightened (keeping its hue) so buttons stand out.
+  // On light schemes a pale accent (such as a bright yellow) is kept as the button color;
+  // text links switch to a darker color instead (see linkColor).
+  if (isDark(theme.surface) && worst(theme.accent) < 3) theme.accent = shiftUntil(theme.accent, '#ffffff', (c) => worst(c) >= 3)
   if (contrast(theme.accentText, theme.accent) < 4.5) theme.accentText = readableOn(theme.accent)
   if (worst(theme.borderStrong) < 3) theme.borderStrong = shiftUntil(theme.borderStrong, isDark(theme.surface) ? '#ffffff' : '#000000', (c) => worst(c) >= 3)
   return theme
+}
+
+/** Color for links and other accent-colored text: the accent if it is readable, else the heading color. */
+export function linkColor(theme: OrgTheme): string {
+  return contrast(theme.accent, theme.surface) >= 4.5 && contrast(theme.accent, theme.background) >= 4.5 ? theme.accent : theme.heading
 }
 
 /** CSS custom properties for a theme, applied on the signed-in app's wrapper. */
@@ -109,6 +117,7 @@ export function themeToStyle(theme: OrgTheme): CSSProperties {
   const style: Record<string, string> = {}
   for (const role of THEME_ROLES) for (const name of role.vars) style[name] = theme[role.key]
   const dark = isDark(theme.background)
+  style['--link'] = linkColor(theme)
   style['--danger'] = dark ? '#ff9d8a' : '#b42318'
   style['--success'] = dark ? '#8fe3b0' : '#146c3a'
   return style as CSSProperties
@@ -165,8 +174,8 @@ export function deriveTheme(primary: string, accent: string, mode: ThemeMode = '
 
   if (mode === 'light') {
     const background = hslToHex(hue, sat(0.3), 0.965)
-    // Prefer the brand color that already stands out on white.
-    const pick = [accent, primary].find((c) => contrast(c, '#ffffff') >= 3 && contrast(c, background) >= 3) ?? accent
+    // Keep the brand's accent for buttons; put the dark brand color on it when that reads well.
+    const accentText = contrast(primary, accent) >= 4.5 ? primary : readableOn(accent)
     // A dark brand color is used exactly for headings when it reads well enough.
     const heading = contrast(primary, background) >= 7 ? primary : hslToHex(hue, sat(0.6), 0.13)
     return ensureReadable({
@@ -178,8 +187,8 @@ export function deriveTheme(primary: string, accent: string, mode: ThemeMode = '
       heading,
       text: hslToHex(hue, sat(0.35), 0.2),
       mutedText: hslToHex(hue, sat(0.18), 0.38),
-      accent: pick,
-      accentText: '#ffffff',
+      accent,
+      accentText,
     })
   }
 
