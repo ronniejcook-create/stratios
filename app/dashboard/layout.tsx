@@ -26,6 +26,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <Link href="/dashboard" className="brand">
             <Logo />
             <span>Stratios</span>
+            <span className="brand-org">for {current.name}</span>
           </Link>
           <div className="app-tools">
             <Link href="/dashboard" className="nav-link">Assets</Link>
