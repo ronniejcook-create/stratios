@@ -28,7 +28,7 @@ export function AddAssetForm({ assetTypes }: { assetTypes: readonly string[] }) 
           <input id="asset-city" name="city" type="text" maxLength={200} placeholder="Optional" />
         </div>
         <button type="submit" className="btn btn-primary btn-small" disabled={pending}>
-          {pending ? 'Adding…' : 'Add asset'}
+          {pending ? 'Adding…' : 'Add Asset'}
         </button>
       </div>
       {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}

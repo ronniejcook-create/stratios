@@ -284,7 +284,7 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 .legend-dot { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 .legend-share { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-/* "Start from" options and ready-made color presets */
+/* "Other Themes" options and ready-made color presets */
 .start-from { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
 .start-from h3 { font-weight: 600; font-size: 17px; color: var(--heading); }
 .start-from .button-row { margin-top: 12px; }

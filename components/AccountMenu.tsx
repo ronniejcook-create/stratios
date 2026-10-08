@@ -29,10 +29,10 @@ export function AccountMenu() {
         <div className="menu-sub">{email}</div>
       </div>
       <button type="button" className="menu-item menu-divider" onClick={() => clerk.openUserProfile()}>
-        Account settings
+        Account Settings
       </button>
       <button type="button" className="menu-item" onClick={() => clerk.signOut({ redirectUrl: '/' })}>
-        Sign out
+        Sign Out
       </button>
     </Menu>
   )

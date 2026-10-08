@@ -79,7 +79,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
                               <input type="hidden" name="userId" value={member.userId} />
                               <input type="hidden" name="role" value={nextRole} />
                               <button type="submit" className="link-button">
-                                Make {roleLabel(nextRole).toLowerCase()}
+                                Make {roleLabel(nextRole)}
                               </button>
                             </form>
                             <form action={removeMember}>

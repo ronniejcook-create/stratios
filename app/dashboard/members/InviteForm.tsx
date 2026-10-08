@@ -23,7 +23,7 @@ export function InviteForm() {
           </select>
         </div>
         <button type="submit" className="btn btn-primary btn-small" disabled={pending}>
-          {pending ? 'Sending…' : 'Send invitation'}
+          {pending ? 'Sending…' : 'Send Invitation'}
         </button>
       </div>
       {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}

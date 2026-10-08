@@ -32,7 +32,7 @@ const asHex = (value: string) => `#${value.trim().replace(/^#/, '').toLowerCase(
 /**
  * Site colors with Dark/Light, ready-made schemes and per-color editing.
  * Changes are previewed across the app straight away but only kept when
- * Save colors is clicked; leaving the page or Discard changes drops them.
+ * Save Colors is clicked; leaving the page or Reset Colors drops them.
  */
 export function SiteColorsEditor({ saved, savedMode, savedBrand, generatedBrand, canEdit, saveAction, generateAction }: Props) {
   const toValues = (theme: OrgTheme) => THEME_ROLES.map((role) => theme[role.key].toUpperCase())
@@ -131,13 +131,10 @@ export function SiteColorsEditor({ saved, savedMode, savedBrand, generatedBrand,
           </div>
           {canEdit ? (
             <div className="button-row">
-              <SubmitButton className="btn btn-primary btn-small" pendingText="Saving…">Save colors</SubmitButton>
-              {dirty ? (
-                <>
-                  <button type="button" className="btn btn-ghost btn-small" onClick={discard}>Discard changes</button>
-                  <span className="unsaved">Unsaved changes are only a preview until you save.</span>
-                </>
-              ) : null}
+              <SubmitButton className="btn btn-primary btn-small" pendingText="Saving…">Save Colors</SubmitButton>
+              {/* Puts back the colors that were last saved. */}
+              <button type="button" className="btn btn-ghost btn-small" onClick={discard} disabled={!dirty}>Reset Colors</button>
+              {dirty ? <span className="unsaved">Unsaved changes are only a preview until you save.</span> : null}
             </div>
           ) : (
             <p className="note">Only administrators can change the colors.</p>
@@ -147,7 +144,7 @@ export function SiteColorsEditor({ saved, savedMode, savedBrand, generatedBrand,
 
       {canEdit ? (
         <div className="start-from">
-          <h3>Start From</h3>
+          <h3>Other Themes</h3>
           {message ? <p className="form-error" role="alert">{message}</p> : null}
           <div className="preset-grid">
             <button type="button" className="preset" onClick={useGenerated} disabled={generating}>
@@ -180,7 +177,7 @@ export function SiteColorsEditor({ saved, savedMode, savedBrand, generatedBrand,
             ))}
           </div>
           <p className="note">
-            Choosing an option or switching Dark/Light rebuilds all ten colors and previews them; click Save colors to keep them.
+            Choosing an option or switching Dark/Light rebuilds all ten colors and previews them; click Save Colors to keep them, or Reset Colors to go back to your saved colors.
             Generated Brand Colors are the colors Stratios found for your organization when it was set up.
           </p>
         </div>

@@ -45,7 +45,7 @@ export default async function OnboardingPage() {
               Ask an administrator at {state.organizationName} to invite you. Once they have, come back and you
               will be able to join.
             </p>
-            <a href="/onboarding" className="btn btn-ghost">Check for my invitation</a>
+            <a href="/onboarding" className="btn btn-ghost">Check for My Invitation</a>
           </section>
         ) : (
           <section className="panel">

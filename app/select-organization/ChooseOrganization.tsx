@@ -77,7 +77,7 @@ export function ChooseOrganization() {
                   }
                 }}
               >
-                Accept and join
+                Accept and Join
               </button>
             </div>
           ))}

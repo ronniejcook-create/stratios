@@ -9,7 +9,7 @@ work and how data is isolated; this file covers how we work and where things sta
   than handing him commands. Explain things in plain words and skip the jargon.
 - Use US spelling in the UI ("Color", "Organize").
 - Headers, nav items and panel titles use Title Case ("Brand Colors", "Add an Asset"); sentences,
-  helper text and buttons stay in sentence case.
+  and helper text stay in sentence case. Buttons and menu items are Title Case too ("Add Asset").
 - Fonts: Inter for headings, buttons and the logo text; IBM Plex Sans for body text (`app/layout.tsx`).
 - Never ask him to paste secrets (Clerk secret key, database connection string, Anthropic API key)
   into the chat. Secrets live only in `.env.local` on his computer (created by `keys.bat`) and in
@@ -63,8 +63,9 @@ work and how data is isolated; this file covers how we work and where things sta
 - Admin Settings (`app/dashboard/settings/`):
   - Site Colors: 10 roles, Dark/Light toggle, hex editing, 16 presets (`lib/presets.ts`),
     "Generated Brand Colors" (persisted, not re-fetched), "Stratios". Unsaved changes are preview
-    only and revert on leaving the page.
-  - Graph Colors: 8 slots, pie and bar previews side by side, "Start from" chips including
+    only and revert on leaving the page. "Reset Colors" (beside Save in both editors) puts back the
+    last saved colors; it is disabled when nothing has changed.
+  - Graph Colors: 8 slots, pie and bar previews side by side, "Other Themes" chips including
     Generated Brand Colors and 31 presets. Palettes were checked for contrast and color-blind
     separation.
 - Search engines are told not to list the site (`robots` in `app/layout.tsx` and the

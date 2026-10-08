@@ -32,7 +32,7 @@ type Source = 'generated' | 'preset' | 'manual'
 
 /**
  * Eight editable graph colors with live pie and bar chart previews and
- * ready-made palettes. Nothing is kept until Save graph colors is clicked.
+ * ready-made palettes. Nothing is kept until Save Graph Colors is clicked.
  */
 export function GraphColorsEditor({
   initial,
@@ -154,20 +154,17 @@ export function GraphColorsEditor({
         </div>
         {canEdit ? (
           <div className="button-row">
-            <SubmitButton className="btn btn-primary btn-small" pendingText="Saving…">Save graph colors</SubmitButton>
-            {dirty ? (
-              <>
-                <button type="button" className="btn btn-ghost btn-small" onClick={discard}>Discard changes</button>
-                <span className="unsaved">Unsaved changes are only a preview until you save.</span>
-              </>
-            ) : null}
+            <SubmitButton className="btn btn-primary btn-small" pendingText="Saving…">Save Graph Colors</SubmitButton>
+            {/* Puts back the graph colors that were last saved. */}
+            <button type="button" className="btn btn-ghost btn-small" onClick={discard} disabled={!dirty}>Reset Colors</button>
+            {dirty ? <span className="unsaved">Unsaved changes are only a preview until you save.</span> : null}
           </div>
         ) : null}
       </form>
 
       {canEdit ? (
         <div className="start-from">
-          <h3>Start From</h3>
+          <h3>Other Themes</h3>
           <div className="preset-grid">
             <button type="button" className="preset" onClick={() => choose(generatedColors, 'generated', null)}>
               <span className="preset-bars" aria-hidden="true">
@@ -190,7 +187,7 @@ export function GraphColorsEditor({
             ))}
           </div>
           <p className="note">
-            Choosing a palette previews it in the charts above; click Save graph colors to keep it. Generated Brand Colors are
+            Choosing a palette previews it in the charts above; click Save Graph Colors to keep it, or Reset Colors to go back to your saved colors. Generated Brand Colors are
             built from your saved site colors: your accent color first, then muted shades related to your site&apos;s colors.
           </p>
         </div>

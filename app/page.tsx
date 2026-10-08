@@ -21,7 +21,7 @@ export default async function LandingPage() {
             <a href="#product" className="nav-link">Product</a>
             <a href="#how" className="nav-link">How it works</a>
             <SignInButton mode="modal" fallbackRedirectUrl="/dashboard" signUpFallbackRedirectUrl="/dashboard">
-              <button type="button" className="btn btn-ghost btn-small">Sign in</button>
+              <button type="button" className="btn btn-ghost btn-small">Sign In</button>
             </SignInButton>
           </nav>
         </div>
@@ -41,9 +41,9 @@ export default async function LandingPage() {
           </p>
           <div className="actions">
             <SignUpButton mode="modal" fallbackRedirectUrl="/dashboard" signInFallbackRedirectUrl="/dashboard">
-              <button type="button" className="btn btn-primary">Sign up</button>
+              <button type="button" className="btn btn-primary">Sign Up</button>
             </SignUpButton>
-            <a href="#how" className="btn btn-ghost">See how it works</a>
+            <a href="#how" className="btn btn-ghost">See How It Works</a>
           </div>
         </section>
 
@@ -129,13 +129,13 @@ export default async function LandingPage() {
               <h3>New to Stratios?</h3>
               <p>Create your account, name your organization, then invite your colleagues by email.</p>
               <SignUpButton mode="modal" fallbackRedirectUrl="/dashboard" signInFallbackRedirectUrl="/dashboard">
-                <button type="button" className="btn btn-primary">Create your organization</button>
+                <button type="button" className="btn btn-primary">Create Your Organization</button>
               </SignUpButton>
               <p className="fine">
                 Joining a colleague&apos;s organization? Use the link in your invitation email. Already
                 have an account?{' '}
                 <SignInButton mode="modal" fallbackRedirectUrl="/dashboard" signUpFallbackRedirectUrl="/dashboard">
-                  <button type="button" className="text-link">Sign in</button>
+                  <button type="button" className="text-link">Sign In</button>
                 </SignInButton>
               </p>
             </div>
