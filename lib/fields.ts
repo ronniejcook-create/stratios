@@ -29,6 +29,7 @@ export type FieldDefinition = {
   sortOrder: number
   aiDescription: string | null
   otherNames: string[]
+  extractionHints: string | null
   sourcePriority: string[]
   whenEmpty: 'fill' | 'ask'
   whenDifferent: 'ask' | 'replace' | 'never'
@@ -41,22 +42,23 @@ export type FieldDefinition = {
   standard: boolean
   /** Settings this organization has changed on a standard field. */
   modifiedSettings: string[]
+  /** The Stratios standard value of each changed setting, for comparing and resetting. */
+  standardValues: Record<string, unknown>
 }
 
 // The settings an organization may change on a standard field. Anything not
 // listed here always follows the Stratios standard.
-const OVERRIDABLE: Record<string, keyof FieldDefinition> = {
+export const OVERRIDABLE = {
   name: 'name',
-  group_name: 'groupName',
-  sort_order: 'sortOrder',
   ai_description: 'aiDescription',
   other_names: 'otherNames',
+  extraction_hints: 'extractionHints',
   source_priority: 'sourcePriority',
   when_empty: 'whenEmpty',
   when_different: 'whenDifferent',
   manual_override: 'manualOverride',
-  formula: 'formula',
-}
+} as const satisfies Record<string, keyof FieldDefinition>
+export type OverridableSetting = keyof typeof OVERRIDABLE
 
 /**
  * Every field this organization can use: the Stratios standard fields with
@@ -65,7 +67,7 @@ const OVERRIDABLE: Record<string, keyof FieldDefinition> = {
 export async function listFields(client: Queryable, orgId: string): Promise<FieldDefinition[]> {
   const definitions = await client.query(
     `select id::text as id, org_id, key, name, applies_to, data_type, unit, options, tracking, rollup, calculated, formula,
-            core_column, group_name, sort_order, ai_description, to_json(other_names) as other_names,
+            core_column, group_name, sort_order, ai_description, to_json(other_names) as other_names, extraction_hints,
             to_json(source_priority) as source_priority, when_empty, when_different, manual_override,
             list_id::text as list_id, default_value
      from field_definitions
@@ -92,6 +94,7 @@ export async function listFields(client: Queryable, orgId: string): Promise<Fiel
     sortOrder: Number(row.sort_order),
     aiDescription: row.ai_description ?? null,
     otherNames: (row.other_names as string[]) ?? [],
+    extractionHints: row.extraction_hints ?? null,
     sourcePriority: (row.source_priority as string[]) ?? [],
     whenEmpty: row.when_empty,
     whenDifferent: row.when_different,
@@ -100,13 +103,16 @@ export async function listFields(client: Queryable, orgId: string): Promise<Fiel
     defaultValue: row.default_value ?? null,
     standard: row.org_id === null,
     modifiedSettings: [],
+    standardValues: {},
   }))
 
   const byId = new Map(fields.map((field) => [field.id, field]))
   for (const row of settings.rows) {
     const field = byId.get(row.field_id)
-    const property = OVERRIDABLE[row.setting as string]
-    if (!field || !property || row.value === null || row.value === undefined) continue
+    const property = OVERRIDABLE[row.setting as OverridableSetting] as keyof FieldDefinition | undefined
+    // Only standard fields are customized this way; an organization's own fields are edited directly.
+    if (!field || !field.standard || !property || row.value === undefined) continue
+    field.standardValues[row.setting] = field[property]
     ;(field as Record<string, unknown>)[property] = row.value
     field.modifiedSettings.push(row.setting)
   }

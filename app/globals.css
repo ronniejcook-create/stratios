@@ -591,3 +591,30 @@ button.field-label:hover { color: var(--link); text-decoration: underline; }
 .agent-ref-text code { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
 .agent-refs li .icon-button { width: 24px; height: 24px; }
 .agent-refs-note { font-size: 12px; color: var(--dim); }
+
+/* Fields and Layout (admin) */
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.chip-modified { border-color: var(--accent); color: var(--heading); }
+.chip-own { border-color: var(--line-strong); color: var(--heading); }
+code.key { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+td.muted { color: var(--dim); }
+.field textarea {
+  padding: 8px 10px; background: var(--bg); color: var(--heading); border: 1px solid var(--line-strong); border-radius: 6px;
+  font: inherit; font-size: 14px; line-height: 1.45; resize: vertical; min-height: 36px;
+}
+.field textarea::placeholder { color: var(--placeholder); }
+.field-editor { margin-top: 14px; gap: 14px; }
+.field-editor .form-row { margin-top: 0; align-items: flex-start; }
+.field-editor .button-row { margin-top: 4px; }
+.field-title { font-size: 13px; font-weight: 500; color: var(--text); }
+.modified-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+.modified-note .link-button { min-height: 0; font-size: 12px; }
+.priority-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; max-width: 520px; }
+.priority-list li { display: flex; align-items: center; gap: 12px; min-height: 36px; padding: 0 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+.priority-rank { width: 16px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.priority-name { flex: 1; color: var(--heading); font-weight: 500; }
+.priority-list .link-button { min-height: 0; font-size: 13px; }
+.priority-list .link-button[disabled] { opacity: 0.35; cursor: default; text-decoration: none; }
+.priority-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.priority-add .preset { width: auto; min-height: 30px; padding: 2px 10px; font-size: 13px; }
+.btn.danger { color: var(--danger); border-color: var(--danger); }

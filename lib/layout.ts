@@ -34,11 +34,14 @@ export async function listScreens(client: Queryable, orgId: string): Promise<Scr
      from sections where org_id is null or org_id = $1 order by sort_order, name`,
     [orgId],
   )
-  const placements = await client.query(
-    `select section_id::text as section_id, field_id::text as field_id
-     from section_fields where org_id is null or org_id = $1 order by position`,
+  const allPlacements = await client.query(
+    `select section_id::text as section_id, field_id::text as field_id, org_id
+     from section_fields where org_id is null or org_id = $1 order by position, id`,
     [orgId],
   )
+  // Where an organization has placed a field itself, that replaces the standard placement.
+  const movedByOrg = new Set(allPlacements.rows.filter((row) => row.org_id !== null).map((row) => row.field_id as string))
+  const placements = { rows: allPlacements.rows.filter((row) => row.org_id !== null || !movedByOrg.has(row.field_id)) }
   return screens.rows.map((screen) => ({
     id: screen.id,
     key: screen.key,

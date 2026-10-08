@@ -98,8 +98,18 @@ work and how data is isolated; this file covers how we work and where things sta
   - Standard rows have org_id null. Migrations lift FORCE row-level security on the dictionary
     and layout tables while seeding them and put it back, so they work for an owner role without
     BYPASSRLS and are safe to re-run in any order.
-  - Not built yet (later stages): admin screens for fields, sections and lists, roles and field
-    permissions, the Stratios-only master library screen, documents and extraction, formulas
+  - Stage 3, part 1 is built (no migration needed): Admin Settings > "Fields and Layout"
+    (`app/dashboard/fields/`, admins only; logic in `lib/fieldAdmin.ts`). Admins can add a field
+    (key generated in camel case, unique within the record type, never reused), edit a field's
+    settings, move it to another section, remove a field they added (it is retired, values kept),
+    and add screens, sections and lists (a list's columns are added as fields).
+    Editing a Stratios standard field writes `field_settings` rows only for settings that differ
+    from the standard; each row is the "Modified" flag, shown with the standard value and a Reset.
+    `listFields` applies them and exposes `modifiedSettings` and `standardValues`. An
+    organization's own `section_fields` row for a field replaces the standard placement.
+    Standard sections and screens can't be renamed, reordered or hidden yet.
+  - Not built yet (later stages): roles and field permissions (stage 3, part 2), the
+    Stratios-only master library screen (stage 3, part 3), documents and extraction, formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
     single list cell yet (the history is stored).

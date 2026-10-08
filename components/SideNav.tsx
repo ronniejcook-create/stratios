@@ -22,6 +22,7 @@ const SECTIONS: { title: string; adminOnly?: boolean; items: { label: string; hr
     adminOnly: true,
     items: [
       { label: 'Members', href: '/dashboard/members', icon: icon(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5" /><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.6.8 2.6 2.5 3 5.2" /></>) },
+      { label: 'Fields and Layout', href: '/dashboard/fields', icon: icon(<><rect x="3.5" y="4" width="17" height="16" rx="2" /><path d="M3.5 9.5h17M9 9.5V20" /></>) },
       { label: 'Org Colors', href: '/dashboard/settings', icon: icon(<><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z" /><circle cx="7.5" cy="11" r="1" /><circle cx="10.5" cy="7.5" r="1" /><circle cx="15" cy="8" r="1" /></>) },
     ],
   },
@@ -53,7 +54,9 @@ export function SideNav({ isAdmin }: { isAdmin: boolean }) {
           <ul>
             {section.items.map((item) => {
               // An asset's own page still counts as being in Assets.
-              const active = pathname === item.href || (item.href === '/dashboard' && pathname.startsWith('/dashboard/assets/'))
+              const active =
+                pathname === item.href ||
+                (item.href === '/dashboard' ? pathname.startsWith('/dashboard/assets/') : pathname.startsWith(`${item.href}/`))
               return (
                 <li key={item.href}>
                   <Link href={item.href} className={`side-link${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>
