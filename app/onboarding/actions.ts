@@ -1,6 +1,8 @@
 'use server'
 
+import { after } from 'next/server'
 import { auth, clerkClient } from '@clerk/nextjs/server'
+import { generateBrandTheme, saveOrgTheme } from '@/lib/brandColors'
 import { getOnboardingState } from '@/lib/organizations'
 
 export type SetupOrganizationState = { error: string | null; organizationId: string | null }
@@ -30,6 +32,19 @@ export async function setupOrganization(
       createdBy: userId, // becomes the organization's first admin
       publicMetadata: state.domain ? { domain: state.domain } : {},
     })
+    // Work out the organization's brand colours after responding, so set-up
+    // isn't held up; the new scheme shows on the next page load.
+    const domain = state.domain
+    if (domain) {
+      after(async () => {
+        try {
+          const theme = await generateBrandTheme(domain)
+          if (theme) await saveOrgTheme(organization.id, theme)
+        } catch (error) {
+          console.error('Brand colours failed for', domain, error)
+        }
+      })
+    }
     return { error: null, organizationId: organization.id }
   } catch (error) {
     console.error('setupOrganization failed', error)

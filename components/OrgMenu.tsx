@@ -38,6 +38,7 @@ export function OrgMenu({ current, organizations }: { current: Org; organization
       <div className="menu-heading">Organization</div>
       <div className="menu-current">{current.name}</div>
       <Link href="/dashboard/members" className="menu-item">Members and invitations</Link>
+      <Link href="/dashboard/settings" className="menu-item">Brand colours</Link>
       {others.length > 0 ? (
         <>
           <div className="menu-heading menu-divider">Switch to</div>
