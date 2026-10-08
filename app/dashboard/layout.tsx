@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { AccountMenu } from '@/components/AccountMenu'
+import { AppShell } from '@/components/AppShell'
 import { Logo } from '@/components/Logo'
 import { OrgMenu } from '@/components/OrgMenu'
 import { DEFAULT_THEME, parseBrandSettings, parseTheme, themeToStyle } from '@/lib/theme'
@@ -30,22 +31,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="org-theme" style={style}>
-      <header className="site-header app-header">
-        <div className="wrap">
+      <AppShell
+        brand={
           <Link href="/dashboard" className="brand">
-            <Logo />
+            <Logo size={24} />
             <span>Stratios</span>
             <span className="brand-org">for {current.name}</span>
           </Link>
-          <div className="app-tools">
-            <Link href="/dashboard" className="nav-link">Assets</Link>
-            <Link href="/dashboard/members" className="nav-link">Members</Link>
+        }
+        tools={
+          <>
             <OrgMenu current={current} organizations={organizations} />
             <AccountMenu />
-          </div>
-        </div>
-      </header>
-      <main className="wrap app-main">{children}</main>
+          </>
+        }
+      >
+        {children}
+      </AppShell>
     </div>
   )
 }
