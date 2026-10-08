@@ -36,7 +36,7 @@ export async function saveColors(formData: FormData): Promise<void> {
   const orgId = await requireAdmin()
   const theme = {} as OrgTheme
   for (const { key } of THEME_ROLES) {
-    const hex = normalizeHex(formData.get(key))
+    const hex = normalizeHex(withHash(formData.get(key)))
     if (!hex) done('invalid')
     theme[key] = hex
   }
@@ -70,22 +70,6 @@ export async function setMode(formData: FormData): Promise<void> {
     done('failed')
   }
   done(`mode-${mode}`)
-}
-
-export async function setBrandColors(formData: FormData): Promise<void> {
-  const orgId = await requireAdmin()
-  const primary = normalizeHex(withHash(formData.get('primary')))
-  const accent = normalizeHex(withHash(formData.get('accent')))
-  if (!primary || !accent) done('invalid-brand')
-  try {
-    // Rebuild all ten colors from the brand colors entered, in the current mode.
-    const { mode } = await loadOrganization(orgId)
-    await saveOrgTheme(orgId, deriveTheme(primary, accent, mode), { brand: { primary, accent }, mode })
-  } catch (error) {
-    console.error('setBrandColors failed', error)
-    done('failed')
-  }
-  done('brand-set')
 }
 
 /** Accepts colors typed with or without the leading "#". */

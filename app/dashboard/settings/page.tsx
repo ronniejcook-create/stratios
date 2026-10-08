@@ -1,6 +1,7 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { DEFAULT_THEME, THEME_ROLES, parseBrandSettings, parseTheme } from '@/lib/theme'
-import { regenerateColors, resetColors, saveColors, setBrandColors, setMode } from './actions'
+import { regenerateColors, resetColors, saveColors, setMode } from './actions'
+import { SwatchField } from './SwatchField'
 import { SubmitButton } from './SubmitButton'
 
 export const dynamic = 'force-dynamic'
@@ -11,14 +12,12 @@ const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   'saved-adjusted': { text: 'Colors saved. Some text colors were adjusted so they stay readable.' },
   regenerated: { text: 'New brand colors picked.' },
   reset: { text: 'Back to the Stratios colors.' },
-  'brand-set': { text: 'Brand colors applied. All ten site colors were rebuilt from them.' },
-  'invalid-brand': { text: 'Enter both brand colors as six-digit hex codes, for example #1A1446.', error: true },
   'mode-dark': { text: 'Switched to dark mode.' },
   'mode-light': { text: 'Switched to light mode.' },
   'no-domain': { text: 'This organization has no company domain to look up, so colors have to be set by hand.', error: true },
   'no-key': { text: 'Automatic colors need an Anthropic API key in the settings file (ANTHROPIC_API_KEY).', error: true },
   'generate-failed': { text: 'Brand colors could not be worked out. Try again, or set them by hand.', error: true },
-  invalid: { text: 'Every color needs to be a valid color.', error: true },
+  invalid: { text: 'Every color needs to be a six-digit hex code, for example #1A1446.', error: true },
   'not-admin': { text: 'Only administrators can change the colors.', error: true },
   failed: { text: 'That change could not be saved. Try again.', error: true },
 }
@@ -34,7 +33,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const organization = await client.organizations.getOrganization({ organizationId: orgId })
   const stored = parseTheme(organization.publicMetadata?.theme)
   const theme = stored ?? DEFAULT_THEME
-  const { mode, brand } = parseBrandSettings(organization.publicMetadata?.theme)
+  const { mode } = parseBrandSettings(organization.publicMetadata?.theme)
   const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
 
   return (
@@ -53,37 +52,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       ) : null}
 
       <section className="panel">
-        <h2>Brand colors</h2>
-        <p className="note">
-          The two colors everything else is built from. Enter them from your brand guide, or let Stratios look them up below.
-        </p>
-        <form action={setBrandColors}>
-          <fieldset disabled={!isAdmin} style={{ border: 0, padding: 0, margin: 0 }}>
-            <div className="form-row">
-              <div className="field">
-                <label htmlFor="brand-primary">Primary brand color</label>
-                <div className="hex-input">
-                  <span className="hex-chip" style={{ background: brand?.primary ?? 'transparent' }} aria-hidden="true" />
-                  <input id="brand-primary" name="primary" type="text" required pattern="#?[0-9a-fA-F]{6}" placeholder="#1A1446" defaultValue={brand?.primary.toUpperCase() ?? ''} />
-                </div>
-              </div>
-              <div className="field">
-                <label htmlFor="brand-accent">Accent brand color</label>
-                <div className="hex-input">
-                  <span className="hex-chip" style={{ background: brand?.accent ?? 'transparent' }} aria-hidden="true" />
-                  <input id="brand-accent" name="accent" type="text" required pattern="#?[0-9a-fA-F]{6}" placeholder="#FFD000" defaultValue={brand?.accent.toUpperCase() ?? ''} />
-                </div>
-              </div>
-              {isAdmin ? (
-                <SubmitButton className="btn btn-primary btn-small" pendingText="Applying…">Apply brand colors</SubmitButton>
-              ) : null}
-            </div>
-          </fieldset>
-        </form>
-        <p className="note">The primary color sets the backgrounds (a dark brand color is used exactly as the page background); the accent is used for buttons and links.</p>
-      </section>
-
-      <section className="panel">
         <h2>Site Colors</h2>
         {isAdmin ? (
           <form action={setMode} className="mode-toggle" aria-label="Color mode">
@@ -100,13 +68,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <fieldset disabled={!isAdmin} style={{ border: 0, padding: 0, margin: 0 }}>
             <div className="swatches">
               {THEME_ROLES.map((role) => (
-                <div key={role.key} className="swatch">
-                  <input id={`color-${role.key}`} name={role.key} type="color" defaultValue={theme[role.key]} />
-                  <label htmlFor={`color-${role.key}`}>
-                    {role.label}
-                    <span className="hex">{theme[role.key]}</span>
-                  </label>
-                </div>
+                <SwatchField key={role.key} name={role.key} label={role.label} defaultValue={theme[role.key]} />
               ))}
             </div>
             {isAdmin ? (
