@@ -288,3 +288,6 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 .preset-dots span + span { margin-left: -8px; }
 .preset-bars { display: flex; flex: none; width: 64px; height: 16px; border-radius: 3px; overflow: hidden; }
 .preset-bars span { flex: 1; }
+.preset .ai-icon { flex: none; color: var(--link); margin-left: -4px; }
+.preset-dots:empty { display: none; }
+.preset[disabled] { opacity: 0.6; cursor: default; }

@@ -10,6 +10,14 @@ export const SITE_PRESETS: ({ name: string } & BrandColors)[] = [
   { name: 'Slate Blue', primary: '#1f2933', accent: '#3ea8ff' },
   { name: 'Espresso', primary: '#2b1d14', accent: '#d4a373' },
   { name: 'Ember', primary: '#18181b', accent: '#f97316' },
+  { name: 'Monochrome', primary: '#121212', accent: '#a3a3a3' },
+  { name: 'Teal', primary: '#0d2b2e', accent: '#2dd4bf' },
+  { name: 'Rose', primary: '#2a1420', accent: '#fb7185' },
+  { name: 'Indigo', primary: '#1e1b4b', accent: '#818cf8' },
+  { name: 'Olive', primary: '#1f2414', accent: '#b5c45a' },
+  { name: 'Sand', primary: '#2b2620', accent: '#e9c46a' },
+  { name: 'Navy & Red', primary: '#0b1f3a', accent: '#ef4444' },
+  { name: 'Lime', primary: '#14201a', accent: '#84cc16' },
 ]
 
 /**

@@ -272,6 +272,18 @@ If known, return exactly 8 colors as #rrggbb hex, in the order they are typicall
   }
 }
 
+/**
+ * Keeps the brand colors Stratios generated for an organization, separately
+ * from the scheme in use, so they can be applied again later without another
+ * lookup.
+ */
+export async function saveGeneratedBrand(organizationId: string, brand: BrandColors) {
+  const client = await clerkClient()
+  await client.organizations.updateOrganizationMetadata(organizationId, {
+    publicMetadata: { generatedBrand: { primary: brand.primary, accent: brand.accent } },
+  })
+}
+
 /** Saves (or with null, clears) an organization's graph colors. */
 export async function saveChartColors(
   organizationId: string,

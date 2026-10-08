@@ -1,6 +1,6 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { DEFAULT_THEME, THEME_ROLES, parseBrandSettings, parseTheme } from '@/lib/theme'
-import { applyGraphPreset, applySitePreset, lookUpGraphColors, regenerateColors, resetColors, resetGraphColors, saveColors, saveGraphColors, setMode } from './actions'
+import { DEFAULT_BRAND, DEFAULT_THEME, THEME_ROLES, normalizeHex, parseBrandSettings, parseTheme } from '@/lib/theme'
+import { applyGeneratedColors, applyGraphPreset, applySitePreset, applyStratiosColors, lookUpGraphColors, resetGraphColors, saveColors, saveGraphColors, setMode } from './actions'
 import { GRAPH_PRESETS, SITE_PRESETS } from '@/lib/presets'
 import { GraphColorsEditor } from './GraphColorsEditor'
 import { displayChartColors, parseChartColors } from '@/lib/chartColors'
@@ -13,7 +13,7 @@ const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   welcome: { text: 'Your organization is set up. Check the colors below: you can switch to light mode, adjust any color, or use the Stratios colors.' },
   saved: { text: 'Colors saved.' },
   'saved-adjusted': { text: 'Colors saved. Some text colors were adjusted so they stay readable.' },
-  regenerated: { text: 'New brand colors picked.' },
+  regenerated: { text: 'Generated brand colors applied.' },
   reset: { text: 'Back to the Stratios colors.' },
   'graph-saved': { text: 'Graph colors saved.' },
   'site-preset': { text: 'Site color scheme applied.' },
@@ -44,6 +44,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const stored = parseTheme(organization.publicMetadata?.theme)
   const theme = stored ?? DEFAULT_THEME
   const { mode, brand } = parseBrandSettings(organization.publicMetadata?.theme)
+  const generatedRaw = organization.publicMetadata?.generatedBrand as { primary?: unknown; accent?: unknown } | undefined
+  const generatedPrimary = normalizeHex(generatedRaw?.primary)
+  const generatedAccent = normalizeHex(generatedRaw?.accent)
   const storedChart = parseChartColors(organization.publicMetadata?.chartColors)
   const chartColors = displayChartColors(storedChart, brand, mode, theme.surface)
   const chartSource =
@@ -100,15 +103,35 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         {isAdmin ? (
           <div className="start-from">
             <h3>Start from</h3>
-            <div className="button-row">
-              <form action={regenerateColors}>
-                <SubmitButton className="btn btn-ghost btn-small" pendingText="Looking up your brand colors…">Look up brand colors again</SubmitButton>
-              </form>
-              <form action={resetColors}>
-                <SubmitButton className="btn btn-ghost btn-small" pendingText="Resetting…">Use Stratios colors</SubmitButton>
-              </form>
-            </div>
             <div className="preset-grid">
+              <form action={applyGeneratedColors}>
+                <SubmitButton className="preset" pendingText="Generating brand colors…">
+                  <>
+                    <span className="preset-dots" aria-hidden="true">
+                      {generatedPrimary && generatedAccent ? (
+                        <>
+                          <span style={{ background: generatedPrimary }} />
+                          <span style={{ background: generatedAccent }} />
+                        </>
+                      ) : null}
+                    </span>
+                    <svg className="ai-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
+                      <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
+                    </svg>
+                    Generated Brand Colors
+                  </>
+                </SubmitButton>
+              </form>
+              <form action={applyStratiosColors}>
+                <button type="submit" className="preset">
+                  <span className="preset-dots" aria-hidden="true">
+                    <span style={{ background: DEFAULT_BRAND.primary }} />
+                    <span style={{ background: DEFAULT_BRAND.accent }} />
+                  </span>
+                  Stratios
+                </button>
+              </form>
               {SITE_PRESETS.map((preset) => (
                 <form key={preset.name} action={applySitePreset}>
                   <input type="hidden" name="preset" value={preset.name} />
@@ -122,7 +145,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 </form>
               ))}
             </div>
-            <p className="note">Looking up brand colors takes up to half a minute: Stratios checks your organization&apos;s brand guidelines first and your website second. Every option rebuilds all ten colors in the current mode.</p>
+            <p className="note">Generated Brand Colors are the colors Stratios found for your organization when it was set up. Every option rebuilds all ten colors in the current mode.</p>
           </div>
         ) : null}
       </section>

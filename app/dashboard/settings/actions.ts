@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { generateBrandTheme, lookUpChartColors, saveChartColors, saveOrgTheme } from '@/lib/brandColors'
+import { generateBrandTheme, lookUpChartColors, saveChartColors, saveGeneratedBrand, saveOrgTheme } from '@/lib/brandColors'
 import { CHART_SLOTS } from '@/lib/chartColors'
 import { GRAPH_PRESETS, SITE_PRESETS } from '@/lib/presets'
 import { DEFAULT_BRAND, THEME_ROLES, deriveTheme, ensureReadable, normalizeHex, parseBrandSettings, parseTheme, type OrgTheme } from '@/lib/theme'
@@ -18,7 +18,11 @@ async function loadOrganization(orgId: string) {
   const client = await clerkClient()
   const organization = await client.organizations.getOrganization({ organizationId: orgId })
   const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
-  return { name: organization.name, domain, stored: parseTheme(organization.publicMetadata?.theme), ...parseBrandSettings(organization.publicMetadata?.theme) }
+  const generated = organization.publicMetadata?.generatedBrand as { primary?: unknown; accent?: unknown } | undefined
+  const generatedPrimary = normalizeHex(generated?.primary)
+  const generatedAccent = normalizeHex(generated?.accent)
+  const generatedBrand = generatedPrimary && generatedAccent ? { primary: generatedPrimary, accent: generatedAccent } : null
+  return { name: organization.name, domain, generatedBrand, stored: parseTheme(organization.publicMetadata?.theme), ...parseBrandSettings(organization.publicMetadata?.theme) }
 }
 
 function saturation(hex: string): number {
@@ -80,33 +84,45 @@ function withHash(value: FormDataEntryValue | null): string {
   return text.startsWith('#') ? text : `#${text}`
 }
 
-export async function regenerateColors(): Promise<void> {
+/**
+ * Applies the brand colors Stratios generated for the organization. They are
+ * kept from the first lookup, so this normally costs nothing; only an
+ * organization that has never had colors generated triggers a lookup, once.
+ */
+export async function applyGeneratedColors(): Promise<void> {
   const orgId = await requireAdmin()
   let status = 'regenerated'
   let detail: string | undefined
   try {
-    const { name, domain, mode } = await loadOrganization(orgId)
-    const result = await generateBrandTheme({ name, domain }, mode)
-    if (result.theme) {
-      await saveOrgTheme(orgId, result.theme, { brand: result.brand, mode })
-      detail = result.note
+    const { name, domain, mode, generatedBrand } = await loadOrganization(orgId)
+    if (generatedBrand) {
+      await saveOrgTheme(orgId, deriveTheme(generatedBrand.primary, generatedBrand.accent, mode), { brand: generatedBrand, mode })
     } else {
-      status = process.env.ANTHROPIC_API_KEY ? 'generate-failed' : 'no-key'
-      detail = result.error
+      const result = await generateBrandTheme({ name, domain }, mode)
+      if (result.theme) {
+        await saveOrgTheme(orgId, result.theme, { brand: result.brand, mode })
+        await saveGeneratedBrand(orgId, result.brand)
+        detail = result.note
+      } else {
+        status = process.env.ANTHROPIC_API_KEY ? 'generate-failed' : 'no-key'
+        detail = result.error
+      }
     }
   } catch (error) {
-    console.error('regenerateColors failed', error)
+    console.error('applyGeneratedColors failed', error)
     status = 'failed'
   }
   done(status, detail)
 }
 
-export async function resetColors(): Promise<void> {
+/** Applies the Stratios colors in the current mode. */
+export async function applyStratiosColors(): Promise<void> {
   const orgId = await requireAdmin()
   try {
-    await saveOrgTheme(orgId, null)
+    const { mode } = await loadOrganization(orgId)
+    await saveOrgTheme(orgId, deriveTheme(DEFAULT_BRAND.primary, DEFAULT_BRAND.accent, mode), { brand: DEFAULT_BRAND, mode })
   } catch (error) {
-    console.error('resetColors failed', error)
+    console.error('applyStratiosColors failed', error)
     done('failed')
   }
   done('reset')
