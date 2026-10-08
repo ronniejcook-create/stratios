@@ -1,14 +1,20 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { auth } from '@clerk/nextjs/server'
-import { OrganizationSwitcher, UserButton } from '@clerk/nextjs'
+import { auth, clerkClient } from '@clerk/nextjs/server'
+import { AccountMenu } from '@/components/AccountMenu'
 import { Logo } from '@/components/Logo'
+import { OrgMenu } from '@/components/OrgMenu'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, orgId, redirectToSignIn } = await auth()
-  if (!isAuthenticated) return redirectToSignIn()
+  const { isAuthenticated, userId, orgId, redirectToSignIn } = await auth()
+  if (!isAuthenticated || !userId) return redirectToSignIn()
   // Everything in the app belongs to an organization, so one must be active.
   if (!orgId) redirect('/onboarding')
+
+  const client = await clerkClient()
+  const memberships = await client.users.getOrganizationMembershipList({ userId, limit: 100 })
+  const organizations = memberships.data.map((m) => ({ id: m.organization.id, name: m.organization.name }))
+  const current = organizations.find((org) => org.id === orgId) ?? { id: orgId, name: 'Organization' }
 
   return (
     <>
@@ -21,12 +27,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="app-tools">
             <Link href="/dashboard" className="nav-link">Assets</Link>
             <Link href="/dashboard/members" className="nav-link">Members</Link>
-            <OrganizationSwitcher
-              hidePersonal
-              afterSelectOrganizationUrl="/dashboard"
-              afterCreateOrganizationUrl="/dashboard"
-            />
-            <UserButton />
+            <OrgMenu current={current} organizations={organizations} />
+            <AccountMenu />
           </div>
         </div>
       </header>

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
-import { UserButton } from '@clerk/nextjs'
+import { AccountMenu } from '@/components/AccountMenu'
 import { Logo } from '@/components/Logo'
 import { getOnboardingState } from '@/lib/organizations'
 import { SetupOrganizationForm } from './SetupOrganizationForm'
@@ -27,7 +27,7 @@ export default async function OnboardingPage() {
             <Logo />
             <span>Stratios</span>
           </Link>
-          <UserButton />
+          <AccountMenu />
         </div>
       </header>
       <main className="onboarding">

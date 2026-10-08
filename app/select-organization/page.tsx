@@ -1,15 +1,27 @@
-import { OrganizationList } from '@clerk/nextjs'
+import Link from 'next/link'
+import { AccountMenu } from '@/components/AccountMenu'
+import { Logo } from '@/components/Logo'
+import { ChooseOrganization } from './ChooseOrganization'
 
-// Shown when a signed-in user has no active organization. They can accept a
-// pending invitation, pick an organization they belong to, or create one.
-export default function Page() {
+// Shown when a signed-in person has memberships or invitations but no active
+// organization: accept an invitation or pick an organization to open.
+export default function SelectOrganizationPage() {
   return (
-    <main className="auth-page">
-      <OrganizationList
-        hidePersonal
-        afterCreateOrganizationUrl="/dashboard"
-        afterSelectOrganizationUrl="/dashboard"
-      />
-    </main>
+    <>
+      <header className="site-header app-header">
+        <div className="wrap">
+          <Link href="/" className="brand">
+            <Logo />
+            <span>Stratios</span>
+          </Link>
+          <AccountMenu />
+        </div>
+      </header>
+      <main className="onboarding">
+        <section className="panel">
+          <ChooseOrganization />
+        </section>
+      </main>
+    </>
   )
 }
