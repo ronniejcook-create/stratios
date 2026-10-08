@@ -1,5 +1,5 @@
 :root {
-  --font-display: 'Satoshi'; /* loaded from Fontshare in app/layout.tsx */
+  --font-display: var(--font-body); /* headings use the same font as body text (Roboto, app/layout.tsx) */
   --bg: #0f1d31;
   --bg-deep: #0c1829;
   --panel: #14253c;
