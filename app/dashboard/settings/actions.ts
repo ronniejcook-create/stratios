@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { generateBrandTheme, lookUpChartColors, saveChartColors, saveOrgTheme } from '@/lib/brandColors'
 import { CHART_SLOTS } from '@/lib/chartColors'
+import { GRAPH_PRESETS, SITE_PRESETS } from '@/lib/presets'
 import { DEFAULT_BRAND, THEME_ROLES, deriveTheme, ensureReadable, normalizeHex, parseBrandSettings, parseTheme, type OrgTheme } from '@/lib/theme'
 
 async function requireAdmin() {
@@ -161,4 +162,33 @@ export async function resetGraphColors(): Promise<void> {
     done('failed')
   }
   done('graph-reset')
+}
+
+export async function applySitePreset(formData: FormData): Promise<void> {
+  const orgId = await requireAdmin()
+  const preset = SITE_PRESETS.find((p) => p.name === formData.get('preset'))
+  if (!preset) done('failed')
+  try {
+    // The preset's two colors become the organization's brand colors.
+    const { mode } = await loadOrganization(orgId)
+    const brand = { primary: preset.primary, accent: preset.accent }
+    await saveOrgTheme(orgId, deriveTheme(brand.primary, brand.accent, mode), { brand, mode })
+  } catch (error) {
+    console.error('applySitePreset failed', error)
+    done('failed')
+  }
+  done('site-preset')
+}
+
+export async function applyGraphPreset(formData: FormData): Promise<void> {
+  const orgId = await requireAdmin()
+  const preset = GRAPH_PRESETS.find((p) => p.name === formData.get('preset'))
+  if (!preset) done('failed')
+  try {
+    await saveChartColors(orgId, { colors: preset.colors, source: 'preset', name: preset.name })
+  } catch (error) {
+    console.error('applyGraphPreset failed', error)
+    done('failed')
+  }
+  done('graph-preset')
 }

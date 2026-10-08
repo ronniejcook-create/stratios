@@ -1,6 +1,7 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { DEFAULT_THEME, THEME_ROLES, parseBrandSettings, parseTheme } from '@/lib/theme'
-import { lookUpGraphColors, regenerateColors, resetColors, resetGraphColors, saveColors, saveGraphColors, setMode } from './actions'
+import { applyGraphPreset, applySitePreset, lookUpGraphColors, regenerateColors, resetColors, resetGraphColors, saveColors, saveGraphColors, setMode } from './actions'
+import { GRAPH_PRESETS, SITE_PRESETS } from '@/lib/presets'
 import { GraphColorsEditor } from './GraphColorsEditor'
 import { displayChartColors, parseChartColors } from '@/lib/chartColors'
 import { SwatchField } from './SwatchField'
@@ -15,6 +16,8 @@ const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   regenerated: { text: 'New brand colors picked.' },
   reset: { text: 'Back to the Stratios colors.' },
   'graph-saved': { text: 'Graph colors saved.' },
+  'site-preset': { text: 'Site color scheme applied.' },
+  'graph-preset': { text: 'Graph palette applied.' },
   'graph-found': { text: 'Found graph colors this organization has used in the past.' },
   'graph-not-found': { text: 'No past graph colors were found for this organization, so graphs use muted colors built from its brand colors.' },
   'graph-reset': { text: 'Graphs now use muted colors built from your brand colors.' },
@@ -46,6 +49,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const chartSource =
     storedChart?.source === 'history' ? 'These are graph colors this organization has used in the past.' :
     storedChart?.source === 'manual' ? 'These graph colors were set by hand.' :
+    storedChart?.source === 'preset' ? `These graph colors are the ${storedChart.name ?? 'chosen'} palette.` :
     'These are muted graph colors built from your brand colors.'
   const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
 
@@ -93,6 +97,34 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             )}
           </fieldset>
         </form>
+        {isAdmin ? (
+          <div className="start-from">
+            <h3>Start from</h3>
+            <div className="button-row">
+              <form action={regenerateColors}>
+                <SubmitButton className="btn btn-ghost btn-small" pendingText="Looking up your brand colors…">Look up brand colors again</SubmitButton>
+              </form>
+              <form action={resetColors}>
+                <SubmitButton className="btn btn-ghost btn-small" pendingText="Resetting…">Use Stratios colors</SubmitButton>
+              </form>
+            </div>
+            <div className="preset-grid">
+              {SITE_PRESETS.map((preset) => (
+                <form key={preset.name} action={applySitePreset}>
+                  <input type="hidden" name="preset" value={preset.name} />
+                  <button type="submit" className="preset">
+                    <span className="preset-dots" aria-hidden="true">
+                      <span style={{ background: preset.primary }} />
+                      <span style={{ background: preset.accent }} />
+                    </span>
+                    {preset.name}
+                  </button>
+                </form>
+              ))}
+            </div>
+            <p className="note">Looking up brand colors takes up to half a minute: Stratios checks your organization&apos;s brand guidelines first and your website second. Every option rebuilds all ten colors in the current mode.</p>
+          </div>
+        ) : null}
       </section>
 
       <section className="panel">
@@ -109,24 +141,25 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </form>
           </div>
         ) : null}
+        {isAdmin ? (
+          <div className="preset-grid">
+            {GRAPH_PRESETS.map((preset) => (
+              <form key={preset.name} action={applyGraphPreset}>
+                <input type="hidden" name="preset" value={preset.name} />
+                <button type="submit" className="preset">
+                  <span className="preset-bars" aria-hidden="true">
+                    {preset.colors.map((color) => (
+                      <span key={color} style={{ background: color }} />
+                    ))}
+                  </span>
+                  {preset.name}
+                </button>
+              </form>
+            ))}
+          </div>
+        ) : null}
       </section>
 
-      {isAdmin ? (
-        <section className="panel">
-          <h2>Start again</h2>
-          <div className="button-row">
-            <form action={regenerateColors}>
-              <SubmitButton className="btn btn-ghost btn-small" pendingText="Looking up your brand colors…">
-                Look up brand colors again
-              </SubmitButton>
-            </form>
-            <form action={resetColors}>
-              <SubmitButton className="btn btn-ghost btn-small" pendingText="Resetting…">Use Stratios colors</SubmitButton>
-            </form>
-          </div>
-          <p className="note">Looking up brand colors takes up to half a minute. Stratios checks your organization's brand guidelines first and your website second.</p>
-        </section>
-      ) : null}
     </>
   )
 }

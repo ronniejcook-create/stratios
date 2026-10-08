@@ -2,18 +2,18 @@ import { DEFAULT_BRAND, contrast, normalizeHex, type BrandColors, type ThemeMode
 
 export const CHART_SLOTS = 8
 
-export type ChartColorSource = 'history' | 'brand' | 'manual'
-export type StoredChartColors = { colors: string[]; source: ChartColorSource }
+export type ChartColorSource = 'history' | 'brand' | 'manual' | 'preset'
+export type StoredChartColors = { colors: string[]; source: ChartColorSource; name?: string }
 
 /** Reads stored graph colors (the first eight), or null unless they are all valid. */
 export function parseChartColors(value: unknown): StoredChartColors | null {
   if (!value || typeof value !== 'object') return null
-  const source = value as { colors?: unknown; source?: unknown }
+  const source = value as { colors?: unknown; source?: unknown; name?: unknown }
   if (!Array.isArray(source.colors) || source.colors.length < CHART_SLOTS) return null
   const colors = source.colors.slice(0, CHART_SLOTS).map(normalizeHex)
   if (colors.some((c) => !c)) return null
-  const kind = source.source === 'history' || source.source === 'manual' ? source.source : 'brand'
-  return { colors: colors as string[], source: kind }
+  const kind = source.source === 'history' || source.source === 'manual' || source.source === 'preset' ? source.source : 'brand'
+  return { colors: colors as string[], source: kind, ...(typeof source.name === 'string' ? { name: source.name } : {}) }
 }
 
 // --- Color math: OKLab / OKLCH, and color-blindness simulation ---

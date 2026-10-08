@@ -273,7 +273,10 @@ If known, return exactly 8 colors as #rrggbb hex, in the order they are typicall
 }
 
 /** Saves (or with null, clears) an organization's graph colors. */
-export async function saveChartColors(organizationId: string, value: { colors: string[]; source: 'history' | 'brand' | 'manual' } | null) {
+export async function saveChartColors(
+  organizationId: string,
+  value: { colors: string[]; source: 'history' | 'brand' | 'manual' | 'preset'; name?: string } | null,
+) {
   const client = await clerkClient()
   await client.organizations.updateOrganizationMetadata(organizationId, { publicMetadata: { chartColors: value } })
 }
