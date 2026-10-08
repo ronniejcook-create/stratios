@@ -112,15 +112,34 @@ export function linkColor(theme: OrgTheme): string {
   return contrast(theme.accent, theme.surface) >= 4.5 && contrast(theme.accent, theme.background) >= 4.5 ? theme.accent : theme.heading
 }
 
+/** The CSS custom properties for a theme, as variable name → color. */
+export function themeVars(theme: OrgTheme): Record<string, string> {
+  const vars: Record<string, string> = {}
+  for (const role of THEME_ROLES) for (const name of role.vars) vars[name] = theme[role.key]
+  const dark = isDark(theme.background)
+  vars['--link'] = linkColor(theme)
+  vars['--danger'] = dark ? '#ff9d8a' : '#b42318'
+  vars['--success'] = dark ? '#8fe3b0' : '#146c3a'
+  return vars
+}
+
 /** CSS custom properties for a theme, applied on the signed-in app's wrapper. */
 export function themeToStyle(theme: OrgTheme): CSSProperties {
-  const style: Record<string, string> = {}
-  for (const role of THEME_ROLES) for (const name of role.vars) style[name] = theme[role.key]
-  const dark = isDark(theme.background)
-  style['--link'] = linkColor(theme)
-  style['--danger'] = dark ? '#ff9d8a' : '#b42318'
-  style['--success'] = dark ? '#8fe3b0' : '#146c3a'
-  return style as CSSProperties
+  return themeVars(theme) as CSSProperties
+}
+
+/**
+ * Brand colors to rebuild a scheme from when none were recorded: its accent
+ * and the most strongly colored of its backgrounds.
+ */
+export function inferBrand(theme: OrgTheme): BrandColors {
+  const saturation = (hex: string) => {
+    const values = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    const max = Math.max(...values)
+    return max === 0 ? 0 : (max - Math.min(...values)) / max
+  }
+  const primary = [theme.backgroundDeep, theme.heading].sort((a, b) => saturation(b) - saturation(a))[0]
+  return { primary, accent: theme.accent }
 }
 
 function hexToHsl(hex: string): [number, number, number] {

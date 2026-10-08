@@ -5,8 +5,12 @@ import { redirect } from 'next/navigation'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { generateBrandTheme, saveChartColors, saveGeneratedBrand, saveOrgTheme } from '@/lib/brandColors'
 import { CHART_SLOTS } from '@/lib/chartColors'
-import { GRAPH_PRESETS, SITE_PRESETS } from '@/lib/presets'
-import { DEFAULT_BRAND, THEME_ROLES, deriveTheme, ensureReadable, normalizeHex, parseBrandSettings, parseTheme, type OrgTheme } from '@/lib/theme'
+import { GRAPH_PRESETS } from '@/lib/presets'
+import { THEME_ROLES, ensureReadable, normalizeHex, type BrandColors, type OrgTheme } from '@/lib/theme'
+
+// Nothing on the Brand colors page is saved until Save is clicked: presets,
+// Dark/Light and hand edits are previewed in the browser, and these actions
+// store the result.
 
 async function requireAdmin() {
   const { orgId, orgRole } = await auth()
@@ -14,28 +18,16 @@ async function requireAdmin() {
   return orgId
 }
 
-async function loadOrganization(orgId: string) {
-  const client = await clerkClient()
-  const organization = await client.organizations.getOrganization({ organizationId: orgId })
-  const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
-  const generated = organization.publicMetadata?.generatedBrand as { primary?: unknown; accent?: unknown } | undefined
-  const generatedPrimary = normalizeHex(generated?.primary)
-  const generatedAccent = normalizeHex(generated?.accent)
-  const generatedBrand = generatedPrimary && generatedAccent ? { primary: generatedPrimary, accent: generatedAccent } : null
-  return { name: organization.name, domain, generatedBrand, stored: parseTheme(organization.publicMetadata?.theme), ...parseBrandSettings(organization.publicMetadata?.theme) }
-}
-
-function saturation(hex: string): number {
-  const values = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
-  const max = Math.max(...values)
-  const min = Math.min(...values)
-  return max === 0 ? 0 : (max - min) / max
-}
-
 function done(status: string, detail?: string): never {
   revalidatePath('/dashboard', 'layout')
   const query = new URLSearchParams({ status, ...(detail ? { detail: detail.slice(0, 400) } : {}) })
   redirect(`/dashboard/settings?${query.toString()}`)
+}
+
+/** Accepts colors typed with or without the leading "#". */
+function withHash(value: FormDataEntryValue | null): string {
+  const text = String(value ?? '').trim()
+  return text.startsWith('#') ? text : `#${text}`
 }
 
 export async function saveColors(formData: FormData): Promise<void> {
@@ -46,10 +38,14 @@ export async function saveColors(formData: FormData): Promise<void> {
     if (!hex) done('invalid')
     theme[key] = hex
   }
+  const mode = formData.get('mode') === 'light' ? 'light' : 'dark'
+  const primary = normalizeHex(formData.get('brandPrimary'))
+  const accent = normalizeHex(formData.get('brandAccent'))
+  const brand: BrandColors | null = primary && accent ? { primary, accent } : null
+
   const readable = ensureReadable(theme)
   const adjusted = THEME_ROLES.some(({ key }) => readable[key] !== theme[key])
   try {
-    const { brand, mode } = await loadOrganization(orgId)
     await saveOrgTheme(orgId, readable, { brand, mode })
   } catch (error) {
     console.error('saveColors failed', error)
@@ -58,132 +54,55 @@ export async function saveColors(formData: FormData): Promise<void> {
   done(adjusted ? 'saved-adjusted' : 'saved')
 }
 
-export async function setMode(formData: FormData): Promise<void> {
-  const orgId = await requireAdmin()
-  const mode = formData.get('mode') === 'light' ? 'light' : 'dark'
-  try {
-    // Rebuild all ten colors for the chosen mode from the brand colors.
-    const { brand, stored } = await loadOrganization(orgId)
-    // Schemes saved before brand colors were recorded: use their accent and the
-    // most strongly colored of their backgrounds as the brand colors.
-    const inferred = stored
-      ? { primary: [stored.backgroundDeep, stored.heading].sort((a, b) => saturation(b) - saturation(a))[0], accent: stored.accent }
-      : null
-    const source = brand ?? inferred ?? DEFAULT_BRAND
-    await saveOrgTheme(orgId, deriveTheme(source.primary, source.accent, mode), { brand, mode })
-  } catch (error) {
-    console.error('setMode failed', error)
-    done('failed')
-  }
-  done(`mode-${mode}`)
-}
-
-/** Accepts colors typed with or without the leading "#". */
-function withHash(value: FormDataEntryValue | null): string {
-  const text = String(value ?? '').trim()
-  return text.startsWith('#') ? text : `#${text}`
-}
-
 /**
- * Applies the brand colors Stratios generated for the organization. They are
- * kept from the first lookup, so this normally costs nothing; only an
- * organization that has never had colors generated triggers a lookup, once.
+ * Returns the brand colors Stratios generated for the organization, for the
+ * page to preview. They are kept from set-up, so this normally costs nothing;
+ * an organization that never had colors generated gets one lookup, whose
+ * result is kept. The organization's colors are not changed here.
  */
-export async function applyGeneratedColors(): Promise<void> {
-  const orgId = await requireAdmin()
-  let status = 'regenerated'
-  let detail: string | undefined
+export async function getGeneratedBrand(): Promise<{ brand: BrandColors; note?: string } | { error: string }> {
+  const { orgId, orgRole } = await auth()
+  if (!orgId || orgRole !== 'org:admin') return { error: 'Only administrators can change the colors.' }
   try {
-    const { name, domain, mode, generatedBrand } = await loadOrganization(orgId)
-    if (generatedBrand) {
-      await saveOrgTheme(orgId, deriveTheme(generatedBrand.primary, generatedBrand.accent, mode), { brand: generatedBrand, mode })
-    } else {
-      const result = await generateBrandTheme({ name, domain }, mode)
-      if (result.theme) {
-        await saveOrgTheme(orgId, result.theme, { brand: result.brand, mode })
-        await saveGeneratedBrand(orgId, result.brand)
-        detail = result.note
-      } else {
-        status = process.env.ANTHROPIC_API_KEY ? 'generate-failed' : 'no-key'
-        detail = result.error
-      }
-    }
-  } catch (error) {
-    console.error('applyGeneratedColors failed', error)
-    status = 'failed'
-  }
-  done(status, detail)
-}
+    const client = await clerkClient()
+    const organization = await client.organizations.getOrganization({ organizationId: orgId })
+    const kept = organization.publicMetadata?.generatedBrand as { primary?: unknown; accent?: unknown } | undefined
+    const primary = normalizeHex(kept?.primary)
+    const accent = normalizeHex(kept?.accent)
+    if (primary && accent) return { brand: { primary, accent } }
 
-/** Applies the Stratios colors in the current mode. */
-export async function applyStratiosColors(): Promise<void> {
-  const orgId = await requireAdmin()
-  try {
-    const { mode } = await loadOrganization(orgId)
-    await saveOrgTheme(orgId, deriveTheme(DEFAULT_BRAND.primary, DEFAULT_BRAND.accent, mode), { brand: DEFAULT_BRAND, mode })
+    const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
+    const result = await generateBrandTheme({ name: organization.name, domain })
+    if (!result.theme) return { error: result.error }
+    await saveGeneratedBrand(orgId, result.brand)
+    return { brand: result.brand, note: result.note }
   } catch (error) {
-    console.error('applyStratiosColors failed', error)
-    done('failed')
+    console.error('getGeneratedBrand failed', error)
+    return { error: 'Brand colors could not be worked out. Try again.' }
   }
-  done('reset')
 }
 
 export async function saveGraphColors(formData: FormData): Promise<void> {
   const orgId = await requireAdmin()
-  const colors: string[] = []
-  for (let slot = 1; slot <= CHART_SLOTS; slot++) {
-    const hex = normalizeHex(withHash(formData.get(`chart-${slot}`)))
-    if (!hex) done('graph-invalid')
-    colors.push(hex)
+  const source = String(formData.get('source') ?? 'manual')
+  let value: { colors: string[]; source: 'preset' | 'manual'; name?: string } | null = null
+  if (source !== 'generated') {
+    const colors: string[] = []
+    for (let slot = 1; slot <= CHART_SLOTS; slot++) {
+      const hex = normalizeHex(withHash(formData.get(`chart-${slot}`)))
+      if (!hex) done('graph-invalid')
+      colors.push(hex)
+    }
+    const preset = GRAPH_PRESETS.find((p) => p.name === formData.get('presetName'))
+    const unchangedPreset = source === 'preset' && preset !== undefined && preset.colors.every((c, i) => c === colors[i])
+    value = unchangedPreset ? { colors, source: 'preset', name: preset.name } : { colors, source: 'manual' }
   }
   try {
-    await saveChartColors(orgId, { colors, source: 'manual' })
+    // null = back to the colors generated from the site colors.
+    await saveChartColors(orgId, value)
   } catch (error) {
     console.error('saveGraphColors failed', error)
     done('failed')
   }
   done('graph-saved')
-}
-
-
-
-export async function applySitePreset(formData: FormData): Promise<void> {
-  const orgId = await requireAdmin()
-  const preset = SITE_PRESETS.find((p) => p.name === formData.get('preset'))
-  if (!preset) done('failed')
-  try {
-    // The preset's two colors become the organization's brand colors.
-    const { mode } = await loadOrganization(orgId)
-    const brand = { primary: preset.primary, accent: preset.accent }
-    await saveOrgTheme(orgId, deriveTheme(brand.primary, brand.accent, mode), { brand, mode })
-  } catch (error) {
-    console.error('applySitePreset failed', error)
-    done('failed')
-  }
-  done('site-preset')
-}
-
-export async function applyGraphPreset(formData: FormData): Promise<void> {
-  const orgId = await requireAdmin()
-  const preset = GRAPH_PRESETS.find((p) => p.name === formData.get('preset'))
-  if (!preset) done('failed')
-  try {
-    await saveChartColors(orgId, { colors: preset.colors, source: 'preset', name: preset.name })
-  } catch (error) {
-    console.error('applyGraphPreset failed', error)
-    done('failed')
-  }
-  done('graph-preset')
-}
-
-/** Switches graphs back to the colors generated from the site colors (nothing is looked up). */
-export async function applyGeneratedGraphColors(): Promise<void> {
-  const orgId = await requireAdmin()
-  try {
-    await saveChartColors(orgId, null)
-  } catch (error) {
-    console.error('applyGeneratedGraphColors failed', error)
-    done('failed')
-  }
-  done('graph-generated')
 }

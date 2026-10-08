@@ -1,12 +1,9 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { DEFAULT_BRAND, DEFAULT_THEME, THEME_ROLES, normalizeHex, parseBrandSettings, parseTheme } from '@/lib/theme'
-import { applyGeneratedColors, applyGeneratedGraphColors, applyGraphPreset, applySitePreset, applyStratiosColors, saveColors, saveGraphColors, setMode } from './actions'
-import { AiIcon } from '@/components/AiIcon'
-import { GRAPH_PRESETS, SITE_PRESETS } from '@/lib/presets'
+import { DEFAULT_THEME, normalizeHex, parseBrandSettings, parseTheme } from '@/lib/theme'
+import { getGeneratedBrand, saveColors, saveGraphColors } from './actions'
 import { GraphColorsEditor } from './GraphColorsEditor'
 import { chartColorsFromSite, displayChartColors, fitToSurface, parseChartColors } from '@/lib/chartColors'
-import { SwatchField } from './SwatchField'
-import { SubmitButton } from './SubmitButton'
+import { SiteColorsEditor } from './SiteColorsEditor'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,18 +11,8 @@ const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   welcome: { text: 'Your organization is set up. Check the colors below: you can switch to light mode, adjust any color, or use the Stratios colors.' },
   saved: { text: 'Colors saved.' },
   'saved-adjusted': { text: 'Colors saved. Some text colors were adjusted so they stay readable.' },
-  regenerated: { text: 'Generated brand colors applied.' },
-  reset: { text: 'Back to the Stratios colors.' },
   'graph-saved': { text: 'Graph colors saved.' },
-  'site-preset': { text: 'Site color scheme applied.' },
-  'graph-preset': { text: 'Graph palette applied.' },
-  'graph-generated': { text: 'Generated graph colors applied.' },
   'graph-invalid': { text: 'Every graph color needs to be a six-digit hex code, for example #1A1446.', error: true },
-  'mode-dark': { text: 'Switched to dark mode.' },
-  'mode-light': { text: 'Switched to light mode.' },
-  'no-domain': { text: 'This organization has no company domain to look up, so colors have to be set by hand.', error: true },
-  'no-key': { text: 'Automatic colors need an Anthropic API key in the settings file (ANTHROPIC_API_KEY).', error: true },
-  'generate-failed': { text: 'Brand colors could not be worked out. Try again, or set them by hand.', error: true },
   invalid: { text: 'Every color needs to be a six-digit hex code, for example #1A1446.', error: true },
   'not-admin': { text: 'Only administrators can change the colors.', error: true },
   failed: { text: 'That change could not be saved. Try again.', error: true },
@@ -46,6 +33,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const generatedRaw = organization.publicMetadata?.generatedBrand as { primary?: unknown; accent?: unknown } | undefined
   const generatedPrimary = normalizeHex(generatedRaw?.primary)
   const generatedAccent = normalizeHex(generatedRaw?.accent)
+  const generatedBrand = generatedPrimary && generatedAccent ? { primary: generatedPrimary, accent: generatedAccent } : null
   const storedChart = parseChartColors(organization.publicMetadata?.chartColors)
   const chartColors = displayChartColors(storedChart, theme, brand, mode)
   const generatedChartColors = fitToSurface(chartColorsFromSite(theme, brand, mode), theme.surface)
@@ -73,120 +61,31 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       <section className="panel">
         <h2>Site Colors</h2>
-        {isAdmin ? (
-          <form action={setMode} className="mode-toggle" aria-label="Color mode">
-            <button type="submit" name="mode" value="dark" aria-pressed={mode === 'dark'}>Dark</button>
-            <button type="submit" name="mode" value="light" aria-pressed={mode === 'light'}>Light</button>
-          </form>
-        ) : (
-          <p className="note">Mode: {mode === 'light' ? 'Light' : 'Dark'}</p>
-        )}
-        {isAdmin ? (
-          <p className="note">Switching mode rebuilds all ten colors from your brand colors, replacing any changes made by hand.</p>
-        ) : null}
-        <form action={saveColors}>
-          <fieldset disabled={!isAdmin} style={{ border: 0, padding: 0, margin: 0 }}>
-            <div className="swatches">
-              {THEME_ROLES.map((role) => (
-                <SwatchField key={role.key} name={role.key} label={role.label} defaultValue={theme[role.key]} />
-              ))}
-            </div>
-            {isAdmin ? (
-              <div className="button-row">
-                <SubmitButton className="btn btn-primary btn-small" pendingText="Saving…">Save colors</SubmitButton>
-              </div>
-            ) : (
-              <p className="note">Only administrators can change the colors.</p>
-            )}
-          </fieldset>
-        </form>
-        {isAdmin ? (
-          <div className="start-from">
-            <h3>Start from</h3>
-            <div className="preset-grid">
-              <form action={applyGeneratedColors}>
-                <SubmitButton className="preset" pendingText="Generating brand colors…">
-                  <>
-                    <span className="preset-dots" aria-hidden="true">
-                      {generatedPrimary && generatedAccent ? (
-                        <>
-                          <span style={{ background: generatedPrimary }} />
-                          <span style={{ background: generatedAccent }} />
-                        </>
-                      ) : null}
-                    </span>
-                    <AiIcon />
-                    Generated Brand Colors
-                  </>
-                </SubmitButton>
-              </form>
-              <form action={applyStratiosColors}>
-                <button type="submit" className="preset">
-                  <span className="preset-dots" aria-hidden="true">
-                    <span style={{ background: DEFAULT_BRAND.primary }} />
-                    <span style={{ background: DEFAULT_BRAND.accent }} />
-                  </span>
-                  Stratios
-                </button>
-              </form>
-              {SITE_PRESETS.map((preset) => (
-                <form key={preset.name} action={applySitePreset}>
-                  <input type="hidden" name="preset" value={preset.name} />
-                  <button type="submit" className="preset">
-                    <span className="preset-dots" aria-hidden="true">
-                      <span style={{ background: preset.primary }} />
-                      <span style={{ background: preset.accent }} />
-                    </span>
-                    {preset.name}
-                  </button>
-                </form>
-              ))}
-            </div>
-            <p className="note">Generated Brand Colors are the colors Stratios found for your organization when it was set up. Every option rebuilds all ten colors in the current mode.</p>
-          </div>
-        ) : null}
+        <SiteColorsEditor
+          key={`${mode}:${Object.values(theme).join()}`}
+          saved={theme}
+          savedMode={mode}
+          savedBrand={brand}
+          generatedBrand={generatedBrand}
+          canEdit={isAdmin}
+          saveAction={saveColors}
+          generateAction={getGeneratedBrand}
+        />
       </section>
 
       <section className="panel">
         <h2>Graph Colors</h2>
         <p className="note">Used in order for charts and graphs: Color 1 for the first series, Color 2 for the second, and so on. {chartSource}</p>
-        <GraphColorsEditor key={chartColors.join()} initial={chartColors} canEdit={isAdmin} action={saveGraphColors} />
-        {isAdmin ? (
-          <div className="start-from">
-            <h3>Start from</h3>
-            <div className="preset-grid">
-              <form action={applyGeneratedGraphColors}>
-                <SubmitButton className="preset" pendingText="Applying…">
-                  <>
-                    <span className="preset-bars" aria-hidden="true">
-                      {generatedChartColors.map((color, i) => (
-                        <span key={i} style={{ background: color }} />
-                      ))}
-                    </span>
-                    <AiIcon />
-                    Generated Brand Colors
-                  </>
-                </SubmitButton>
-              </form>
-              {GRAPH_PRESETS.map((preset) => (
-                <form key={preset.name} action={applyGraphPreset}>
-                  <input type="hidden" name="preset" value={preset.name} />
-                  <button type="submit" className="preset">
-                    <span className="preset-bars" aria-hidden="true">
-                      {preset.colors.map((color) => (
-                        <span key={color} style={{ background: color }} />
-                      ))}
-                    </span>
-                    {preset.name}
-                  </button>
-                </form>
-              ))}
-            </div>
-            <p className="note">Generated Brand Colors are built from your site colors: your accent color first, then muted shades related to your site&apos;s colors. They follow any change to the site colors.</p>
-          </div>
-        ) : null}
+        <GraphColorsEditor
+          key={`${storedChart?.source ?? 'generated'}:${chartColors.join()}`}
+          initial={chartColors}
+          initialSource={storedChart?.source === 'preset' ? 'preset' : storedChart ? 'manual' : 'generated'}
+          initialPresetName={storedChart?.source === 'preset' ? storedChart.name ?? null : null}
+          generatedColors={generatedChartColors}
+          canEdit={isAdmin}
+          action={saveGraphColors}
+        />
       </section>
-
     </>
   )
 }
