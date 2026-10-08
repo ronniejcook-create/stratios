@@ -1,7 +1,7 @@
 'use server'
 
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { generateBrandTheme, lookUpChartColors, saveChartColors, saveGeneratedBrand, saveOrgTheme } from '@/lib/brandColors'
+import { generateBrandTheme, lookUpChartColors, saveChartColors, saveGeneratedBrand, saveGeneratedChart, saveOrgTheme } from '@/lib/brandColors'
 import { getOnboardingState } from '@/lib/organizations'
 
 export type SetupOrganizationState = { error: string | null; organizationId: string | null }
@@ -46,7 +46,10 @@ export async function setupOrganization(
         await saveGeneratedBrand(organization.id, result.brand)
       }
       if (!result.theme) console.warn('Brand colors not set for', name, '-', result.error)
-      if (charts.colors) await saveChartColors(organization.id, { colors: charts.colors, source: 'history' })
+      if (charts.colors) {
+        await saveChartColors(organization.id, { colors: charts.colors, source: 'history' })
+        await saveGeneratedChart(organization.id, charts.colors)
+      }
     } catch (error) {
       console.error('Brand colors failed for', name, error)
     }

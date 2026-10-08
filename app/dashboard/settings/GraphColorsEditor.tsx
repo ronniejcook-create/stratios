@@ -5,6 +5,15 @@ import { SubmitButton } from './SubmitButton'
 
 // Example shares for the preview pie, largest first, so every color shows.
 const SHARES = [22, 18, 15, 13, 11, 9, 7, 5]
+// Example values for the preview bar chart.
+const BAR_VALUES = [64, 82, 47, 71, 38, 56, 29, 44]
+const BAR_MAX = 100
+
+/** A bar with 4px rounded top corners, anchored square to the baseline. */
+function barPath(x: number, width: number, top: number, bottom: number): string {
+  const r = Math.min(4, (bottom - top) / 2, width / 2)
+  return `M ${x} ${bottom} V ${top + r} Q ${x} ${top} ${x + r} ${top} H ${x + width - r} Q ${x + width} ${top} ${x + width} ${top + r} V ${bottom} Z`
+}
 
 function slicePath(cx: number, cy: number, r: number, start: number, end: number): string {
   const point = (angle: number) => [cx + r * Math.sin(angle), cy - r * Math.cos(angle)]
@@ -59,6 +68,7 @@ export function GraphColorsEditor({ initial, canEdit, action }: { initial: strin
           ))}
         </fieldset>
         <figure className="graph-preview">
+          <div className="graph-samples">
           <svg viewBox="0 0 220 220" width="220" height="220" role="img" aria-label="Sample pie chart using the eight graph colors">
             {slices.map((slice) => (
               <path key={slice.label} d={slice.d} fill={slice.color} stroke="var(--panel)" strokeWidth="2" strokeLinejoin="round">
@@ -66,13 +76,38 @@ export function GraphColorsEditor({ initial, canEdit, action }: { initial: strin
               </path>
             ))}
           </svg>
+          <svg viewBox="0 0 300 220" width="300" height="220" role="img" aria-label="Sample bar chart using the eight graph colors">
+            {[0, 50, 100].map((tick) => {
+              const y = 190 - (tick / BAR_MAX) * 170
+              return (
+                <g key={tick}>
+                  <line x1="28" x2="296" y1={y} y2={y} stroke="var(--line)" strokeWidth="1" />
+                  <text x="22" y={y + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{tick}</text>
+                </g>
+              )
+            })}
+            {BAR_VALUES.map((value, i) => {
+              const slot = 268 / BAR_VALUES.length
+              const width = slot - 10
+              const x = 32 + i * slot + 3
+              const top = 190 - (value / BAR_MAX) * 170
+              return (
+                <g key={i}>
+                  <path d={barPath(x, width, top, 190)} fill={shown[i]}>
+                    <title>{`Color ${i + 1}: ${value}`}</title>
+                  </path>
+                  <text x={x + width / 2} y="207" textAnchor="middle" fontSize="11" fill="var(--muted)">{i + 1}</text>
+                </g>
+              )
+            })}
+          </svg>
+          </div>
           <figcaption>
             <ul className="graph-legend">
               {slices.map((slice) => (
                 <li key={slice.label}>
                   <span className="legend-dot" style={{ background: slice.color }} aria-hidden="true" />
                   {slice.label}
-                  <span className="legend-share">{slice.share}%</span>
                 </li>
               ))}
             </ul>

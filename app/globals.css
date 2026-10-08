@@ -265,8 +265,10 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
   flex: 999 1 520px; min-width: 0; border: 0; padding: 0; margin: 0;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px;
 }
-.graph-preview { flex: 1 1 240px; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 16px; }
-.graph-legend { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 20px; font-size: 14px; color: var(--text); }
+.graph-preview { flex: 1 1 540px; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.graph-samples { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 24px; max-width: 100%; }
+.graph-samples svg { max-width: 100%; height: auto; }
+.graph-legend { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 20px; font-size: 14px; color: var(--text); }
 .graph-legend li { display: flex; align-items: center; gap: 8px; }
 .legend-dot { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 .legend-share { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -291,3 +293,5 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 .preset .ai-icon { flex: none; color: var(--link); margin-left: -4px; }
 .preset-dots:empty { display: none; }
 .preset[disabled] { opacity: 0.6; cursor: default; }
+
+@media (max-width: 600px) { .graph-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

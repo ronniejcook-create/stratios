@@ -284,6 +284,12 @@ export async function saveGeneratedBrand(organizationId: string, brand: BrandCol
   })
 }
 
+/** Keeps the graph colors found at set-up, so they can be applied again later without another lookup. */
+export async function saveGeneratedChart(organizationId: string, colors: string[]) {
+  const client = await clerkClient()
+  await client.organizations.updateOrganizationMetadata(organizationId, { publicMetadata: { generatedChart: { colors } } })
+}
+
 /** Saves (or with null, clears) an organization's graph colors. */
 export async function saveChartColors(
   organizationId: string,

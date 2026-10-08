@@ -1,9 +1,10 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { DEFAULT_BRAND, DEFAULT_THEME, THEME_ROLES, normalizeHex, parseBrandSettings, parseTheme } from '@/lib/theme'
-import { applyGeneratedColors, applyGraphPreset, applySitePreset, applyStratiosColors, lookUpGraphColors, resetGraphColors, saveColors, saveGraphColors, setMode } from './actions'
+import { applyGeneratedColors, applyGeneratedGraphColors, applyGraphPreset, applySitePreset, applyStratiosColors, saveColors, saveGraphColors, setMode } from './actions'
+import { AiIcon } from '@/components/AiIcon'
 import { GRAPH_PRESETS, SITE_PRESETS } from '@/lib/presets'
 import { GraphColorsEditor } from './GraphColorsEditor'
-import { displayChartColors, parseChartColors } from '@/lib/chartColors'
+import { deriveChartColors, displayChartColors, fitToSurface, parseChartColors } from '@/lib/chartColors'
 import { SwatchField } from './SwatchField'
 import { SubmitButton } from './SubmitButton'
 
@@ -18,9 +19,7 @@ const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   'graph-saved': { text: 'Graph colors saved.' },
   'site-preset': { text: 'Site color scheme applied.' },
   'graph-preset': { text: 'Graph palette applied.' },
-  'graph-found': { text: 'Found graph colors this organization has used in the past.' },
-  'graph-not-found': { text: 'No past graph colors were found for this organization, so graphs use muted colors built from its brand colors.' },
-  'graph-reset': { text: 'Graphs now use muted colors built from your brand colors.' },
+  'graph-generated': { text: 'Generated graph colors applied.' },
   'graph-invalid': { text: 'Every graph color needs to be a six-digit hex code, for example #1A1446.', error: true },
   'mode-dark': { text: 'Switched to dark mode.' },
   'mode-light': { text: 'Switched to light mode.' },
@@ -49,6 +48,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const generatedAccent = normalizeHex(generatedRaw?.accent)
   const storedChart = parseChartColors(organization.publicMetadata?.chartColors)
   const chartColors = displayChartColors(storedChart, brand, mode, theme.surface)
+  const generatedChart = parseChartColors({ ...(organization.publicMetadata?.generatedChart as object | undefined), source: 'history' })
+  const generatedChartColors = fitToSurface(generatedChart?.colors ?? deriveChartColors(brand, mode), theme.surface)
   const chartSource =
     storedChart?.source === 'history' ? 'These are graph colors this organization has used in the past.' :
     storedChart?.source === 'manual' ? 'These graph colors were set by hand.' :
@@ -115,10 +116,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                         </>
                       ) : null}
                     </span>
-                    <svg className="ai-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
-                      <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
-                    </svg>
+                    <AiIcon />
                     Generated Brand Colors
                   </>
                 </SubmitButton>
@@ -155,30 +153,37 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <p className="note">Used in order for charts and graphs: Color 1 for the first series, Color 2 for the second, and so on. {chartSource}</p>
         <GraphColorsEditor key={chartColors.join()} initial={chartColors} canEdit={isAdmin} action={saveGraphColors} />
         {isAdmin ? (
-          <div className="button-row">
-            <form action={lookUpGraphColors}>
-              <SubmitButton className="btn btn-ghost btn-small" pendingText="Looking up past graphs…">Look up past graph colors</SubmitButton>
-            </form>
-            <form action={resetGraphColors}>
-              <SubmitButton className="btn btn-ghost btn-small" pendingText="Resetting…">Build from brand colors</SubmitButton>
-            </form>
-          </div>
-        ) : null}
-        {isAdmin ? (
-          <div className="preset-grid">
-            {GRAPH_PRESETS.map((preset) => (
-              <form key={preset.name} action={applyGraphPreset}>
-                <input type="hidden" name="preset" value={preset.name} />
-                <button type="submit" className="preset">
-                  <span className="preset-bars" aria-hidden="true">
-                    {preset.colors.map((color) => (
-                      <span key={color} style={{ background: color }} />
-                    ))}
-                  </span>
-                  {preset.name}
-                </button>
+          <div className="start-from">
+            <h3>Start from</h3>
+            <div className="preset-grid">
+              <form action={applyGeneratedGraphColors}>
+                <SubmitButton className="preset" pendingText="Applying…">
+                  <>
+                    <span className="preset-bars" aria-hidden="true">
+                      {generatedChartColors.map((color, i) => (
+                        <span key={i} style={{ background: color }} />
+                      ))}
+                    </span>
+                    <AiIcon />
+                    Generated Brand Colors
+                  </>
+                </SubmitButton>
               </form>
-            ))}
+              {GRAPH_PRESETS.map((preset) => (
+                <form key={preset.name} action={applyGraphPreset}>
+                  <input type="hidden" name="preset" value={preset.name} />
+                  <button type="submit" className="preset">
+                    <span className="preset-bars" aria-hidden="true">
+                      {preset.colors.map((color) => (
+                        <span key={color} style={{ background: color }} />
+                      ))}
+                    </span>
+                    {preset.name}
+                  </button>
+                </form>
+              ))}
+            </div>
+            <p className="note">Generated Brand Colors are the graph colors from your organization&apos;s past reports found at set-up, or muted colors built from your brand colors if none were found.</p>
           </div>
         ) : null}
       </section>

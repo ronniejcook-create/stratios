@@ -3,8 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { generateBrandTheme, lookUpChartColors, saveChartColors, saveGeneratedBrand, saveOrgTheme } from '@/lib/brandColors'
-import { CHART_SLOTS } from '@/lib/chartColors'
+import { generateBrandTheme, saveChartColors, saveGeneratedBrand, saveOrgTheme } from '@/lib/brandColors'
+import { CHART_SLOTS, parseChartColors } from '@/lib/chartColors'
 import { GRAPH_PRESETS, SITE_PRESETS } from '@/lib/presets'
 import { DEFAULT_BRAND, THEME_ROLES, deriveTheme, ensureReadable, normalizeHex, parseBrandSettings, parseTheme, type OrgTheme } from '@/lib/theme'
 
@@ -145,40 +145,7 @@ export async function saveGraphColors(formData: FormData): Promise<void> {
   done('graph-saved')
 }
 
-export async function lookUpGraphColors(): Promise<void> {
-  const orgId = await requireAdmin()
-  let status = 'graph-found'
-  let detail: string | undefined
-  try {
-    const { name, domain } = await loadOrganization(orgId)
-    const result = await lookUpChartColors({ name, domain })
-    if (result.colors) {
-      await saveChartColors(orgId, { colors: result.colors, source: 'history' })
-    } else if (result.error) {
-      status = 'generate-failed'
-      detail = result.error
-    } else {
-      // Nothing known: fall back to graph colors built from the brand colors.
-      await saveChartColors(orgId, null)
-      status = 'graph-not-found'
-    }
-  } catch (error) {
-    console.error('lookUpGraphColors failed', error)
-    status = 'failed'
-  }
-  done(status, detail)
-}
 
-export async function resetGraphColors(): Promise<void> {
-  const orgId = await requireAdmin()
-  try {
-    await saveChartColors(orgId, null)
-  } catch (error) {
-    console.error('resetGraphColors failed', error)
-    done('failed')
-  }
-  done('graph-reset')
-}
 
 export async function applySitePreset(formData: FormData): Promise<void> {
   const orgId = await requireAdmin()
@@ -207,4 +174,23 @@ export async function applyGraphPreset(formData: FormData): Promise<void> {
     done('failed')
   }
   done('graph-preset')
+}
+
+/**
+ * Applies the organization's generated graph colors: the colors from its past
+ * reports found at set-up, or, if none were found, muted colors built from
+ * its brand colors. Nothing is looked up again.
+ */
+export async function applyGeneratedGraphColors(): Promise<void> {
+  const orgId = await requireAdmin()
+  try {
+    const client = await clerkClient()
+    const organization = await client.organizations.getOrganization({ organizationId: orgId })
+    const generated = parseChartColors({ ...(organization.publicMetadata?.generatedChart as object | undefined), source: 'history' })
+    await saveChartColors(orgId, generated ? { colors: generated.colors, source: 'history' } : null)
+  } catch (error) {
+    console.error('applyGeneratedGraphColors failed', error)
+    done('failed')
+  }
+  done('graph-generated')
 }
