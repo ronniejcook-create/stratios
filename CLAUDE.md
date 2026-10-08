@@ -41,8 +41,17 @@ work and how data is isolated; this file covers how we work and where things sta
    `/mnt/user-data/outputs/push-<timestamp>/` folder, write them with `device_commit_files`
    (force), then stage them back and diff (strip `\r`) to confirm. Reusing an old staging folder or
    running copies in parallel once delivered stale files.
-3. npm can't reach the registry from the cloud workspace, so code there can't be built or run;
-   say so and ask him to check the result on localhost or dev.stratios.app.
+3. npm can't reach the registry from the cloud workspace, so the app there can't be built or run;
+   say so and ask him to check the result on localhost or dev.stratios.app. What can be checked:
+   - SQL and the data layer: Postgres 16 is installed (`/usr/lib/postgresql/16/bin`, run as the
+     `postgres` user). Run the migrations on a scratch database and exercise `lib/records.ts` and
+     `lib/fields.ts` with `tsx`; they take a `client` argument so a small stand-in that shells out
+     to `psql` works. Use a role without BYPASSRLS to prove organizations can't see each other.
+   - Types: global `tsc` with hand-written stand-ins for next, react, Clerk and pg catches
+     mistakes in our own code.
+   - Layout: a static HTML mock using `app/globals.css`, screenshotted with Playwright.
+   - The real build: after pushing, `gh api repos/ronniejcook-create/stratios/commits/<sha>/status`
+     shows whether Vercel built it.
 
 ## What's built
 
@@ -59,7 +68,24 @@ work and how data is isolated; this file covers how we work and where things sta
   Portfolio, and Admin Settings for `org:admin` only) and a right AI Agents column
   (`AgentPanel.tsx`, Portfolio Analyst marked "Coming soon"). Header reads
   "Stratios *for Org name*" with a drop-down only when the user belongs to more than one org.
-- Assets list per organization (`app/dashboard/page.tsx`, `lib/assets.ts`) with row-level security.
+- Data design: agreed in the Claude Doc "Stratios Data Design" (two tabs: the design, and the
+  starter fields). Read it before touching the data model. Stage 1 of its build order is built:
+  - `db/migrations/003_fields.sql`: Asset > Property > Building > Floor > Unit, addresses,
+    source types, the field dictionary with 32 Stratios standard fields (org_id null), per-setting
+    organization overrides, golden-record values, change history and per-source values.
+  - `lib/records.ts` (hierarchy, keys), `lib/fields.ts` (dictionary, save with history),
+    `lib/fieldFormat.ts` (format and parse, browser-safe), `lib/assets.ts` (new asset = asset +
+    one property + one "Main Building").
+  - Assets list (`app/dashboard/page.tsx`) links to the asset page
+    (`app/dashboard/assets/[id]/`): fields grouped per asset, property and building, inline edit
+    with an optional note, per-field history, monthly fields with a month picker, and adding
+    properties, buildings, floors, units and addresses.
+  - Not built yet (later stages): sections and screens, lists, click-to-reference in the agent
+    panel, admin screens for fields, roles and field permissions, the Stratios-only master library
+    screen, documents and extraction, formulas (calculated fields show "Calculated later"),
+    tenants, leases, rent roll, cash flow, feeds and the source waterfall. Only Manual Entry
+    writes values today. Field groups are ordered by `GROUP_ORDER` in the asset page until
+    sections exist.
 - Members page (admins): invite by email, roles.
 - Admin Settings (`app/dashboard/settings/`, the page and nav item are titled "Org Colors"):
   - Site Colors: 10 roles, Dark/Light toggle, hex editing, 16 presets (`lib/presets.ts`),

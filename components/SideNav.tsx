@@ -52,7 +52,8 @@ export function SideNav({ isAdmin }: { isAdmin: boolean }) {
           <div className="side-title">{section.title}</div>
           <ul>
             {section.items.map((item) => {
-              const active = pathname === item.href
+              // An asset's own page still counts as being in Assets.
+              const active = pathname === item.href || (item.href === '/dashboard' && pathname.startsWith('/dashboard/assets/'))
               return (
                 <li key={item.href}>
                   <Link href={item.href} className={`side-link${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>

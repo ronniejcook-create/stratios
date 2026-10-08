@@ -483,3 +483,61 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 .shell-main .preset-bars { width: 56px; height: 14px; }
 
 @media (max-width: 760px) { .shell-main { padding: 16px 12px 48px; } }
+
+/* Asset page: records (property, building) and their fields */
+.crumbs { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--link-hover); }
+.record-key {
+  margin-left: 10px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px;
+  font-family: ui-monospace, monospace; font-size: 12px; color: var(--dim);
+}
+.record-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.record-head h2, .record-head h3 { font-weight: 600; color: var(--heading); }
+.record-head h3 { font-size: 15px; }
+.record-kind {
+  padding: 1px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line);
+  font-size: 12px; font-weight: 500; color: var(--muted);
+}
+.record-addresses { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.address-list { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.record-group { margin-top: 16px; }
+.record-group h3, .record-group h4 { margin: 0; font-family: var(--font-display), sans-serif; font-weight: 600; font-size: 13px; color: var(--muted); }
+.subrecord { margin-top: 16px; padding: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.subrecord .hex-field, .subrecord .field input, .subrecord .field select { background: var(--panel); }
+.record-add { margin-top: 12px; }
+.add-link { text-decoration: none; }
+.add-link:hover { text-decoration: underline; }
+
+.field-list { margin-top: 6px; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); column-gap: 28px; }
+.field-row { border-bottom: 1px solid var(--line); }
+.field-row.open { grid-column: 1 / -1; }
+.field-row.open .field-label { flex: 0 0 auto; margin-right: 16px; }
+.field-line { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.field-label { flex: 0 1 46%; min-width: 0; font-size: 13px; color: var(--muted); }
+.field-value { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; color: var(--heading); font-weight: 500; overflow-wrap: anywhere; }
+.field-unset { color: var(--dim); font-weight: 400; }
+.field-meta { font-size: 12px; font-weight: 400; color: var(--dim); }
+.field-hint { margin: -6px 0 8px; font-size: 12px; color: var(--dim); }
+.field-actions { flex: none; display: flex; gap: 10px; }
+.field-actions .link-button { font-size: 13px; }
+.field-edit, .inline-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 4px 0 12px; }
+.inline-form { padding: 8px 0 4px; }
+.field-edit .field, .inline-form .field { flex: 1 1 180px; }
+.field-edit .field-narrow, .inline-form .field-narrow { flex: 0 1 130px; }
+.inline-form .field-wide { flex: 2 1 240px; }
+.field-edit-buttons { display: flex; gap: 8px; }
+.field-edit .form-error, .inline-form .form-error { flex-basis: 100%; margin-top: 0; }
+.field-history { padding: 2px 0 12px; }
+.field-history ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.field-history li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 13px; }
+.history-change { color: var(--text); }
+.history-note { flex-basis: 100%; font-size: 12px; color: var(--muted); font-style: italic; }
+
+.floor-list { margin: 6px 0 4px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.floor-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-height: 32px; }
+.floor-name { font-weight: 500; color: var(--heading); min-width: 90px; }
+.unit-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.unit-chip { padding: 2px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--text); }
+.shell-main td a { font-weight: 500; }
+@media (max-width: 600px) { .field-list { grid-template-columns: minmax(0, 1fr); } .field-label { flex-basis: 40%; } }

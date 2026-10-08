@@ -14,8 +14,9 @@ start of the application: sign-in, invite-only organizations, and an organizatio
 
 1. Install: `npm install`
 2. Copy `.env.example` to `.env.local` and fill in the values (see below).
-3. Create the tables: run `db/migrations/001_init.sql` and then `db/migrations/002_organization_settings.sql` against your database
-   (`psql "$DATABASE_URL" -f db/migrations/001_init.sql`, or paste it into your provider's SQL editor).
+3. Create the tables: run every file in `db/migrations/` in number order against your database
+   (`psql "$DATABASE_URL" -f db/migrations/001_init.sql` and so on, or paste each into your provider's SQL editor).
+   Each file is safe to run more than once.
 4. Start: `npm run dev`, then open http://localhost:3000
 
 ## Clerk setup
@@ -50,6 +51,22 @@ had these in their Clerk metadata; they are copied into the table automatically 
 first time the organization is opened. Without `DATABASE_URL`, settings fall back to
 Clerk metadata.
 
+## How asset data is stored
+
+An asset holds properties, a property holds buildings, a building holds floors and a floor holds
+units. Those tables have very few fixed columns. Everything else is a dynamic field:
+
+- `field_definitions` is the field dictionary. Rows with no organization are the Stratios standard
+  fields, shared by everyone; `field_settings` holds one organization's changes to a standard
+  field, one setting at a time.
+- `field_values` is the golden record: one current value per record, field and month.
+- `field_value_history` gets a row only when a golden value changes.
+- `field_source_values` keeps what each source type (Manual Entry, Documents, Property Management
+  System and so on) currently says, whether or not it matches the golden record.
+
+Every record and field has a short permanent key (`120-main-st`, `rentableSquareFeet`). The full
+design, including the parts not built yet, is in the "Stratios Data Design" document.
+
 ## How data is isolated
 
 - `proxy.ts` requires sign-in for `/dashboard` and `/select-organization`.
@@ -74,7 +91,11 @@ app/page.tsx                 landing page
 app/sign-in, app/sign-up     Clerk sign-in and sign-up
 app/select-organization      choose, create or join an organization
 app/dashboard                signed-in app (assets, members)
-lib/db.ts, lib/assets.ts     organization-scoped database access
+app/dashboard/assets/[id]    one asset: its properties, buildings and fields
+lib/db.ts                    organization-scoped database access
+lib/records.ts               assets, properties, buildings, floors, units, addresses
+lib/fields.ts                field dictionary, values, history
+lib/fieldFormat.ts           showing and reading values (safe for the browser)
 db/migrations                SQL schema
 proxy.ts                     route protection
 ```

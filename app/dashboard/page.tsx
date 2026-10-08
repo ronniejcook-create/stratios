@@ -1,6 +1,8 @@
+import Link from 'next/link'
 import { auth } from '@clerk/nextjs/server'
-import { ASSET_TYPES, listAssets, type Asset } from '@/lib/assets'
-import { isDatabaseConfigured } from '@/lib/db'
+import { PROPERTY_TYPES } from '@/lib/assets'
+import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
+import { listAssets, type AssetSummary } from '@/lib/records'
 import { AddAssetForm } from './AddAssetForm'
 
 export const dynamic = 'force-dynamic'
@@ -15,19 +17,34 @@ export default async function AssetsPage() {
         <h1>Assets</h1>
         <div className="panel notice">
           <h2>Database Not Connected</h2>
-          <p>Set DATABASE_URL and run the migration in db/migrations to start adding assets. See the README.</p>
+          <p>Set DATABASE_URL and run the migrations in db/migrations to start adding assets. See the README.</p>
         </div>
       </>
     )
   }
 
-  let assets: Asset[] = []
-  let loadFailed = false
+  let assets: AssetSummary[] = []
+  let problem: 'none' | 'update-needed' | 'failed' = 'none'
   try {
-    assets = await listAssets(orgId)
+    assets = await withOrg(orgId, (client) => listAssets(client, orgId))
   } catch (error) {
     console.error('listAssets failed', error)
-    loadFailed = true
+    problem = isMissingSchema(error) ? 'update-needed' : 'failed'
+  }
+
+  if (problem === 'update-needed') {
+    return (
+      <>
+        <h1>Assets</h1>
+        <div className="panel notice">
+          <h2>Database Update Needed</h2>
+          <p>
+            Stratios now stores properties, buildings and dynamic fields. Run db/migrations/003_fields.sql against the
+            database, then reload this page. Existing assets are kept.
+          </p>
+        </div>
+      </>
+    )
   }
 
   return (
@@ -37,13 +54,13 @@ export default async function AssetsPage() {
 
       <section className="panel">
         <h2>Add an Asset</h2>
-        <AddAssetForm assetTypes={ASSET_TYPES} />
+        <AddAssetForm propertyTypes={PROPERTY_TYPES} />
       </section>
 
       <section className="panel">
         <h2>Your Organization&apos;s Assets</h2>
-        {loadFailed ? (
-          <p className="form-error" role="alert">The assets could not be loaded. Check the database connection and that the migration has been run.</p>
+        {problem === 'failed' ? (
+          <p className="form-error" role="alert">The assets could not be loaded. Check the database connection and that the migrations have been run.</p>
         ) : assets.length === 0 ? (
           <p className="empty">No assets yet. Add the first one above.</p>
         ) : (
@@ -52,6 +69,7 @@ export default async function AssetsPage() {
               <thead>
                 <tr>
                   <th scope="col">Name</th>
+                  <th scope="col">Properties</th>
                   <th scope="col">Type</th>
                   <th scope="col">City</th>
                 </tr>
@@ -59,9 +77,10 @@ export default async function AssetsPage() {
               <tbody>
                 {assets.map((asset) => (
                   <tr key={asset.id}>
-                    <td>{asset.name}</td>
-                    <td>{asset.asset_type}</td>
-                    <td>{asset.city ?? ''}</td>
+                    <td><Link href={`/dashboard/assets/${asset.id}`}>{asset.name}</Link></td>
+                    <td>{asset.propertyCount}</td>
+                    <td>{asset.propertyTypes.join(', ')}</td>
+                    <td>{asset.cities.join(', ')}</td>
                   </tr>
                 ))}
               </tbody>

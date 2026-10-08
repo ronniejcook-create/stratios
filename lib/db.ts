@@ -43,3 +43,12 @@ export async function withOrg<T>(orgId: string, fn: (client: PoolClient) => Prom
     client.release()
   }
 }
+
+/**
+ * True when a query failed because a table or column doesn't exist yet,
+ * which means the newest file in db/migrations hasn't been run.
+ */
+export function isMissingSchema(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code
+  return code === '42P01' || code === '42703'
+}
