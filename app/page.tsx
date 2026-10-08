@@ -50,7 +50,7 @@ export default function LandingPage() {
                 </svg>
                 <h3>Structure your assets</h3>
                 <p>
-                  Organise funds, properties and tenancies into one hierarchy, so every figure has a clear
+                  Organize funds, properties and tenancies into one hierarchy, so every figure has a clear
                   place in the portfolio.
                 </p>
               </article>

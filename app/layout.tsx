@@ -7,7 +7,7 @@ const display = Space_Grotesk({ subsets: ['latin'], weight: ['500', '600', '700'
 const body = IBM_Plex_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-body' })
 
 // Makes Clerk's sign-in, organization and account components use the
-// Stratios colours and fonts (see globals.css for the same palette).
+// Stratios colors and fonts (see globals.css for the same palette).
 const clerkAppearance = {
   variables: {
     colorPrimary: '#2ccbe8',

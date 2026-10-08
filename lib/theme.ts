@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 
-/** The ten colours that make up an organization's scheme, and the CSS variables each one drives. */
+/** The ten colors that make up an organization's scheme, and the CSS variables each one drives. */
 export const THEME_ROLES = [
   { key: 'background', label: 'Page background', vars: ['--bg'] },
   { key: 'backgroundDeep', label: 'Deep background', vars: ['--bg-deep'] },
@@ -39,7 +39,7 @@ export function normalizeHex(value: unknown): string | null {
   return HEX.test(hex) ? hex : null
 }
 
-/** Reads a stored theme, returning null unless every role holds a valid colour. */
+/** Reads a stored theme, returning null unless every role holds a valid color. */
 export function parseTheme(value: unknown): OrgTheme | null {
   if (!value || typeof value !== 'object') return null
   const source = value as Record<string, unknown>
@@ -73,7 +73,7 @@ function readableOn(background: string): string {
 }
 
 /**
- * Keeps text legible whatever colours were chosen: any text colour that falls
+ * Keeps text legible whatever colors were chosen: any text color that falls
  * below WCAG AA contrast against the backgrounds it sits on is replaced.
  */
 export function ensureReadable(input: OrgTheme): OrgTheme {

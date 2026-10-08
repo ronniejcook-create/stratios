@@ -209,10 +209,10 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
   padding: 14px 16px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; color: var(--heading); font-weight: 500;
 }
 
-/* Organization colour scheme (set per organization in the signed-in app) */
+/* Organization color scheme (set per organization in the signed-in app) */
 .org-theme {
   min-height: 100vh; background: var(--bg); color: var(--text);
-  /* Derived colours are recomputed here so they follow the organization's palette. */
+  /* Derived colors are recomputed here so they follow the organization's palette. */
   --accent-hover: color-mix(in srgb, var(--accent) 75%, var(--heading));
   --border-hover: color-mix(in srgb, var(--line-strong) 50%, var(--heading));
   --placeholder: color-mix(in srgb, var(--muted) 65%, var(--bg));
@@ -224,3 +224,7 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 .swatch .hex { font-size: 13px; color: var(--muted); font-family: ui-monospace, monospace; }
 .button-row { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 12px; }
 .note { margin-top: 10px; color: var(--muted); font-size: 15px; }
+
+/* Signed-in app: use the full window width with no side margins. */
+.org-theme .wrap { max-width: none; padding-left: 0; padding-right: 0; }
+.org-theme .app-main .panel { border-radius: 0; border-left: 0; border-right: 0; }

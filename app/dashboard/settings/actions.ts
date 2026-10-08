@@ -17,7 +17,7 @@ function done(status: string): never {
   redirect(`/dashboard/settings?status=${status}`)
 }
 
-export async function saveColours(formData: FormData): Promise<void> {
+export async function saveColors(formData: FormData): Promise<void> {
   const orgId = await requireAdmin()
   const theme = {} as OrgTheme
   for (const { key } of THEME_ROLES) {
@@ -30,13 +30,13 @@ export async function saveColours(formData: FormData): Promise<void> {
   try {
     await saveOrgTheme(orgId, readable)
   } catch (error) {
-    console.error('saveColours failed', error)
+    console.error('saveColors failed', error)
     done('failed')
   }
   done(adjusted ? 'saved-adjusted' : 'saved')
 }
 
-export async function regenerateColours(): Promise<void> {
+export async function regenerateColors(): Promise<void> {
   const orgId = await requireAdmin()
   let status = 'regenerated'
   try {
@@ -51,18 +51,18 @@ export async function regenerateColours(): Promise<void> {
       else status = process.env.ANTHROPIC_API_KEY ? 'generate-failed' : 'no-key'
     }
   } catch (error) {
-    console.error('regenerateColours failed', error)
+    console.error('regenerateColors failed', error)
     status = 'failed'
   }
   done(status)
 }
 
-export async function resetColours(): Promise<void> {
+export async function resetColors(): Promise<void> {
   const orgId = await requireAdmin()
   try {
     await saveOrgTheme(orgId, null)
   } catch (error) {
-    console.error('resetColours failed', error)
+    console.error('resetColors failed', error)
     done('failed')
   }
   done('reset')

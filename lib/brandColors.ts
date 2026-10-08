@@ -31,8 +31,8 @@ function toHex(r: number, g: number, b: number): string {
   return '#' + [r, g, b].map((n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')).join('')
 }
 
-/** Counts the colours used in a chunk of HTML or CSS. */
-function countColours(text: string, counts: Map<string, number>) {
+/** Counts the colors used in a chunk of HTML or CSS. */
+function countColors(text: string, counts: Map<string, number>) {
   for (const match of text.matchAll(/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g)) {
     const hex = normalizeHex(match[0])
     if (hex) counts.set(hex, (counts.get(hex) ?? 0) + 1)
@@ -43,17 +43,17 @@ function countColours(text: string, counts: Map<string, number>) {
   }
 }
 
-/** Looks at the company's home page for its title, theme colour and most-used colours. */
+/** Looks at the company's home page for its title, theme color and most-used colors. */
 async function readWebsite(domain: string) {
   const base = `https://${domain}`
   const html = (await fetchText(base, 600_000, 6000)) ?? (await fetchText(`https://www.${domain}`, 600_000, 6000))
-  if (!html) return { title: null, themeColor: null, colours: [] as string[] }
+  if (!html) return { title: null, themeColor: null, colors: [] as string[] }
 
   const title = html.match(/<title[^>]*>([^<]{1,200})<\/title>/i)?.[1]?.trim() ?? null
   const themeColor = normalizeHex(html.match(/<meta[^>]+name=["']theme-color["'][^>]*content=["']([^"']+)["']/i)?.[1])
 
   const counts = new Map<string, number>()
-  countColours(html, counts)
+  countColors(html, counts)
 
   // A few of the site's own stylesheets.
   const hrefs = [...html.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*href=["']([^"']+)["']/gi)].map((m) => m[1])
@@ -68,39 +68,39 @@ async function readWebsite(domain: string) {
     .filter((url): url is URL => !!url && url.protocol === 'https:' && (url.hostname === domain || url.hostname.endsWith(`.${domain}`)))
     .slice(0, 3)
   const sheets = await Promise.all(sameSite.map((url) => fetchText(url.toString(), 400_000, 5000)))
-  for (const css of sheets) if (css) countColours(css, counts)
+  for (const css of sheets) if (css) countColors(css, counts)
 
-  const colours = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([hex, n]) => `${hex} (${n})`)
-  return { title, themeColor, colours }
+  const colors = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([hex, n]) => `${hex} (${n})`)
+  return { title, themeColor, colors }
 }
 
 /**
- * Asks Claude for a ten-colour scheme that reflects the company behind
- * `domain`, using colours found on its website. Returns null if no API key is
- * configured or anything goes wrong; the app then keeps the Stratios colours.
+ * Asks Claude for a ten-color scheme that reflects the company behind
+ * `domain`, using colors found on its website. Returns null if no API key is
+ * configured or anything goes wrong; the app then keeps the Stratios colors.
  */
 export async function generateBrandTheme(domain: string): Promise<OrgTheme | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
-    console.warn('ANTHROPIC_API_KEY is not set; skipping brand colours')
+    console.warn('ANTHROPIC_API_KEY is not set; skipping brand colors')
     return null
   }
   if (!DOMAIN.test(domain)) return null
 
   const site = await readWebsite(domain)
   const roles = THEME_ROLES.map((r) => `- ${r.key}: ${r.label}`).join('\n')
-  const prompt = `Choose a colour scheme for a web application used by the employees of the organization that owns the domain "${domain}". It should feel like their own brand.
+  const prompt = `Choose a color scheme for a web application used by the employees of the organization that owns the domain "${domain}". It should feel like their own brand.
 
 What we found on https://${domain}:
 - Page title: ${site.title ?? 'unknown'}
 - theme-color meta tag: ${site.themeColor ?? 'none'}
-- Most used colours (count in brackets): ${site.colours.length ? site.colours.join(', ') : 'none found'}
+- Most used colors (count in brackets): ${site.colors.length ? site.colors.join(', ') : 'none found'}
 
-Return ten colours as #rrggbb hex for these roles:
+Return ten colors as #rrggbb hex for these roles:
 ${roles}
 
 Rules:
-- Base "accent" on the organization's main brand colour.
+- Base "accent" on the organization's main brand color.
 - Choose a light or dark background to suit the brand.
 - "heading" and "text" must contrast with background, backgroundDeep and surface by at least 7:1; "mutedText" by at least 4.5:1.
 - "accentText" must contrast with "accent" by at least 4.5:1.
@@ -127,7 +127,7 @@ Rules:
       }),
     })
     if (!response.ok) {
-      console.error('Brand colour request failed', response.status, await response.text().catch(() => ''))
+      console.error('Brand color request failed', response.status, await response.text().catch(() => ''))
       return null
     }
     const data = (await response.json()) as { content?: { type: string; text?: string }[] }
@@ -135,12 +135,12 @@ Rules:
     const theme = text ? parseTheme(JSON.parse(text)) : null
     return theme ? ensureReadable(theme) : null
   } catch (error) {
-    console.error('Brand colour generation failed', error)
+    console.error('Brand color generation failed', error)
     return null
   }
 }
 
-/** Saves (or with null, clears) an organization's colour scheme. */
+/** Saves (or with null, clears) an organization's color scheme. */
 export async function saveOrgTheme(organizationId: string, theme: OrgTheme | null) {
   const client = await clerkClient()
   await client.organizations.updateOrganizationMetadata(organizationId, {
