@@ -237,7 +237,7 @@ export type ChartLookupResult = { colors: string[]; error?: undefined } | { colo
 /**
  * Asks Claude whether the organization has used a recognizable color palette
  * for charts and graphs (annual reports, investor presentations, the data
- * visualization part of its brand guidelines). Returns ten colors, or null
+ * visualization part of its brand guidelines). Returns eight colors, or null
  * colors if it doesn't confidently know one.
  */
 export async function lookUpChartColors(organization: { name: string; domain: string | null }): Promise<ChartLookupResult> {
@@ -251,7 +251,7 @@ export async function lookUpChartColors(organization: { name: string; domain: st
 
 Set "known" to true only if you are confident about this specific organization's chart colors. Otherwise set "known" to false and return an empty list.
 
-If known, return exactly 10 colors as #rrggbb hex, in the order they are typically used (first data series first). If you know fewer than 10, continue with colors from the organization's wider brand palette, keeping neighbouring colors clearly distinguishable, including for color-blind readers.`,
+If known, return exactly 8 colors as #rrggbb hex, in the order they are typically used (first data series first). If you know fewer than 8, continue with colors from the organization's wider brand palette, keeping neighbouring colors clearly distinguishable, including for color-blind readers.`,
       {
         type: 'object',
         properties: {
@@ -264,7 +264,7 @@ If known, return exactly 10 colors as #rrggbb hex, in the order they are typical
     )
     if (answer.known !== true || !Array.isArray(answer.colors)) return { colors: null }
     const colors = answer.colors.map(normalizeHex).filter((c): c is string => !!c)
-    return colors.length >= 10 ? { colors: colors.slice(0, 10) } : { colors: null }
+    return colors.length >= 8 ? { colors: colors.slice(0, 8) } : { colors: null }
   } catch (error) {
     if (error instanceof ApiError) return { colors: null, error: error.message }
     console.error('Chart color lookup failed', error)

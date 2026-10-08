@@ -24,7 +24,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const theme = parseTheme(activeOrganization.publicMetadata?.theme) ?? DEFAULT_THEME
   const { brand, mode } = parseBrandSettings(activeOrganization.publicMetadata?.theme)
   const chartColors = displayChartColors(parseChartColors(activeOrganization.publicMetadata?.chartColors), brand, mode, theme.surface)
-  // Graph colors are available to every chart as --chart-1 … --chart-10.
+  // Graph colors are available to every chart as --chart-1 … --chart-8.
   const style = { ...themeToStyle(theme), ...Object.fromEntries(chartColors.map((c, i) => [`--chart-${i + 1}`, c])) }
   const current = { id: activeOrganization.id, name: activeOrganization.name }
 

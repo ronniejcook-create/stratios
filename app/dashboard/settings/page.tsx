@@ -16,8 +16,8 @@ const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   reset: { text: 'Back to the Stratios colors.' },
   'graph-saved': { text: 'Graph colors saved.' },
   'graph-found': { text: 'Found graph colors this organization has used in the past.' },
-  'graph-not-found': { text: 'No past graph colors were found for this organization, so graphs use colors built from your brand.' },
-  'graph-reset': { text: 'Graphs now use colors built from your brand.' },
+  'graph-not-found': { text: 'No past graph colors were found for this organization, so graphs use muted colors built from its brand colors.' },
+  'graph-reset': { text: 'Graphs now use muted colors built from your brand colors.' },
   'graph-invalid': { text: 'Every graph color needs to be a six-digit hex code, for example #1A1446.', error: true },
   'mode-dark': { text: 'Switched to dark mode.' },
   'mode-light': { text: 'Switched to light mode.' },
@@ -46,7 +46,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const chartSource =
     storedChart?.source === 'history' ? 'These are graph colors this organization has used in the past.' :
     storedChart?.source === 'manual' ? 'These graph colors were set by hand.' :
-    'These graph colors are built from your brand colors.'
+    'These are muted graph colors built from your brand colors.'
   const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
 
   return (

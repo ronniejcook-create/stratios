@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { SubmitButton } from './SubmitButton'
 
 // Example shares for the preview pie, largest first, so every color shows.
-const SHARES = [18, 15, 13, 11, 10, 9, 8, 7, 5, 4]
+const SHARES = [22, 18, 15, 13, 11, 9, 7, 5]
 
 function slicePath(cx: number, cy: number, r: number, start: number, end: number): string {
   const point = (angle: number) => [cx + r * Math.sin(angle), cy - r * Math.cos(angle)]
@@ -17,7 +17,7 @@ function slicePath(cx: number, cy: number, r: number, start: number, end: number
 const isHex = (value: string) => /^#?[0-9a-fA-F]{6}$/.test(value.trim())
 const asHex = (value: string) => `#${value.trim().replace(/^#/, '').toLowerCase()}`
 
-/** Ten editable graph colors with a live pie chart preview. */
+/** Eight editable graph colors with a live pie chart preview. */
 export function GraphColorsEditor({ initial, canEdit, action }: { initial: string[]; canEdit: boolean; action: (formData: FormData) => Promise<void> }) {
   const [values, setValues] = useState(initial.map((c) => c.toUpperCase()))
   const shown = values.map((v, i) => (isHex(v) ? asHex(v) : initial[i]))
@@ -59,7 +59,7 @@ export function GraphColorsEditor({ initial, canEdit, action }: { initial: strin
           ))}
         </fieldset>
         <figure className="graph-preview">
-          <svg viewBox="0 0 220 220" width="220" height="220" role="img" aria-label="Sample pie chart using the ten graph colors">
+          <svg viewBox="0 0 220 220" width="220" height="220" role="img" aria-label="Sample pie chart using the eight graph colors">
             {slices.map((slice) => (
               <path key={slice.label} d={slice.d} fill={slice.color} stroke="var(--panel)" strokeWidth="2" strokeLinejoin="round">
                 <title>{`${slice.label}: ${slice.share}%`}</title>
