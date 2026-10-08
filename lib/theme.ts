@@ -159,7 +159,7 @@ export function parseBrandSettings(value: unknown): { brand: BrandColors | null;
  * tinted to its brand.
  */
 export function deriveTheme(primary: string, accent: string, mode: ThemeMode = 'dark'): OrgTheme {
-  const [hue, brandSat] = hexToHsl(primary)
+  const [hue, brandSat, brandLight] = hexToHsl(primary)
   // Neutral brands (grey, black) stay neutral; colorful ones are tinted.
   const sat = (target: number) => Math.min(target, brandSat < 0.12 ? brandSat : target)
 
@@ -167,16 +167,35 @@ export function deriveTheme(primary: string, accent: string, mode: ThemeMode = '
     const background = hslToHex(hue, sat(0.3), 0.965)
     // Prefer the brand color that already stands out on white.
     const pick = [accent, primary].find((c) => contrast(c, '#ffffff') >= 3 && contrast(c, background) >= 3) ?? accent
+    // A dark brand color is used exactly for headings when it reads well enough.
+    const heading = contrast(primary, background) >= 7 ? primary : hslToHex(hue, sat(0.6), 0.13)
     return ensureReadable({
       background,
       backgroundDeep: hslToHex(hue, sat(0.3), 0.92),
       surface: '#ffffff',
       border: hslToHex(hue, sat(0.2), 0.87),
       borderStrong: hslToHex(hue, sat(0.15), 0.62),
-      heading: hslToHex(hue, sat(0.6), 0.13),
+      heading,
       text: hslToHex(hue, sat(0.35), 0.2),
       mutedText: hslToHex(hue, sat(0.18), 0.38),
       accent: pick,
+      accentText: '#ffffff',
+    })
+  }
+
+  // When the brand's main color is already a dark color, use it exactly as the
+  // page background and build the other shades around it.
+  if (brandLight >= 0.06 && brandLight <= 0.24) {
+    return ensureReadable({
+      background: primary,
+      backgroundDeep: hslToHex(hue, brandSat, Math.max(0.03, brandLight * 0.72)),
+      surface: hslToHex(hue, brandSat * 0.95, brandLight + 0.035),
+      border: hslToHex(hue, brandSat * 0.7, brandLight + 0.1),
+      borderStrong: hslToHex(hue, brandSat * 0.4, brandLight + 0.3),
+      heading: '#ffffff',
+      text: hslToHex(hue, sat(0.52), 0.935),
+      mutedText: hslToHex(hue, sat(0.3), 0.79),
+      accent,
       accentText: '#ffffff',
     })
   }

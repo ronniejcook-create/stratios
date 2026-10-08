@@ -247,3 +247,8 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 .mode-toggle button + button { border-left: 1px solid var(--line-strong); }
 .mode-toggle button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); cursor: default; }
 .mode-toggle button:not([aria-pressed="true"]):hover { background: var(--bg); }
+
+/* Hex color fields with a small preview chip */
+.hex-input { position: relative; display: flex; }
+.hex-input input { flex: 1; padding-left: 46px; font-family: ui-monospace, monospace; text-transform: uppercase; }
+.hex-chip { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; border-radius: 4px; border: 1px solid var(--line-strong); }
