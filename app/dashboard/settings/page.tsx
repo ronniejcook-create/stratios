@@ -18,11 +18,11 @@ const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   failed: { text: 'That change could not be saved. Try again.', error: true },
 }
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ status?: string; detail?: string }> }) {
   const { orgId, orgRole } = await auth()
   if (!orgId) return null // the layout redirects before this renders
   const isAdmin = orgRole === 'org:admin'
-  const { status } = await searchParams
+  const { status, detail } = await searchParams
   const message = status ? MESSAGES[status] : undefined
 
   const client = await clerkClient()
@@ -40,7 +40,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </p>
 
       {message ? (
-        <p className={message.error ? 'form-error' : 'form-ok'} role={message.error ? 'alert' : 'status'}>{message.text}</p>
+        <div role={message.error ? 'alert' : 'status'}>
+          <p className={message.error ? 'form-error' : 'form-ok'}>{message.text}</p>
+          {message.error && detail ? <p className="note">Reason: {detail}</p> : null}
+        </div>
       ) : null}
 
       <section className="panel">

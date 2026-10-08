@@ -12,9 +12,10 @@ async function requireAdmin() {
   return orgId
 }
 
-function done(status: string): never {
+function done(status: string, detail?: string): never {
   revalidatePath('/dashboard', 'layout')
-  redirect(`/dashboard/settings?status=${status}`)
+  const query = new URLSearchParams({ status, ...(detail ? { detail: detail.slice(0, 400) } : {}) })
+  redirect(`/dashboard/settings?${query.toString()}`)
 }
 
 export async function saveColors(formData: FormData): Promise<void> {
@@ -39,6 +40,7 @@ export async function saveColors(formData: FormData): Promise<void> {
 export async function regenerateColors(): Promise<void> {
   const orgId = await requireAdmin()
   let status = 'regenerated'
+  let detail: string | undefined
   try {
     const client = await clerkClient()
     const organization = await client.organizations.getOrganization({ organizationId: orgId })
@@ -46,15 +48,19 @@ export async function regenerateColors(): Promise<void> {
     if (!domain) {
       status = 'no-domain'
     } else {
-      const theme = await generateBrandTheme(domain)
-      if (theme) await saveOrgTheme(orgId, theme)
-      else status = process.env.ANTHROPIC_API_KEY ? 'generate-failed' : 'no-key'
+      const result = await generateBrandTheme(domain)
+      if (result.theme) {
+        await saveOrgTheme(orgId, result.theme)
+      } else {
+        status = process.env.ANTHROPIC_API_KEY ? 'generate-failed' : 'no-key'
+        detail = result.error
+      }
     }
   } catch (error) {
     console.error('regenerateColors failed', error)
     status = 'failed'
   }
-  done(status)
+  done(status, detail)
 }
 
 export async function resetColors(): Promise<void> {

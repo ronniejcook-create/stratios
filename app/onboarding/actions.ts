@@ -38,8 +38,9 @@ export async function setupOrganization(
     if (domain) {
       after(async () => {
         try {
-          const theme = await generateBrandTheme(domain)
-          if (theme) await saveOrgTheme(organization.id, theme)
+          const result = await generateBrandTheme(domain)
+          if (result.theme) await saveOrgTheme(organization.id, result.theme)
+          else console.warn('Brand colors not set for', domain, '-', result.error)
         } catch (error) {
           console.error('Brand colors failed for', domain, error)
         }

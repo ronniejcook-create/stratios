@@ -74,18 +74,37 @@ async function readWebsite(domain: string) {
   return { title, themeColor, colors }
 }
 
+export type BrandThemeResult = { theme: OrgTheme; error?: undefined } | { theme: null; error: string }
+
+/** Turns an Anthropic API error response into a short, readable reason (never includes the key). */
+function describeApiError(status: number, body: string): string {
+  let detail = ''
+  try {
+    const parsed = JSON.parse(body) as { error?: { type?: string; message?: string } }
+    detail = [parsed.error?.type, parsed.error?.message].filter(Boolean).join(': ')
+  } catch {
+    detail = body.slice(0, 200)
+  }
+  const hint =
+    status === 401 ? 'The API key was not accepted. Check it was pasted in full, with no spaces or quotes.' :
+    status === 402 || /credit balance/i.test(detail) ? 'The API account has no credit available.' :
+    status === 403 ? 'The API key does not have permission for this request.' :
+    status === 404 ? 'The AI model was not found for this account.' :
+    status === 429 ? 'Too many requests; wait a minute and try again.' :
+    status >= 500 ? 'The Claude API had a temporary problem; try again shortly.' :
+    'The Claude API rejected the request.'
+  return `${hint} (HTTP ${status}${detail ? `, ${detail}` : ''})`.slice(0, 400)
+}
+
 /**
  * Asks Claude for a ten-color scheme that reflects the company behind
- * `domain`, using colors found on its website. Returns null if no API key is
- * configured or anything goes wrong; the app then keeps the Stratios colors.
+ * `domain`, using colors found on its website. On failure returns a reason;
+ * the app then keeps the current colors.
  */
-export async function generateBrandTheme(domain: string): Promise<OrgTheme | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    console.warn('ANTHROPIC_API_KEY is not set; skipping brand colors')
-    return null
-  }
-  if (!DOMAIN.test(domain)) return null
+export async function generateBrandTheme(domain: string): Promise<BrandThemeResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim().replace(/^["']|["']$/g, '')
+  if (!apiKey) return { theme: null, error: 'No Anthropic API key is set (ANTHROPIC_API_KEY).' }
+  if (!DOMAIN.test(domain)) return { theme: null, error: `"${domain}" is not a website domain that can be looked up.` }
 
   const site = await readWebsite(domain)
   const roles = THEME_ROLES.map((r) => `- ${r.key}: ${r.label}`).join('\n')
@@ -127,16 +146,27 @@ Rules:
       }),
     })
     if (!response.ok) {
-      console.error('Brand color request failed', response.status, await response.text().catch(() => ''))
-      return null
+      const body = await response.text().catch(() => '')
+      const error = describeApiError(response.status, body)
+      console.error('Brand color request failed:', error)
+      return { theme: null, error }
     }
-    const data = (await response.json()) as { content?: { type: string; text?: string }[] }
+    const data = (await response.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string }
     const text = data.content?.find((block) => block.type === 'text')?.text
-    const theme = text ? parseTheme(JSON.parse(text)) : null
-    return theme ? ensureReadable(theme) : null
+    if (!text) return { theme: null, error: `Claude returned no colors (stop reason: ${data.stop_reason ?? 'unknown'}).` }
+    const theme = parseTheme(JSON.parse(text))
+    if (!theme) return { theme: null, error: 'Claude returned colors in an unexpected format.' }
+    return { theme: ensureReadable(theme) }
   } catch (error) {
     console.error('Brand color generation failed', error)
-    return null
+    const name = error instanceof Error ? error.name : ''
+    return {
+      theme: null,
+      error:
+        name === 'TimeoutError' ? 'The Claude API took too long to answer; try again.' :
+        name === 'SyntaxError' ? 'Claude returned colors in an unexpected format.' :
+        'Stratios could not reach the Claude API from this computer.',
+    }
   }
 }
 
