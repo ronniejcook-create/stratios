@@ -47,7 +47,8 @@ work and how data is isolated; this file covers how we work and where things sta
 ## What's built
 
 - Landing page (`app/page.tsx`) with the dot-to-dot "S" logo (`components/Logo.tsx`, also the
-  favicon). Sign up / Sign in open as Clerk pop-ups; `/sign-in` and `/sign-up` are Stratios-branded
+  favicon: `app/icon.svg` has a transparent background, white mark, navy on light browser themes).
+  Sign up / Sign in open as Clerk pop-ups; `/sign-in` and `/sign-up` are Stratios-branded
   pages (`components/AuthFrame.tsx`) for invitation and email links.
 - Clerk is styled with Stratios colors via `appearance` in `app/layout.tsx`. "Secured by Clerk"
   needs a paid Clerk plan to remove; "Development mode" goes away with production keys.
