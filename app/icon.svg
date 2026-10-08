@@ -1,27 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="1 1 26 26">
-  <!-- Transparent background. The mark is white, and switches to navy when the
-       browser uses a light theme so it never disappears on a white tab. -->
-  <style>
-    .mark { stroke: #ffffff; }
-    @media (prefers-color-scheme: light) { .mark { stroke: #0f1d31; } }
-  </style>
-  <defs>
-    <!-- Keeps the line from showing through the middle of each dot. -->
-    <mask id="dots" maskUnits="userSpaceOnUse" x="0" y="0" width="28" height="28">
-      <rect width="28" height="28" fill="#fff"/>
-      <g fill="#000">
-        <circle cx="22.5" cy="9.5" r="2.5"/>
-        <circle cx="14" cy="5" r="2.5"/>
-        <circle cx="5.5" cy="9.5" r="2.5"/>
-        <circle cx="14" cy="14" r="2.5"/>
-        <circle cx="22.5" cy="18.5" r="2.5"/>
-        <circle cx="14" cy="23" r="2.5"/>
-        <circle cx="5.5" cy="18.5" r="2.5"/>
-      </g>
-    </mask>
-  </defs>
-  <g class="mark" fill="none" stroke-width="1.8" stroke-linejoin="round">
-    <path d="M22.5 9.5L14 5L5.5 9.5L14 14L22.5 18.5L14 23L5.5 18.5" mask="url(#dots)"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#0f1d31"/>
+  <g transform="translate(2 2)" fill="#0f1d31" stroke="#e6edf7" stroke-width="1.8" stroke-linejoin="round">
+    <path d="M22.5 9.5L14 5L5.5 9.5L14 14L22.5 18.5L14 23L5.5 18.5" fill="none"/>
     <circle cx="22.5" cy="9.5" r="2.5"/>
     <circle cx="14" cy="5" r="2.5"/>
     <circle cx="5.5" cy="9.5" r="2.5"/>
