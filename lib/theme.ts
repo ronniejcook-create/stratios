@@ -67,6 +67,20 @@ export function contrast(a: string, b: string): number {
 
 const isDark = (hex: string) => luminance(hex) < 0.2
 
+function mix(a: string, b: string, amount: number): string {
+  const channel = (hex: string, i: number) => parseInt(hex.slice(i, i + 2), 16)
+  return '#' + [1, 3, 5].map((i) => Math.round(channel(a, i) * (1 - amount) + channel(b, i) * amount).toString(16).padStart(2, '0')).join('')
+}
+
+/** Lightens or darkens a color step by step (keeping its hue) until `ok` passes. */
+function shiftUntil(color: string, toward: string, ok: (c: string) => boolean): string {
+  for (let amount = 0.1; amount <= 1; amount += 0.1) {
+    const candidate = mix(color, toward, amount)
+    if (ok(candidate)) return candidate
+  }
+  return toward
+}
+
 /** Black-ish or white, whichever reads better on `background`. */
 function readableOn(background: string): string {
   return contrast('#ffffff', background) >= contrast('#0b1220', background) ? '#ffffff' : '#0b1220'
@@ -84,7 +98,7 @@ export function ensureReadable(input: OrgTheme): OrgTheme {
   if (worst(theme.heading) < 7) theme.heading = readableOn(theme.surface)
   if (worst(theme.text) < 4.5) theme.text = theme.heading
   if (worst(theme.mutedText) < 4.5) theme.mutedText = theme.text
-  if (worst(theme.accent) < 3) theme.accent = theme.heading
+  if (worst(theme.accent) < 3) theme.accent = shiftUntil(theme.accent, isDark(theme.surface) ? '#ffffff' : '#000000', (c) => worst(c) >= 3)
   if (contrast(theme.accentText, theme.accent) < 4.5) theme.accentText = readableOn(theme.accent)
   if (worst(theme.borderStrong) < 3) theme.borderStrong = theme.mutedText
   return theme

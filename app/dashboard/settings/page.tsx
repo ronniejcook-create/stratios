@@ -42,7 +42,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {message ? (
         <div role={message.error ? 'alert' : 'status'}>
           <p className={message.error ? 'form-error' : 'form-ok'}>{message.text}</p>
-          {message.error && detail ? <p className="note">Reason: {detail}</p> : null}
+          {detail ? <p className="note">{message.error ? `Reason: ${detail}` : detail}</p> : null}
         </div>
       ) : null}
 

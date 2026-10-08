@@ -74,7 +74,7 @@ async function readWebsite(domain: string) {
   return { title, themeColor, colors }
 }
 
-export type BrandThemeResult = { theme: OrgTheme; error?: undefined } | { theme: null; error: string }
+export type BrandThemeResult = { theme: OrgTheme; note?: string; error?: undefined } | { theme: null; error: string }
 
 /** Turns an Anthropic API error response into a short, readable reason (never includes the key). */
 function describeApiError(status: number, body: string): string {
@@ -108,23 +108,25 @@ export async function generateBrandTheme(domain: string): Promise<BrandThemeResu
 
   const site = await readWebsite(domain)
   const roles = THEME_ROLES.map((r) => `- ${r.key}: ${r.label}`).join('\n')
-  const prompt = `Choose a color scheme for a web application used by the employees of the organization that owns the domain "${domain}". It should feel like their own brand.
+  const websiteRead = site.title !== null || site.colors.length > 0
+  const prompt = `Choose a color scheme for a web application used by the employees of the organization that owns the domain "${domain}". It must feel unmistakably like their own brand.
 
-What we found on https://${domain}:
+First, use what you know about this organization and its brand identity (logo, signature colors). Well-known companies have recognizable brand colors; use them.
+${websiteRead ? `What we found on https://${domain} (use this to confirm or refine):
 - Page title: ${site.title ?? 'unknown'}
 - theme-color meta tag: ${site.themeColor ?? 'none'}
-- Most used colors (count in brackets): ${site.colors.length ? site.colors.join(', ') : 'none found'}
+- Most used colors (count in brackets): ${site.colors.length ? site.colors.join(', ') : 'none found'}` : `Their website could not be read, so rely on what you know about the brand.`}
 
 Return ten colors as #rrggbb hex for these roles:
 ${roles}
 
 Rules:
-- Base "accent" on the organization's main brand color.
-- Choose a light or dark background to suit the brand.
-- "heading" and "text" must contrast with background, backgroundDeep and surface by at least 7:1; "mutedText" by at least 4.5:1.
+- "accent" must be the organization's signature brand color, or a lighter or darker tint of it if needed for contrast, so it is instantly recognizable.
+- Tint the backgrounds toward the brand (for example a deep brand-colored dark background, or a light background with brand-colored accents), not a generic grey or navy, unless the brand itself is grey or navy.
+- "heading" and "text" must contrast with background, backgroundDeep and surface by at least 7:1; "mutedText" by at least 4.5:1; "accent" by at least 3:1.
 - "accentText" must contrast with "accent" by at least 4.5:1.
 - background, backgroundDeep and surface are close in lightness; border is subtle; borderStrong is clearly visible.
-- If you cannot tell what the brand looks like, return a calm, professional scheme.`
+- Only if you genuinely do not know the organization and found no colors, return a calm, professional scheme.`
 
   const schema = {
     type: 'object',
@@ -139,7 +141,7 @@ Rules:
       signal: AbortSignal.timeout(30000),
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001',
+        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }],
         output_config: { format: { type: 'json_schema', schema } },
@@ -156,7 +158,10 @@ Rules:
     if (!text) return { theme: null, error: `Claude returned no colors (stop reason: ${data.stop_reason ?? 'unknown'}).` }
     const theme = parseTheme(JSON.parse(text))
     if (!theme) return { theme: null, error: 'Claude returned colors in an unexpected format.' }
-    return { theme: ensureReadable(theme) }
+    return {
+      theme: ensureReadable(theme),
+      note: websiteRead ? undefined : `${domain} could not be read (many large sites block automated visits), so the colors are based on what Claude knows about the brand.`,
+    }
   } catch (error) {
     console.error('Brand color generation failed', error)
     const name = error instanceof Error ? error.name : ''

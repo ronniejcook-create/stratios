@@ -51,6 +51,7 @@ export async function regenerateColors(): Promise<void> {
       const result = await generateBrandTheme(domain)
       if (result.theme) {
         await saveOrgTheme(orgId, result.theme)
+        detail = result.note
       } else {
         status = process.env.ANTHROPIC_API_KEY ? 'generate-failed' : 'no-key'
         detail = result.error
