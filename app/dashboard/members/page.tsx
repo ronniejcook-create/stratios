@@ -45,7 +45,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
 
       {isAdmin ? (
         <section className="panel">
-          <h2>Invite a colleague</h2>
+          <h2>Invite a Colleague</h2>
           <InviteForm />
         </section>
       ) : null}
@@ -100,7 +100,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
 
       {invitations ? (
         <section className="panel">
-          <h2>Pending invitations</h2>
+          <h2>Pending Invitations</h2>
           {invitations.data.length === 0 ? (
             <p className="empty">No invitations are waiting to be accepted.</p>
           ) : (

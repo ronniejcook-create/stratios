@@ -16,7 +16,7 @@ export function AgentPanel() {
         <span className="agent-badge">Coming soon</span>
       </div>
       <div className="agent-empty">
-        <p className="agent-empty-title">Ask about your portfolio</p>
+        <p className="agent-empty-title">Ask About Your Portfolio</p>
         <p>
           The analyst will answer questions about your assets and the financial documents you upload, such as occupancy,
           rent roll changes or how a property is performing against budget.

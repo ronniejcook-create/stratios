@@ -167,7 +167,7 @@ export function GraphColorsEditor({
 
       {canEdit ? (
         <div className="start-from">
-          <h3>Start from</h3>
+          <h3>Start From</h3>
           <div className="preset-grid">
             <button type="button" className="preset" onClick={() => choose(generatedColors, 'generated', null)}>
               <span className="preset-bars" aria-hidden="true">

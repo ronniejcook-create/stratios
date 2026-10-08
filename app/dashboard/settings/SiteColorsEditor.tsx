@@ -147,7 +147,7 @@ export function SiteColorsEditor({ saved, savedMode, savedBrand, generatedBrand,
 
       {canEdit ? (
         <div className="start-from">
-          <h3>Start from</h3>
+          <h3>Start From</h3>
           {message ? <p className="form-error" role="alert">{message}</p> : null}
           <div className="preset-grid">
             <button type="button" className="preset" onClick={useGenerated} disabled={generating}>

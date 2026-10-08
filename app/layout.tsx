@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
-import { IBM_Plex_Sans, Space_Grotesk } from 'next/font/google'
+import { IBM_Plex_Sans, Inter } from 'next/font/google'
 import { ClerkProvider } from '@clerk/nextjs'
 import './globals.css'
 
-const display = Space_Grotesk({ subsets: ['latin'], weight: ['500', '600', '700'], variable: '--font-display' })
+// Headings, buttons and the logo text use Inter; body text uses IBM Plex Sans.
+const display = Inter({ subsets: ['latin'], variable: '--font-display' })
 const body = IBM_Plex_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-body' })
 
 // Makes Clerk's sign-in, organization and account components use the

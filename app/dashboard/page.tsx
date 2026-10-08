@@ -14,7 +14,7 @@ export default async function AssetsPage() {
       <>
         <h1>Assets</h1>
         <div className="panel notice">
-          <h2>Database not connected</h2>
+          <h2>Database Not Connected</h2>
           <p>Set DATABASE_URL and run the migration in db/migrations to start adding assets. See the README.</p>
         </div>
       </>
@@ -36,12 +36,12 @@ export default async function AssetsPage() {
       <p className="lede">Everyone in your organization sees this list.</p>
 
       <section className="panel">
-        <h2>Add an asset</h2>
+        <h2>Add an Asset</h2>
         <AddAssetForm assetTypes={ASSET_TYPES} />
       </section>
 
       <section className="panel">
-        <h2>Your organization&apos;s assets</h2>
+        <h2>Your Organization&apos;s Assets</h2>
         {loadFailed ? (
           <p className="form-error" role="alert">The assets could not be loaded. Check the database connection and that the migration has been run.</p>
         ) : assets.length === 0 ? (

@@ -50,7 +50,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <h1>Brand colors</h1>
+      <h1>Brand Colors</h1>
       <p className="lede">
         {stored ? `${organization.name} uses its own color scheme in Stratios.` : `${organization.name} uses the Stratios colors.`}
         {` Automatic colors come from ${organization.name}'s brand guidelines${domain ? `, or from ${domain} if those aren't known` : ''}.`}

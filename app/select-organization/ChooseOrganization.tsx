@@ -43,7 +43,7 @@ export function ChooseOrganization() {
   if (memberships.length === 0 && invitations.length === 0) {
     return (
       <>
-        <h1>No organization yet</h1>
+        <h1>No Organization Yet</h1>
         <p>You are not a member of an organization and have no invitations waiting.</p>
         <Link href="/onboarding" className="btn btn-primary">Continue</Link>
       </>
@@ -52,7 +52,7 @@ export function ChooseOrganization() {
 
   return (
     <>
-      <h1>Choose your organization</h1>
+      <h1>Choose Your Organization</h1>
       {error ? <p className="form-error" role="alert">{error}</p> : null}
 
       {invitations.length > 0 ? (

@@ -40,7 +40,7 @@ export function OrgMenu({ current, organizations }: { current: Org; organization
         </>
       }
     >
-      <div className="menu-heading">Switch organization</div>
+      <div className="menu-heading">Switch Organization</div>
       <div className="menu-current">{current.name}</div>
       {others.map((org) => (
         <button key={org.id} type="button" className="menu-item" onClick={() => switchTo(org.id)}>

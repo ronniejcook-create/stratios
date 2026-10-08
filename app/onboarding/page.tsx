@@ -33,13 +33,13 @@ export default async function OnboardingPage() {
       <main className="onboarding">
         {state.kind === 'unverified-email' ? (
           <section className="panel">
-            <h1>Verify your email</h1>
+            <h1>Verify Your Email</h1>
             <p>Your email address needs to be verified before you can continue. Check your inbox, then refresh this page.</p>
           </section>
         ) : state.kind === 'domain-taken' ? (
           <section className="panel">
             <div className="eyebrow">Already on Stratios</div>
-            <h1>{state.organizationName} already has an organization</h1>
+            <h1>{state.organizationName} Already Has an Organization</h1>
             <p>
               Your email address, {state.email}, belongs to <strong>{state.domain}</strong>, which is already set up.
               Ask an administrator at {state.organizationName} to invite you. Once they have, come back and you
@@ -50,7 +50,7 @@ export default async function OnboardingPage() {
         ) : (
           <section className="panel">
             <div className="eyebrow">Welcome</div>
-            <h1>Set up your organization</h1>
+            <h1>Set Up Your Organization</h1>
             {state.domain ? (
               <p>
                 You are the first person from <strong>{state.domain}</strong>. Name your organization and you will

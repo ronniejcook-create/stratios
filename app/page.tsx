@@ -59,7 +59,7 @@ export default async function LandingPage() {
                   <rect x="21" y="22" width="9" height="7" />
                   <path d="M16 10v6M6.5 22v-6h19v6" />
                 </svg>
-                <h3>Structure your assets</h3>
+                <h3>Structure Your Assets</h3>
                 <p>
                   Organize funds, properties and tenancies into one hierarchy, so every figure has a clear
                   place in the portfolio.
@@ -70,7 +70,7 @@ export default async function LandingPage() {
                   <path d="M7 3h12l6 6v20H7z" />
                   <path d="M19 3v6h6M11 15h10M11 19h10M11 23h6" />
                 </svg>
-                <h3>Documents into reviewable data</h3>
+                <h3>Documents Into Reviewable Data</h3>
                 <p>
                   Upload rent rolls, operating statements and budgets. Stratios extracts the numbers and
                   puts them in front of you to check before anything is saved.
@@ -81,7 +81,7 @@ export default async function LandingPage() {
                   <path d="M4 5h24v17H14l-6 5v-5H4z" />
                   <path d="M10 17l4-5 4 3 4-5" />
                 </svg>
-                <h3>Interrogate performance</h3>
+                <h3>Interrogate Performance</h3>
                 <p>
                   Ask the AI analyst questions in plain language and get answers drawn from your own
                   reviewed portfolio data.
@@ -98,17 +98,17 @@ export default async function LandingPage() {
             <ol className="row">
               <li className="step">
                 <div className="step-num">01</div>
-                <h3>Set up your portfolio</h3>
+                <h3>Set Up Your Portfolio</h3>
                 <p>Add your properties and arrange them the way you already report on them.</p>
               </li>
               <li className="step">
                 <div className="step-num">02</div>
-                <h3>Upload and review</h3>
+                <h3>Upload and Review</h3>
                 <p>Drop in financial documents. Check the extracted data against the source, correct it, and approve.</p>
               </li>
               <li className="step">
                 <div className="step-num">03</div>
-                <h3>Ask the analyst</h3>
+                <h3>Ask the Analyst</h3>
                 <p>Question performance across an asset or the whole portfolio, without building another spreadsheet.</p>
               </li>
             </ol>
