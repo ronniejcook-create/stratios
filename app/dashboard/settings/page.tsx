@@ -1,6 +1,8 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { DEFAULT_THEME, THEME_ROLES, parseBrandSettings, parseTheme } from '@/lib/theme'
-import { regenerateColors, resetColors, saveColors, setMode } from './actions'
+import { lookUpGraphColors, regenerateColors, resetColors, resetGraphColors, saveColors, saveGraphColors, setMode } from './actions'
+import { GraphColorsEditor } from './GraphColorsEditor'
+import { displayChartColors, parseChartColors } from '@/lib/chartColors'
 import { SwatchField } from './SwatchField'
 import { SubmitButton } from './SubmitButton'
 
@@ -12,6 +14,11 @@ const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   'saved-adjusted': { text: 'Colors saved. Some text colors were adjusted so they stay readable.' },
   regenerated: { text: 'New brand colors picked.' },
   reset: { text: 'Back to the Stratios colors.' },
+  'graph-saved': { text: 'Graph colors saved.' },
+  'graph-found': { text: 'Found graph colors this organization has used in the past.' },
+  'graph-not-found': { text: 'No past graph colors were found for this organization, so graphs use colors built from your brand.' },
+  'graph-reset': { text: 'Graphs now use colors built from your brand.' },
+  'graph-invalid': { text: 'Every graph color needs to be a six-digit hex code, for example #1A1446.', error: true },
   'mode-dark': { text: 'Switched to dark mode.' },
   'mode-light': { text: 'Switched to light mode.' },
   'no-domain': { text: 'This organization has no company domain to look up, so colors have to be set by hand.', error: true },
@@ -33,7 +40,13 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const organization = await client.organizations.getOrganization({ organizationId: orgId })
   const stored = parseTheme(organization.publicMetadata?.theme)
   const theme = stored ?? DEFAULT_THEME
-  const { mode } = parseBrandSettings(organization.publicMetadata?.theme)
+  const { mode, brand } = parseBrandSettings(organization.publicMetadata?.theme)
+  const storedChart = parseChartColors(organization.publicMetadata?.chartColors)
+  const chartColors = displayChartColors(storedChart, brand, mode, theme.surface)
+  const chartSource =
+    storedChart?.source === 'history' ? 'These are graph colors this organization has used in the past.' :
+    storedChart?.source === 'manual' ? 'These graph colors were set by hand.' :
+    'These graph colors are built from your brand colors.'
   const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
 
   return (
@@ -80,6 +93,22 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             )}
           </fieldset>
         </form>
+      </section>
+
+      <section className="panel">
+        <h2>Graph Colors</h2>
+        <p className="note">Used in order for charts and graphs: Color 1 for the first series, Color 2 for the second, and so on. {chartSource}</p>
+        <GraphColorsEditor key={chartColors.join()} initial={chartColors} canEdit={isAdmin} action={saveGraphColors} />
+        {isAdmin ? (
+          <div className="button-row">
+            <form action={lookUpGraphColors}>
+              <SubmitButton className="btn btn-ghost btn-small" pendingText="Looking up past graphs…">Look up past graph colors</SubmitButton>
+            </form>
+            <form action={resetGraphColors}>
+              <SubmitButton className="btn btn-ghost btn-small" pendingText="Resetting…">Build from brand colors</SubmitButton>
+            </form>
+          </div>
+        ) : null}
       </section>
 
       {isAdmin ? (

@@ -258,3 +258,15 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
   font-family: ui-monospace, monospace; font-size: 14px;
 }
 .hex-field[aria-invalid="true"] { border-color: var(--danger); }
+
+/* Graph colors */
+.graph-layout { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start; }
+.graph-fields {
+  flex: 999 1 520px; min-width: 0; border: 0; padding: 0; margin: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px;
+}
+.graph-preview { flex: 1 1 240px; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.graph-legend { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 20px; font-size: 14px; color: var(--text); }
+.graph-legend li { display: flex; align-items: center; gap: 8px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.legend-share { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }

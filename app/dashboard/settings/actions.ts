@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { generateBrandTheme, saveOrgTheme } from '@/lib/brandColors'
+import { generateBrandTheme, lookUpChartColors, saveChartColors, saveOrgTheme } from '@/lib/brandColors'
+import { CHART_SLOTS } from '@/lib/chartColors'
 import { DEFAULT_BRAND, THEME_ROLES, deriveTheme, ensureReadable, normalizeHex, parseBrandSettings, parseTheme, type OrgTheme } from '@/lib/theme'
 
 async function requireAdmin() {
@@ -108,4 +109,56 @@ export async function resetColors(): Promise<void> {
     done('failed')
   }
   done('reset')
+}
+
+export async function saveGraphColors(formData: FormData): Promise<void> {
+  const orgId = await requireAdmin()
+  const colors: string[] = []
+  for (let slot = 1; slot <= CHART_SLOTS; slot++) {
+    const hex = normalizeHex(withHash(formData.get(`chart-${slot}`)))
+    if (!hex) done('graph-invalid')
+    colors.push(hex)
+  }
+  try {
+    await saveChartColors(orgId, { colors, source: 'manual' })
+  } catch (error) {
+    console.error('saveGraphColors failed', error)
+    done('failed')
+  }
+  done('graph-saved')
+}
+
+export async function lookUpGraphColors(): Promise<void> {
+  const orgId = await requireAdmin()
+  let status = 'graph-found'
+  let detail: string | undefined
+  try {
+    const { name, domain } = await loadOrganization(orgId)
+    const result = await lookUpChartColors({ name, domain })
+    if (result.colors) {
+      await saveChartColors(orgId, { colors: result.colors, source: 'history' })
+    } else if (result.error) {
+      status = 'generate-failed'
+      detail = result.error
+    } else {
+      // Nothing known: fall back to graph colors built from the brand colors.
+      await saveChartColors(orgId, null)
+      status = 'graph-not-found'
+    }
+  } catch (error) {
+    console.error('lookUpGraphColors failed', error)
+    status = 'failed'
+  }
+  done(status, detail)
+}
+
+export async function resetGraphColors(): Promise<void> {
+  const orgId = await requireAdmin()
+  try {
+    await saveChartColors(orgId, null)
+  } catch (error) {
+    console.error('resetGraphColors failed', error)
+    done('failed')
+  }
+  done('graph-reset')
 }

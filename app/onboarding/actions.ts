@@ -1,7 +1,7 @@
 'use server'
 
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { generateBrandTheme, saveOrgTheme } from '@/lib/brandColors'
+import { generateBrandTheme, lookUpChartColors, saveChartColors, saveOrgTheme } from '@/lib/brandColors'
 import { getOnboardingState } from '@/lib/organizations'
 
 export type SetupOrganizationState = { error: string | null; organizationId: string | null }
@@ -34,10 +34,16 @@ export async function setupOrganization(
     // Pick and save the organization's dark-mode brand colors before opening
     // the app (by name first, its website second), so the very first page is
     // already in its colors. If this fails, it starts with the Stratios colors.
+    // Graph colors used in the organization's past reports are looked up at
+    // the same time; without them, graphs use colors built from the brand.
     try {
-      const result = await generateBrandTheme({ name, domain: state.domain }, 'dark')
+      const [result, charts] = await Promise.all([
+        generateBrandTheme({ name, domain: state.domain }, 'dark'),
+        lookUpChartColors({ name, domain: state.domain }),
+      ])
       if (result.theme) await saveOrgTheme(organization.id, result.theme, { brand: result.brand, mode: 'dark' })
       else console.warn('Brand colors not set for', name, '-', result.error)
+      if (charts.colors) await saveChartColors(organization.id, { colors: charts.colors, source: 'history' })
     } catch (error) {
       console.error('Brand colors failed for', name, error)
     }

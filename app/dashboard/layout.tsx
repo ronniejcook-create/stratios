@@ -4,7 +4,8 @@ import { auth, clerkClient } from '@clerk/nextjs/server'
 import { AccountMenu } from '@/components/AccountMenu'
 import { Logo } from '@/components/Logo'
 import { OrgMenu } from '@/components/OrgMenu'
-import { DEFAULT_THEME, parseTheme, themeToStyle } from '@/lib/theme'
+import { DEFAULT_THEME, parseBrandSettings, parseTheme, themeToStyle } from '@/lib/theme'
+import { displayChartColors, parseChartColors } from '@/lib/chartColors'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, userId, orgId, redirectToSignIn } = await auth()
@@ -21,10 +22,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   ])
   const organizations = memberships.data.map((m) => ({ id: m.organization.id, name: m.organization.name }))
   const theme = parseTheme(activeOrganization.publicMetadata?.theme) ?? DEFAULT_THEME
+  const { brand, mode } = parseBrandSettings(activeOrganization.publicMetadata?.theme)
+  const chartColors = displayChartColors(parseChartColors(activeOrganization.publicMetadata?.chartColors), brand, mode, theme.surface)
+  // Graph colors are available to every chart as --chart-1 … --chart-10.
+  const style = { ...themeToStyle(theme), ...Object.fromEntries(chartColors.map((c, i) => [`--chart-${i + 1}`, c])) }
   const current = { id: activeOrganization.id, name: activeOrganization.name }
 
   return (
-    <div className="org-theme" style={themeToStyle(theme)}>
+    <div className="org-theme" style={style}>
       <header className="site-header app-header">
         <div className="wrap">
           <Link href="/dashboard" className="brand">

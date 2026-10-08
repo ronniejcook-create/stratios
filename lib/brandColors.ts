@@ -232,6 +232,52 @@ ${COLOR_RULES}`,
   }
 }
 
+export type ChartLookupResult = { colors: string[]; error?: undefined } | { colors: null; error?: string }
+
+/**
+ * Asks Claude whether the organization has used a recognizable color palette
+ * for charts and graphs (annual reports, investor presentations, the data
+ * visualization part of its brand guidelines). Returns ten colors, or null
+ * colors if it doesn't confidently know one.
+ */
+export async function lookUpChartColors(organization: { name: string; domain: string | null }): Promise<ChartLookupResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim().replace(/^["']|["']$/g, '')
+  if (!apiKey) return { colors: null, error: 'No Anthropic API key is set (ANTHROPIC_API_KEY).' }
+  const { name, domain } = organization
+  try {
+    const answer = await askClaude(
+      apiKey,
+      `Has the organization "${name}"${domain ? ` (website: ${domain})` : ''} used a recognizable color palette for charts and graphs, for example in its annual reports, investor presentations, research publications, or the data-visualization section of its brand guidelines? This is often different from its main brand colors.
+
+Set "known" to true only if you are confident about this specific organization's chart colors. Otherwise set "known" to false and return an empty list.
+
+If known, return exactly 10 colors as #rrggbb hex, in the order they are typically used (first data series first). If you know fewer than 10, continue with colors from the organization's wider brand palette, keeping neighbouring colors clearly distinguishable, including for color-blind readers.`,
+      {
+        type: 'object',
+        properties: {
+          known: { type: 'boolean', description: 'True only if you confidently know this organization\'s chart colors' },
+          colors: { type: 'array', items: { type: 'string', description: '#rrggbb' } },
+        },
+        required: ['known', 'colors'],
+        additionalProperties: false,
+      },
+    )
+    if (answer.known !== true || !Array.isArray(answer.colors)) return { colors: null }
+    const colors = answer.colors.map(normalizeHex).filter((c): c is string => !!c)
+    return colors.length >= 10 ? { colors: colors.slice(0, 10) } : { colors: null }
+  } catch (error) {
+    if (error instanceof ApiError) return { colors: null, error: error.message }
+    console.error('Chart color lookup failed', error)
+    return { colors: null, error: 'The chart color lookup did not complete.' }
+  }
+}
+
+/** Saves (or with null, clears) an organization's graph colors. */
+export async function saveChartColors(organizationId: string, value: { colors: string[]; source: 'history' | 'brand' | 'manual' } | null) {
+  const client = await clerkClient()
+  await client.organizations.updateOrganizationMetadata(organizationId, { publicMetadata: { chartColors: value } })
+}
+
 /**
  * Saves (or with null, clears) an organization's color scheme, along with the
  * brand colors it was built from and its light/dark mode.
