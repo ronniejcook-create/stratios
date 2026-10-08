@@ -10,7 +10,8 @@ work and how data is isolated; this file covers how we work and where things sta
 - Use US spelling in the UI ("Color", "Organize").
 - Headers, nav items and panel titles use Title Case ("Brand Colors", "Add an Asset"); sentences,
   and helper text stay in sentence case. Buttons and menu items are Title Case too ("Add Asset").
-- Fonts: Inter for headings, buttons and the logo text; IBM Plex Sans for body text (`app/layout.tsx`).
+- Fonts: Satoshi for headings, buttons and the logo text (loaded from Fontshare with a `<link>` in
+  `app/layout.tsx`, named as `--font-display` in `globals.css`); IBM Plex Sans for body text.
 - Never ask him to paste secrets (Clerk secret key, database connection string, Anthropic API key)
   into the chat. Secrets live only in `.env.local` on his computer (created by `keys.bat`) and in
   Vercel environment variables.

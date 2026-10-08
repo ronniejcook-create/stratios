@@ -1,10 +1,11 @@
 import type { Metadata } from 'next'
-import { IBM_Plex_Sans, Inter } from 'next/font/google'
+import { IBM_Plex_Sans } from 'next/font/google'
 import { ClerkProvider } from '@clerk/nextjs'
 import './globals.css'
 
-// Headings, buttons and the logo text use Inter; body text uses IBM Plex Sans.
-const display = Inter({ subsets: ['latin'], variable: '--font-display' })
+// Body text uses IBM Plex Sans. Headings, buttons and the logo text use Satoshi, which is not on
+// Google Fonts: it is loaded from Fontshare below and named as --font-display in globals.css.
+const SATOSHI_CSS = 'https://api.fontshare.com/v2/css?f[]=satoshi@1&display=swap'
 const body = IBM_Plex_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-body' })
 
 // Makes Clerk's sign-in, organization and account components use the
@@ -41,7 +42,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable}`}>
+    <html lang="en" className={body.variable}>
+      <head>
+        <link rel="preconnect" href="https://api.fontshare.com" />
+        <link rel="preconnect" href="https://cdn.fontshare.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href={SATOSHI_CSS} />
+      </head>
       <body>
         <ClerkProvider appearance={clerkAppearance}>{children}</ClerkProvider>
       </body>
