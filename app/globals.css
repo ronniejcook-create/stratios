@@ -398,3 +398,17 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 
 /* Italic letters lean past their box; leave room so the last one isn't clipped. */
 .brand-org { padding-right: 0.2em; }
+
+/* "Stratios for <organization>", with a switcher for people in several organizations */
+.brand-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.brand-row > .brand-org { font-size: 16px; }
+.brand-row .menu { min-width: 0; }
+.org-switch {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; max-width: 100%; padding: 0 8px 0 4px;
+  background: none; border: 0; border-radius: 6px; color: var(--muted); cursor: pointer; font: inherit;
+}
+.org-switch .brand-org { font-size: 16px; }
+.org-switch:hover { background: var(--panel); color: var(--heading); }
+.org-switch svg { flex: none; }
+.brand-row .menu-panel { left: 0; right: auto; }
+@media (max-width: 760px) { .brand-row .brand-org { display: none; } .org-switch .brand-org { display: inline; max-width: 40vw; } }

@@ -34,18 +34,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <AppShell
         isAdmin={orgRole === 'org:admin'}
         brand={
-          <Link href="/dashboard" className="brand">
-            <Logo size={24} />
-            <span>Stratios</span>
-            <span className="brand-org">for {current.name}</span>
-          </Link>
+          <div className="brand-row">
+            <Link href="/dashboard" className="brand">
+              <Logo size={24} />
+              <span>Stratios</span>
+            </Link>
+            <OrgMenu current={current} organizations={organizations} />
+          </div>
         }
-        tools={
-          <>
-            <OrgMenu current={current} organizations={organizations} isAdmin={orgRole === 'org:admin'} />
-            <AccountMenu />
-          </>
-        }
+        tools={<AccountMenu />}
       >
         {children}
       </AppShell>
