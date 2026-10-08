@@ -136,18 +136,52 @@ function hslToHex(h: number, s: number, l: number): string {
   return '#' + [0, 8, 4].map((n) => Math.round(f(n) * 255).toString(16).padStart(2, '0')).join('')
 }
 
+export type ThemeMode = 'dark' | 'light'
+export type BrandColors = { primary: string; accent: string }
+
+/** The Stratios brand itself, used when an organization has no brand colors of its own. */
+export const DEFAULT_BRAND: BrandColors = { primary: '#0f1d31', accent: '#2ccbe8' }
+
+/** Reads the brand colors and light/dark mode stored alongside a scheme. */
+export function parseBrandSettings(value: unknown): { brand: BrandColors | null; mode: ThemeMode } {
+  const source = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
+  const primary = normalizeHex(source.brandPrimary)
+  const accent = normalizeHex(source.brandAccent)
+  return { brand: primary && accent ? { primary, accent } : null, mode: source.mode === 'light' ? 'light' : 'dark' }
+}
+
 /**
- * Builds a full scheme in the Stratios style (deep, dark backgrounds with
- * light text) from an organization's two brand colors: `primary` sets the hue
- * of the backgrounds, `accent` becomes the buttons and links.
- * Saturation and lightness follow the Stratios palette, so every organization
- * gets the same look, tinted to its brand.
+ * Builds a full scheme in the Stratios style from an organization's two brand
+ * colors: `primary` sets the hue of the backgrounds and text, `accent` becomes
+ * the buttons and links. Dark mode uses deep backgrounds with light text (the
+ * Stratios look); light mode uses pale backgrounds with dark text. Saturation
+ * and lightness are fixed, so every organization gets the same structure,
+ * tinted to its brand.
  */
-export function deriveTheme(primary: string, accent: string): OrgTheme {
+export function deriveTheme(primary: string, accent: string, mode: ThemeMode = 'dark'): OrgTheme {
   const [hue, brandSat] = hexToHsl(primary)
-  // Neutral brands (grey, black) stay neutral; colorful ones are tinted like Stratios's navy.
+  // Neutral brands (grey, black) stay neutral; colorful ones are tinted.
   const sat = (target: number) => Math.min(target, brandSat < 0.12 ? brandSat : target)
-  const theme: OrgTheme = {
+
+  if (mode === 'light') {
+    const background = hslToHex(hue, sat(0.3), 0.965)
+    // Prefer the brand color that already stands out on white.
+    const pick = [accent, primary].find((c) => contrast(c, '#ffffff') >= 3 && contrast(c, background) >= 3) ?? accent
+    return ensureReadable({
+      background,
+      backgroundDeep: hslToHex(hue, sat(0.3), 0.92),
+      surface: '#ffffff',
+      border: hslToHex(hue, sat(0.2), 0.87),
+      borderStrong: hslToHex(hue, sat(0.15), 0.62),
+      heading: hslToHex(hue, sat(0.6), 0.13),
+      text: hslToHex(hue, sat(0.35), 0.2),
+      mutedText: hslToHex(hue, sat(0.18), 0.38),
+      accent: pick,
+      accentText: '#ffffff',
+    })
+  }
+
+  return ensureReadable({
     background: hslToHex(hue, sat(0.53), 0.125),
     backgroundDeep: hslToHex(hue, sat(0.55), 0.09),
     surface: hslToHex(hue, sat(0.5), 0.16),
@@ -158,6 +192,5 @@ export function deriveTheme(primary: string, accent: string): OrgTheme {
     mutedText: hslToHex(hue, sat(0.3), 0.79),
     accent,
     accentText: '#ffffff',
-  }
-  return ensureReadable(theme)
+  })
 }

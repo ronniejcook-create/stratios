@@ -237,3 +237,13 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 
 /* Signed-in header sits on the deeper background for a little depth. */
 .org-theme .site-header { background: var(--bg-deep); }
+
+/* Light/dark switch on the Brand colors page */
+.mode-toggle { margin-top: 16px; display: inline-flex; border: 1px solid var(--line-strong); border-radius: 4px; overflow: hidden; }
+.mode-toggle button {
+  min-height: 44px; min-width: 96px; padding: 0 18px; border: 0; background: transparent; color: var(--text);
+  font-family: var(--font-display), sans-serif; font-weight: 600; font-size: 16px; cursor: pointer;
+}
+.mode-toggle button + button { border-left: 1px solid var(--line-strong); }
+.mode-toggle button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); cursor: default; }
+.mode-toggle button:not([aria-pressed="true"]):hover { background: var(--bg); }

@@ -1,5 +1,5 @@
 import { clerkClient } from '@clerk/nextjs/server'
-import { deriveTheme, normalizeHex, type OrgTheme } from './theme'
+import { deriveTheme, normalizeHex, type BrandColors, type OrgTheme, type ThemeMode } from './theme'
 
 const DOMAIN = /^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
 
@@ -74,7 +74,9 @@ async function readWebsite(domain: string) {
   return { title, themeColor, colors }
 }
 
-export type BrandThemeResult = { theme: OrgTheme; note?: string; error?: undefined } | { theme: null; error: string }
+export type BrandThemeResult =
+  | { theme: OrgTheme; brand: BrandColors; note?: string; error?: undefined }
+  | { theme: null; brand?: undefined; error: string }
 
 /** Turns an Anthropic API error response into a short, readable reason (never includes the key). */
 function describeApiError(status: number, body: string): string {
@@ -101,7 +103,7 @@ function describeApiError(status: number, body: string): string {
  * `domain`, using colors found on its website. On failure returns a reason;
  * the app then keeps the current colors.
  */
-export async function generateBrandTheme(domain: string): Promise<BrandThemeResult> {
+export async function generateBrandTheme(domain: string, mode: ThemeMode = 'dark'): Promise<BrandThemeResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim().replace(/^["']|["']$/g, '')
   if (!apiKey) return { theme: null, error: 'No Anthropic API key is set (ANTHROPIC_API_KEY).' }
   if (!DOMAIN.test(domain)) return { theme: null, error: `"${domain}" is not a website domain that can be looked up.` }
@@ -164,7 +166,8 @@ If you genuinely do not know the organization and found no colors, return primar
     const accent = normalizeHex(parsed.accent)
     if (!primary || !accent) return { theme: null, error: 'Claude returned colors in an unexpected format.' }
     return {
-      theme: deriveTheme(primary, accent),
+      theme: deriveTheme(primary, accent, mode),
+      brand: { primary, accent },
       note: websiteRead ? undefined : `${domain} could not be read (many large sites block automated visits), so the colors are based on what Claude knows about the brand.`,
     }
   } catch (error) {
@@ -180,10 +183,22 @@ If you genuinely do not know the organization and found no colors, return primar
   }
 }
 
-/** Saves (or with null, clears) an organization's color scheme. */
-export async function saveOrgTheme(organizationId: string, theme: OrgTheme | null) {
+/**
+ * Saves (or with null, clears) an organization's color scheme, along with the
+ * brand colors it was built from and its light/dark mode.
+ */
+export async function saveOrgTheme(
+  organizationId: string,
+  theme: OrgTheme | null,
+  settings: { brand?: BrandColors | null; mode?: ThemeMode } = {},
+) {
   const client = await clerkClient()
-  await client.organizations.updateOrganizationMetadata(organizationId, {
-    publicMetadata: { theme: theme ? { ...theme } : null },
-  })
+  const value = theme
+    ? {
+        ...theme,
+        mode: settings.mode ?? 'dark',
+        ...(settings.brand ? { brandPrimary: settings.brand.primary, brandAccent: settings.brand.accent } : {}),
+      }
+    : null
+  await client.organizations.updateOrganizationMetadata(organizationId, { publicMetadata: { theme: value } })
 }

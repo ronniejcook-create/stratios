@@ -1,6 +1,6 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { DEFAULT_THEME, THEME_ROLES, parseTheme } from '@/lib/theme'
-import { regenerateColors, resetColors, saveColors } from './actions'
+import { DEFAULT_THEME, THEME_ROLES, parseBrandSettings, parseTheme } from '@/lib/theme'
+import { regenerateColors, resetColors, saveColors, setMode } from './actions'
 import { SubmitButton } from './SubmitButton'
 
 export const dynamic = 'force-dynamic'
@@ -10,6 +10,8 @@ const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   'saved-adjusted': { text: 'Colors saved. Some text colors were adjusted so they stay readable.' },
   regenerated: { text: 'New colors picked from your website.' },
   reset: { text: 'Back to the Stratios colors.' },
+  'mode-dark': { text: 'Switched to dark mode.' },
+  'mode-light': { text: 'Switched to light mode.' },
   'no-domain': { text: 'This organization has no company domain to look up, so colors have to be set by hand.', error: true },
   'no-key': { text: 'Automatic colors need an Anthropic API key in the settings file (ANTHROPIC_API_KEY).', error: true },
   'generate-failed': { text: 'Colors could not be worked out from your website. Try again, or set them by hand.', error: true },
@@ -29,6 +31,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const organization = await client.organizations.getOrganization({ organizationId: orgId })
   const stored = parseTheme(organization.publicMetadata?.theme)
   const theme = stored ?? DEFAULT_THEME
+  const { mode } = parseBrandSettings(organization.publicMetadata?.theme)
   const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
 
   return (
@@ -47,7 +50,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       ) : null}
 
       <section className="panel">
-        <h2>Colors</h2>
+        <h2>Site Colors</h2>
+        {isAdmin ? (
+          <form action={setMode} className="mode-toggle" aria-label="Color mode">
+            <button type="submit" name="mode" value="dark" aria-pressed={mode === 'dark'}>Dark</button>
+            <button type="submit" name="mode" value="light" aria-pressed={mode === 'light'}>Light</button>
+          </form>
+        ) : (
+          <p className="note">Mode: {mode === 'light' ? 'Light' : 'Dark'}</p>
+        )}
+        {isAdmin ? (
+          <p className="note">Switching mode rebuilds all ten colors from your brand colors, replacing any changes made by hand.</p>
+        ) : null}
         <form action={saveColors}>
           <fieldset disabled={!isAdmin} style={{ border: 0, padding: 0, margin: 0 }}>
             <div className="swatches">
