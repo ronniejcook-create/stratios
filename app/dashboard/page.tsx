@@ -2,14 +2,15 @@ import Link from 'next/link'
 import { auth } from '@clerk/nextjs/server'
 import { PROPERTY_TYPES } from '@/lib/assets'
 import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
+import { loadAccess } from '@/lib/permissions'
 import { listAssets, type AssetSummary } from '@/lib/records'
 import { AddAssetForm } from './AddAssetForm'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AssetsPage() {
-  const { orgId } = await auth()
-  if (!orgId) return null // the layout redirects before this renders
+  const { orgId, userId, orgRole } = await auth()
+  if (!orgId || !userId) return null // the layout redirects before this renders
 
   if (!isDatabaseConfigured()) {
     return (
@@ -25,11 +26,21 @@ export default async function AssetsPage() {
 
   let assets: AssetSummary[] = []
   let problem: 'none' | 'update-needed' | 'failed' = 'none'
+  let canAdd = orgRole === 'org:admin'
   try {
     assets = await withOrg(orgId, (client) => listAssets(client, orgId))
   } catch (error) {
     console.error('listAssets failed', error)
     problem = isMissingSchema(error) ? 'update-needed' : 'failed'
+  }
+
+  // Kept separate so the list still shows if the roles tables aren't there yet.
+  if (!canAdd && problem === 'none') {
+    try {
+      canAdd = (await withOrg(orgId, (client) => loadAccess(client, orgId, userId, false))).canAddRecords
+    } catch (error) {
+      console.error('loadAccess failed', error)
+    }
   }
 
   if (problem === 'update-needed') {
@@ -52,17 +63,19 @@ export default async function AssetsPage() {
       <h1>Assets</h1>
       <p className="lede">Everyone in your organization sees this list.</p>
 
-      <section className="panel">
-        <h2>Add an Asset</h2>
-        <AddAssetForm propertyTypes={PROPERTY_TYPES} />
-      </section>
+      {canAdd ? (
+        <section className="panel">
+          <h2>Add an Asset</h2>
+          <AddAssetForm propertyTypes={PROPERTY_TYPES} />
+        </section>
+      ) : null}
 
       <section className="panel">
         <h2>Your Organization&apos;s Assets</h2>
         {problem === 'failed' ? (
           <p className="form-error" role="alert">The assets could not be loaded. Check the database connection and that the migrations have been run.</p>
         ) : assets.length === 0 ? (
-          <p className="empty">No assets yet. Add the first one above.</p>
+          <p className="empty">{canAdd ? 'No assets yet. Add the first one above.' : 'No assets yet.'}</p>
         ) : (
           <div className="table-scroll">
             <table>

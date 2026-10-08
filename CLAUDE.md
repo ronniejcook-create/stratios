@@ -108,8 +108,21 @@ work and how data is isolated; this file covers how we work and where things sta
     `listFields` applies them and exposes `modifiedSettings` and `standardValues`. An
     organization's own `section_fields` row for a field replaces the standard placement.
     Standard sections and screens can't be renamed, reordered or hidden yet.
-  - Not built yet (later stages): roles and field permissions (stage 3, part 2), the
-    Stratios-only master library screen (stage 3, part 3), documents and extraction, formulas
+  - Stage 3, part 2 is built: roles and field permissions.
+    `db/migrations/005_roles_and_permissions.sql` adds `roles`, `member_roles` and
+    `field_permissions`; logic is in `lib/permissions.ts`; admin screens are Admin Settings >
+    "Roles and Permissions" (`app/dashboard/roles/`).
+    - Clerk `org:admin` always has full access. Everyone else gets the built-in Member role
+      (one row per org with `is_member`, created on first use, default level **view**) plus any
+      roles an admin assigns. Levels are hidden / view / edit. A field's level per role is its
+      field rule, else its section's rule, else the role default; the most generous role wins.
+      Lists follow their section. A role whose default is edit may also add records and addresses.
+    - Enforced on the server: the asset page drops hidden fields before rendering (so they never
+      reach the browser) and marks view-only ones; every save action re-checks with `loadAccess`
+      and `sectionOfField`. History follows the field's level.
+    - Not done yet: the agent isn't connected, so "agents follow the same rules" and "a KPI built
+      from a hidden field is hidden" still have to be honored when the analyst and formulas arrive.
+  - Not built yet (later stages): the Stratios-only master library screen (stage 3, part 3), documents and extraction, formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
     single list cell yet (the history is stored).

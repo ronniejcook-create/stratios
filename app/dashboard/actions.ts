@@ -5,12 +5,13 @@ import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { PROPERTY_TYPES, createAssetWithDefaults } from '@/lib/assets'
 import { isMissingSchema, withOrg } from '@/lib/db'
+import { loadAccess } from '@/lib/permissions'
 
 export type AddAssetState = { error: string | null }
 
 export async function addAsset(_prev: AddAssetState, formData: FormData): Promise<AddAssetState> {
   // The organization always comes from the signed-in session, never the form.
-  const { userId, orgId } = await auth()
+  const { userId, orgId, orgRole } = await auth()
   if (!userId || !orgId) return { error: 'You need to be signed in to an organization.' }
 
   const name = String(formData.get('name') ?? '').trim()
@@ -21,16 +22,20 @@ export async function addAsset(_prev: AddAssetState, formData: FormData): Promis
   if (name.length > 200) return { error: 'The name is too long.' }
   if (!(PROPERTY_TYPES as readonly string[]).includes(propertyType)) return { error: 'Choose a property type.' }
 
-  let assetId: string
+  let assetId: string | null
   try {
-    assetId = await withOrg(orgId, (client) =>
-      createAssetWithDefaults(client, orgId, userId, { name, propertyType, city: city ? city.slice(0, 200) : null }),
-    )
+    assetId = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      if (!access.canAddRecords) return null
+      return createAssetWithDefaults(client, orgId, userId, { name, propertyType, city: city ? city.slice(0, 200) : null })
+    })
   } catch (error) {
     console.error('addAsset failed', error)
     if (isMissingSchema(error)) return { error: 'The database needs an update before assets can be added. Run the newest file in db/migrations.' }
     return { error: 'The asset could not be saved. Try again.' }
   }
+
+  if (!assetId) return { error: "You don't have permission to add assets." }
 
   revalidatePath('/dashboard')
   // Open the new asset so its details can be filled in.

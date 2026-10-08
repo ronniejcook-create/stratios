@@ -20,6 +20,8 @@ export type FieldView = {
   value: StoredValue | null
   period: string | null
   sourceName: string | null
+  /** False when the person's roles only let them see this field. */
+  canEdit: boolean
 }
 
 export type Target = {
@@ -150,7 +152,7 @@ function FieldRow({ target, field }: { target: Target; field: FieldView }) {
         <div className="field-actions">
           {field.calculated ? null : (
             <>
-              {editing ? null : <button type="button" className="link-button" onClick={startEdit}>Edit</button>}
+              {editing || !field.canEdit ? null : <button type="button" className="link-button" onClick={startEdit}>Edit</button>}
               <button type="button" className="link-button" aria-expanded={historyOpen} onClick={toggleHistory}>History</button>
             </>
           )}

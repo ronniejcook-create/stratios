@@ -6,7 +6,10 @@ import { PROPERTY_TYPES } from '@/lib/assets'
 import { withOrg } from '@/lib/db'
 import { listHistory, saveManualValue, type HistoryEntry } from '@/lib/fields'
 import { removeListRow, saveListRow } from '@/lib/lists'
+import { loadAccess, sectionOfField } from '@/lib/permissions'
 import { insertAddress, insertChild, isRecordType, isUuid, type AddressOwner } from '@/lib/records'
+
+const NO_PERMISSION = "You don't have permission to change this."
 
 // The organization always comes from the signed-in session, never from the
 // browser. Record ids from the browser are checked against that organization
@@ -23,7 +26,7 @@ export async function saveField(input: {
   raw: string
   note: string | null
 }): Promise<SaveFieldResult> {
-  const { userId, orgId } = await auth()
+  const { userId, orgId, orgRole } = await auth()
   if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
   const { recordType } = input
   if (!isRecordType(recordType) || !isUuid(input.recordId) || !isUuid(input.fieldId) || !isUuid(input.assetId)) {
@@ -31,16 +34,21 @@ export async function saveField(input: {
   }
 
   try {
-    const result = await withOrg(orgId, (client) =>
-      saveManualValue(client, orgId, userId, {
+    const result = await withOrg(orgId, async (client) => {
+      // The person's roles must allow editing this field.
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      const level = access.fieldLevel(input.fieldId, await sectionOfField(client, orgId, input.fieldId))
+      if (level === 'hidden') return { ok: false as const, error: 'That field could not be found.' }
+      if (level !== 'edit') return { ok: false as const, error: NO_PERMISSION }
+      return saveManualValue(client, orgId, userId, {
         recordType,
         recordId: input.recordId,
         fieldId: input.fieldId,
         month: input.month,
         raw: String(input.raw ?? ''),
         note: input.note,
-      }),
-    )
+      })
+    })
     if (!result.ok) return result
   } catch (error) {
     console.error('saveField failed', error)
@@ -56,18 +64,24 @@ export type HistoryRow = HistoryEntry & { changedByName: string }
 export type LoadHistoryResult = { ok: true; entries: HistoryRow[] } | { ok: false; error: string }
 
 export async function loadHistory(input: { recordType: string; recordId: string; fieldId: string }): Promise<LoadHistoryResult> {
-  const { userId, orgId } = await auth()
+  const { userId, orgId, orgRole } = await auth()
   if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
   const { recordType } = input
   if (!isRecordType(recordType) || !isUuid(input.recordId) || !isUuid(input.fieldId)) return { ok: false, error: 'That field could not be found.' }
 
-  let entries: HistoryEntry[]
+  let entries: HistoryEntry[] | null
   try {
-    entries = await withOrg(orgId, (client) => listHistory(client, orgId, recordType, input.recordId, input.fieldId))
+    entries = await withOrg(orgId, async (client) => {
+      // History follows the field's permission: a hidden field has no visible history.
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      if (access.fieldLevel(input.fieldId, await sectionOfField(client, orgId, input.fieldId)) === 'hidden') return null
+      return listHistory(client, orgId, recordType, input.recordId, input.fieldId)
+    })
   } catch (error) {
     console.error('loadHistory failed', error)
     return { ok: false, error: 'The history could not be loaded. Try again.' }
   }
+  if (!entries) return { ok: false, error: 'That field could not be found.' }
 
   // Show people's names instead of their account ids.
   const names = new Map<string, string>()
@@ -84,7 +98,8 @@ export async function loadHistory(input: { recordType: string; recordId: string;
       console.error('loadHistory: names could not be loaded', error)
     }
   }
-  return { ok: true, entries: entries.map((entry) => ({ ...entry, changedByName: names.get(entry.changedBy) ?? 'A member' })) }
+  const found = entries
+  return { ok: true, entries: found.map((entry) => ({ ...entry, changedByName: names.get(entry.changedBy) ?? 'A member' })) }
 }
 
 export type AddState = { error: string | null; done: number }
@@ -94,7 +109,7 @@ type ChildType = (typeof CHILD_TYPES)[number]
 
 /** Adds a property, building, floor or unit under its parent. */
 export async function addChild(prev: AddState, formData: FormData): Promise<AddState> {
-  const { userId, orgId } = await auth()
+  const { userId, orgId, orgRole } = await auth()
   if (!userId || !orgId) return { error: 'You need to be signed in to an organization.', done: prev.done }
 
   const type = String(formData.get('type') ?? '') as ChildType
@@ -113,7 +128,12 @@ export async function addChild(prev: AddState, formData: FormData): Promise<AddS
   }
 
   try {
-    const id = await withOrg(orgId, (client) => insertChild(client, orgId, userId, type, parentId, name, propertyType))
+    const id = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      if (!access.canAddRecords) return 'denied' as const
+      return insertChild(client, orgId, userId, type, parentId, name, propertyType)
+    })
+    if (id === 'denied') return { error: NO_PERMISSION, done: prev.done }
     if (!id) return { error: 'That could not be added.', done: prev.done }
   } catch (error) {
     console.error('addChild failed', error)
@@ -129,7 +149,7 @@ const ADDRESS_OWNERS = ['property', 'building', 'unit'] as const
 
 /** Adds an address to a property, building or unit. */
 export async function addAddress(prev: AddState, formData: FormData): Promise<AddState> {
-  const { userId, orgId } = await auth()
+  const { userId, orgId, orgRole } = await auth()
   if (!userId || !orgId) return { error: 'You need to be signed in to an organization.', done: prev.done }
 
   const ownerType = String(formData.get('ownerType') ?? '') as AddressOwner
@@ -145,7 +165,12 @@ export async function addAddress(prev: AddState, formData: FormData): Promise<Ad
   if (!input.street && !input.city) return { error: 'Enter at least a street or a city.', done: prev.done }
 
   try {
-    const added = await withOrg(orgId, (client) => insertAddress(client, orgId, userId, ownerType, ownerId, input))
+    const added = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      if (!access.canAddRecords) return 'denied' as const
+      return insertAddress(client, orgId, userId, ownerType, ownerId, input)
+    })
+    if (added === 'denied') return { error: NO_PERMISSION, done: prev.done }
     if (!added) return { error: 'That address could not be added.', done: prev.done }
   } catch (error) {
     console.error('addAddress failed', error)
@@ -168,7 +193,7 @@ export async function saveRow(input: {
   rowId: string | null
   values: Record<string, string>
 }): Promise<RowResult> {
-  const { userId, orgId } = await auth()
+  const { userId, orgId, orgRole } = await auth()
   if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
   const { recordType } = input
   if (!isRecordType(recordType) || !isUuid(input.recordId) || !isUuid(input.listId) || !isUuid(input.assetId) || (input.rowId !== null && !isUuid(input.rowId))) {
@@ -181,9 +206,16 @@ export async function saveRow(input: {
   }
 
   try {
-    const result = await withOrg(orgId, (client) =>
-      saveListRow(client, orgId, userId, { listId: input.listId, recordType, recordId: input.recordId, rowId: input.rowId, values }),
-    )
+    const result = await withOrg(orgId, async (client) => {
+      // A list follows the permission of the section it is shown in.
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      const list = await client.query('select section_id::text as section_id from field_lists where id = $1 and (org_id is null or org_id = $2)', [input.listId, orgId])
+      if (list.rows.length === 0) return { ok: false as const, error: 'That list could not be found.' }
+      const sectionId = list.rows[0].section_id as string | null
+      const level = sectionId ? access.sectionLevel(sectionId) : access.fieldLevel(input.listId, null)
+      if (level !== 'edit') return { ok: false as const, error: NO_PERMISSION }
+      return saveListRow(client, orgId, userId, { listId: input.listId, recordType, recordId: input.recordId, rowId: input.rowId, values })
+    })
     if (!result.ok) return result
   } catch (error) {
     console.error('saveRow failed', error)
@@ -196,12 +228,26 @@ export async function saveRow(input: {
 
 /** Removes an entry from a list. Its values and history are kept in the database. */
 export async function removeRow(input: { assetId: string; rowId: string }): Promise<RowResult> {
-  const { userId, orgId } = await auth()
+  const { userId, orgId, orgRole } = await auth()
   if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
   if (!isUuid(input.rowId) || !isUuid(input.assetId)) return { ok: false, error: 'That entry could not be found.' }
 
   try {
-    const removed = await withOrg(orgId, (client) => removeListRow(client, orgId, userId, input.rowId))
+    const removed = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      const row = await client.query(
+        `select l.id::text as list_id, l.section_id::text as section_id
+         from field_list_rows r join field_lists l on l.id = r.list_id
+         where r.id = $1 and r.org_id = $2`,
+        [input.rowId, orgId],
+      )
+      if (row.rows.length === 0) return false
+      const sectionId = row.rows[0].section_id as string | null
+      const level = sectionId ? access.sectionLevel(sectionId) : access.fieldLevel(row.rows[0].list_id, null)
+      if (level !== 'edit') return 'denied' as const
+      return removeListRow(client, orgId, userId, input.rowId)
+    })
+    if (removed === 'denied') return { ok: false, error: NO_PERMISSION }
     if (!removed) return { ok: false, error: 'That entry could not be found.' }
   } catch (error) {
     console.error('removeRow failed', error)

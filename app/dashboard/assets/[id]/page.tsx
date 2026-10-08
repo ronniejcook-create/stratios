@@ -7,6 +7,7 @@ import { EMPTY_VALUE } from '@/lib/fieldFormat'
 import { listFields, listSourceTypes, listValues, type FieldDefinition, type FieldValue } from '@/lib/fields'
 import { listScreens, type Screen, type Section } from '@/lib/layout'
 import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from '@/lib/lists'
+import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
 import { AddAddressForm, AddChildForm } from './AddForms'
 import { FieldGroup, type FieldView, type Target } from './FieldGroup'
@@ -23,6 +24,7 @@ type Loaded = {
   screens: Screen[]
   lists: ListDefinition[]
   rows: ListRow[]
+  access: Access
 }
 
 /** One record on the page, with what is needed to show and save its fields. */
@@ -53,8 +55,8 @@ export default async function AssetPage({
   params: Promise<{ id: string }>
   searchParams: Promise<{ screen?: string }>
 }) {
-  const { orgId } = await auth()
-  if (!orgId) return null // the layout redirects before this renders
+  const { orgId, userId, orgRole } = await auth()
+  if (!orgId || !userId) return null // the layout redirects before this renders
   const { id } = await params
   const { screen: screenKey } = await searchParams
   if (!isDatabaseConfigured()) notFound()
@@ -74,7 +76,8 @@ export default async function AssetPage({
       const screens = await listScreens(client, orgId)
       const lists = await listLists(client, orgId)
       const rows = await listRows(client, orgId, recordIds)
-      return { tree, fields, values, sourceNames: new Map(sourceTypes.map((source) => [source.key, source.name])), screens, lists, rows }
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      return { tree, fields, values, sourceNames: new Map(sourceTypes.map((source) => [source.key, source.name])), screens, lists, rows, access }
     })
   } catch (error) {
     console.error('AssetPage failed', error)
@@ -85,7 +88,7 @@ export default async function AssetPage({
           <h2>{isMissingSchema(error) ? 'Database Update Needed' : 'This Asset Could Not Be Loaded'}</h2>
           <p>
             {isMissingSchema(error)
-              ? 'Run db/migrations/004_sections_and_lists.sql against the database (and 003_fields.sql first, if that has not been run), then reload this page.'
+              ? 'Run the newest files in db/migrations against the database, in number order, then reload this page.'
               : 'Check the database connection and try again.'}
           </p>
         </div>
@@ -93,7 +96,7 @@ export default async function AssetPage({
     )
   }
   if (!loaded) notFound()
-  const { tree, fields, values, sourceNames, screens, lists, rows } = loaded
+  const { tree, fields, values, sourceNames, screens, lists, rows, access } = loaded
 
   // "Made By" on a new comment starts as the signed-in person's name.
   const user = await currentUser()
@@ -102,7 +105,7 @@ export default async function AssetPage({
   const fieldById = new Map(fields.map((field) => [field.id, field]))
   const placed = new Set(screens.flatMap((candidate) => candidate.sections.flatMap((section) => section.fieldIds)))
 
-  const viewOf = (field: FieldDefinition, record: RecordContext): FieldView => {
+  const viewOf = (field: FieldDefinition, record: RecordContext, canEdit: boolean): FieldView => {
     // Values arrive newest month first, so the first match is the latest.
     const stored = values.find((value) => value.recordId === record.id && value.fieldId === field.id)
     let value = stored ? { text: stored.text, number: stored.number, date: stored.date, bool: stored.bool } : null
@@ -123,6 +126,7 @@ export default async function AssetPage({
       value,
       period: stored?.period ?? null,
       sourceName: stored ? sourceNames.get(stored.sourceType) ?? null : null,
+      canEdit,
     }
   }
 
@@ -134,11 +138,26 @@ export default async function AssetPage({
     recordName: record.name,
   })
 
-  /** What goes inside one section for one record: its fields, or its lists. */
+  /**
+   * The fields of one record the person may see, each marked as editable or
+   * not. Hidden fields are dropped here, so they never reach the browser.
+   */
+  const visibleViews = (candidates: FieldDefinition[], record: RecordContext, sectionId: string | null): FieldView[] =>
+    candidates.flatMap((field) => {
+      const level = access.fieldLevel(field.id, sectionId)
+      return level === 'hidden' ? [] : [viewOf(field, record, level === 'edit')]
+    })
+
+  /**
+   * What goes inside one section for one record: its fields, or its lists.
+   * Null when the person may not see any of it, so the section is left out.
+   */
   const sectionBody = (section: Section, record: RecordContext) => {
     if (section.displayStyle === 'list') {
+      const level = access.sectionLevel(section.id)
+      if (level === 'hidden') return null
       const sectionLists = lists.filter((list) => list.sectionId === section.id && list.appliesTo === record.type)
-      if (sectionLists.length === 0) return <p className="note">No list is set up for this section yet.</p>
+      if (sectionLists.length === 0) return access.admin ? <p className="note">No list is set up for this section yet.</p> : null
       return sectionLists.map((list) => {
         const columns = fields.filter((field) => field.listId === list.id)
         const sortField = columns.find((column) => column.key === list.sortFieldKey)
@@ -163,6 +182,7 @@ export default async function AssetPage({
             }))}
             rows={listRowsForRecord.map((row) => ({ id: row.id, rowNumber: row.rowNumber, values: row.values }))}
             currentUserName={currentUserName}
+            canEdit={level === 'edit'}
           />
         )
       })
@@ -170,7 +190,10 @@ export default async function AssetPage({
     const sectionFields = section.fieldIds
       .map((fieldId) => fieldById.get(fieldId))
       .filter((field): field is FieldDefinition => Boolean(field) && field!.appliesTo === record.type && !field!.listId)
-    return <FieldGroup target={targetOf(record)} fields={sectionFields.map((field) => viewOf(field, record))} style={section.displayStyle === 'tiles' ? 'tiles' : 'form'} />
+    const views = visibleViews(sectionFields, record, section.id)
+    // An empty section is only worth showing to someone who can fill it.
+    if (views.length === 0 && !access.admin) return null
+    return <FieldGroup target={targetOf(record)} fields={views} style={section.displayStyle === 'tiles' ? 'tiles' : 'form'} />
   }
 
   const assetRecord: RecordContext = { type: 'asset', id: tree.id, name: tree.name, ref: `asset:${tree.key}`, core: { name: tree.name } }
@@ -188,20 +211,23 @@ export default async function AssetPage({
     const buildingSections = sectionsFor('building')
     const showProperties = isFirstScreen || propertySections.length > 0 || buildingSections.length > 0
     const showBuildings = isFirstScreen || buildingSections.length > 0
-    const assetUnplaced = unplacedFor('asset')
+    const assetUnplaced = visibleViews(unplacedFor('asset'), assetRecord, null)
 
     return (
       <>
-        {assetSections.map((section) => (
-          <section key={section.id} className="panel">
-            <h2>{section.name}</h2>
-            {sectionBody(section, assetRecord)}
-          </section>
-        ))}
+        {assetSections.map((section) => {
+          const body = sectionBody(section, assetRecord)
+          return body ? (
+            <section key={section.id} className="panel">
+              <h2>{section.name}</h2>
+              {body}
+            </section>
+          ) : null
+        })}
         {assetUnplaced.length > 0 ? (
           <section className="panel">
             <h2>Other Fields</h2>
-            <FieldGroup target={targetOf(assetRecord)} fields={assetUnplaced.map((field) => viewOf(field, assetRecord))} />
+            <FieldGroup target={targetOf(assetRecord)} fields={assetUnplaced} />
           </section>
         ) : null}
 
@@ -214,7 +240,7 @@ export default async function AssetPage({
                 ref: `property:${property.key}`,
                 core: { name: property.name, property_type: property.propertyType },
               }
-              const propertyUnplaced = unplacedFor('property')
+              const propertyUnplaced = visibleViews(unplacedFor('property'), propertyRecord, null)
               return (
                 <section key={property.id} className="panel record">
                   <div className="record-head">
@@ -225,20 +251,23 @@ export default async function AssetPage({
                   {isFirstScreen ? (
                     <div className="record-addresses">
                       <AddressList addresses={property.addresses} />
-                      <AddAddressForm ownerType="property" ownerId={property.id} assetId={tree.id} />
+                      {access.canAddRecords ? <AddAddressForm ownerType="property" ownerId={property.id} assetId={tree.id} /> : null}
                     </div>
                   ) : null}
 
-                  {propertySections.map((section) => (
-                    <div key={section.id} className="record-group">
-                      <h3>{section.name}</h3>
-                      {sectionBody(section, propertyRecord)}
-                    </div>
-                  ))}
+                  {propertySections.map((section) => {
+                    const body = sectionBody(section, propertyRecord)
+                    return body ? (
+                      <div key={section.id} className="record-group">
+                        <h3>{section.name}</h3>
+                        {body}
+                      </div>
+                    ) : null
+                  })}
                   {propertyUnplaced.length > 0 ? (
                     <div className="record-group">
                       <h3>Other Fields</h3>
-                      <FieldGroup target={targetOf(propertyRecord)} fields={propertyUnplaced.map((field) => viewOf(field, propertyRecord))} />
+                      <FieldGroup target={targetOf(propertyRecord)} fields={propertyUnplaced} />
                     </div>
                   ) : null}
 
@@ -251,7 +280,7 @@ export default async function AssetPage({
                           ref: `${propertyRecord.ref}/building:${building.key}`,
                           core: { name: building.name },
                         }
-                        const buildingUnplaced = unplacedFor('building')
+                        const buildingUnplaced = visibleViews(unplacedFor('building'), buildingRecord, null)
                         return (
                           <div key={building.id} className="subrecord">
                             <div className="record-head">
@@ -261,20 +290,23 @@ export default async function AssetPage({
                             {isFirstScreen ? (
                               <div className="record-addresses">
                                 <AddressList addresses={building.addresses} />
-                                <AddAddressForm ownerType="building" ownerId={building.id} assetId={tree.id} />
+                                {access.canAddRecords ? <AddAddressForm ownerType="building" ownerId={building.id} assetId={tree.id} /> : null}
                               </div>
                             ) : null}
 
-                            {buildingSections.map((section) => (
-                              <div key={section.id} className="record-group">
-                                <h4>{section.name}</h4>
-                                {sectionBody(section, buildingRecord)}
-                              </div>
-                            ))}
+                            {buildingSections.map((section) => {
+                              const body = sectionBody(section, buildingRecord)
+                              return body ? (
+                                <div key={section.id} className="record-group">
+                                  <h4>{section.name}</h4>
+                                  {body}
+                                </div>
+                              ) : null
+                            })}
                             {buildingUnplaced.length > 0 ? (
                               <div className="record-group">
                                 <h4>Other Fields</h4>
-                                <FieldGroup target={targetOf(buildingRecord)} fields={buildingUnplaced.map((field) => viewOf(field, buildingRecord))} />
+                                <FieldGroup target={targetOf(buildingRecord)} fields={buildingUnplaced} />
                               </div>
                             ) : null}
 
@@ -291,11 +323,11 @@ export default async function AssetPage({
                                           <span key={unit.id} className="unit-chip" title={unit.addresses.map(formatAddress).join('; ') || undefined}>{unit.name}</span>
                                         ))}
                                       </span>
-                                      <AddChildForm type="unit" parentId={floor.id} assetId={tree.id} />
+                                      {access.canAddRecords ? <AddChildForm type="unit" parentId={floor.id} assetId={tree.id} /> : null}
                                     </li>
                                   ))}
                                 </ul>
-                                <AddChildForm type="floor" parentId={building.id} assetId={tree.id} />
+                                {access.canAddRecords ? <AddChildForm type="floor" parentId={building.id} assetId={tree.id} /> : null}
                               </div>
                             ) : null}
                           </div>
@@ -303,7 +335,7 @@ export default async function AssetPage({
                       })
                     : null}
 
-                  {isFirstScreen ? (
+                  {isFirstScreen && access.canAddRecords ? (
                     <div className="record-add">
                       <AddChildForm type="building" parentId={property.id} assetId={tree.id} />
                     </div>
@@ -313,7 +345,7 @@ export default async function AssetPage({
             })
           : null}
 
-        {isFirstScreen ? (
+        {isFirstScreen && access.canAddRecords ? (
           <div className="record-add">
             <AddChildForm type="property" parentId={tree.id} assetId={tree.id} propertyTypes={PROPERTY_TYPES} />
           </div>

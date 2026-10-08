@@ -38,12 +38,15 @@ export function ListSection({
   columns,
   rows,
   currentUserName,
+  canEdit,
 }: {
   target: Target
   list: { id: string; key: string; name: string }
   columns: ListColumn[]
   rows: ListRowView[]
   currentUserName: string
+  /** False when the person's roles only let them see this list. */
+  canEdit: boolean
 }) {
   const router = useRouter()
   const { addReference } = useAgentReferences()
@@ -148,6 +151,7 @@ export function ListSection({
                     <td key={column.id}>{formatValue(column, row.values[column.id])}</td>
                   ))}
                   <td>
+                    {canEdit ? (
                     <div className="row-actions">
                       {confirmRemove === row.id ? (
                         <>
@@ -161,6 +165,7 @@ export function ListSection({
                         </>
                       )}
                     </div>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -213,9 +218,9 @@ export function ListSection({
             <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setEditing(null)}>Cancel</button>
           </div>
         </form>
-      ) : (
+      ) : canEdit ? (
         <button type="button" className="link-button add-link" onClick={startAdd}>+ Add Entry</button>
-      )}
+      ) : null}
       {error ? <p className="form-error" role="alert">{error}</p> : null}
     </div>
   )
