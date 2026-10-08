@@ -9,13 +9,13 @@ const MESSAGES: Record<string, { text: string; error?: boolean }> = {
   welcome: { text: 'Your organization is set up. Check the colors below: you can switch to light mode, adjust any color, or use the Stratios colors.' },
   saved: { text: 'Colors saved.' },
   'saved-adjusted': { text: 'Colors saved. Some text colors were adjusted so they stay readable.' },
-  regenerated: { text: 'New colors picked from your website.' },
+  regenerated: { text: 'New brand colors picked.' },
   reset: { text: 'Back to the Stratios colors.' },
   'mode-dark': { text: 'Switched to dark mode.' },
   'mode-light': { text: 'Switched to light mode.' },
   'no-domain': { text: 'This organization has no company domain to look up, so colors have to be set by hand.', error: true },
   'no-key': { text: 'Automatic colors need an Anthropic API key in the settings file (ANTHROPIC_API_KEY).', error: true },
-  'generate-failed': { text: 'Colors could not be worked out from your website. Try again, or set them by hand.', error: true },
+  'generate-failed': { text: 'Brand colors could not be worked out. Try again, or set them by hand.', error: true },
   invalid: { text: 'Every color needs to be a valid color.', error: true },
   'not-admin': { text: 'Only administrators can change the colors.', error: true },
   failed: { text: 'That change could not be saved. Try again.', error: true },
@@ -40,7 +40,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <h1>Brand colors</h1>
       <p className="lede">
         {stored ? `${organization.name} uses its own color scheme in Stratios.` : `${organization.name} uses the Stratios colors.`}
-        {domain ? ` Automatic colors are based on ${domain}.` : ''}
+        {` Automatic colors come from ${organization.name}'s brand guidelines${domain ? `, or from ${domain} if those aren't known` : ''}.`}
       </p>
 
       {message ? (
@@ -91,18 +91,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <section className="panel">
           <h2>Start again</h2>
           <div className="button-row">
-            {domain ? (
-              <form action={regenerateColors}>
-                <SubmitButton className="btn btn-ghost btn-small" pendingText="Looking at your website…">
-                  {`Pick colors from ${domain}`}
-                </SubmitButton>
-              </form>
-            ) : null}
+            <form action={regenerateColors}>
+              <SubmitButton className="btn btn-ghost btn-small" pendingText="Looking up your brand colors…">
+                Look up brand colors again
+              </SubmitButton>
+            </form>
             <form action={resetColors}>
               <SubmitButton className="btn btn-ghost btn-small" pendingText="Resetting…">Use Stratios colors</SubmitButton>
             </form>
           </div>
-          <p className="note">Picking colors from your website takes up to half a minute.</p>
+          <p className="note">Looking up brand colors takes up to half a minute. Stratios checks your organization's brand guidelines first and your website second.</p>
         </section>
       ) : null}
     </>

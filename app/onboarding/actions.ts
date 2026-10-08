@@ -32,16 +32,14 @@ export async function setupOrganization(
       publicMetadata: state.domain ? { domain: state.domain } : {},
     })
     // Pick and save the organization's dark-mode brand colors before opening
-    // the app, so the very first page is already in its colors. If this fails,
-    // the organization simply starts with the Stratios colors.
-    if (state.domain) {
-      try {
-        const result = await generateBrandTheme(state.domain, 'dark')
-        if (result.theme) await saveOrgTheme(organization.id, result.theme, { brand: result.brand, mode: 'dark' })
-        else console.warn('Brand colors not set for', state.domain, '-', result.error)
-      } catch (error) {
-        console.error('Brand colors failed for', state.domain, error)
-      }
+    // the app (by name first, its website second), so the very first page is
+    // already in its colors. If this fails, it starts with the Stratios colors.
+    try {
+      const result = await generateBrandTheme({ name, domain: state.domain }, 'dark')
+      if (result.theme) await saveOrgTheme(organization.id, result.theme, { brand: result.brand, mode: 'dark' })
+      else console.warn('Brand colors not set for', name, '-', result.error)
+    } catch (error) {
+      console.error('Brand colors failed for', name, error)
     }
     return { error: null, organizationId: organization.id }
   } catch (error) {

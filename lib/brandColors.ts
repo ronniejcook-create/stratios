@@ -98,86 +98,135 @@ function describeApiError(status: number, body: string): string {
   return `${hint} (HTTP ${status}${detail ? `, ${detail}` : ''})`.slice(0, 400)
 }
 
+class ApiError extends Error {}
+
+/** Sends one prompt to Claude and returns its JSON answer, shaped by `schema`. */
+async function askClaude(apiKey: string, prompt: string, schema: object): Promise<Record<string, unknown>> {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    signal: AbortSignal.timeout(30000),
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      // Only needed for API keys that are not tied to a workspace.
+      ...(process.env.ANTHROPIC_WORKSPACE_ID ? { 'anthropic-workspace-id': process.env.ANTHROPIC_WORKSPACE_ID.trim() } : {}),
+    },
+    body: JSON.stringify({
+      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
+      max_tokens: 512,
+      messages: [{ role: 'user', content: prompt }],
+      output_config: { format: { type: 'json_schema', schema } },
+    }),
+  })
+  if (!response.ok) {
+    const error = describeApiError(response.status, await response.text().catch(() => ''))
+    console.error('Brand color request failed:', error)
+    throw new ApiError(error)
+  }
+  const data = (await response.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string }
+  const text = data.content?.find((block) => block.type === 'text')?.text
+  if (!text) throw new ApiError(`Claude returned no colors (stop reason: ${data.stop_reason ?? 'unknown'}).`)
+  return JSON.parse(text) as Record<string, unknown>
+}
+
+const COLOR_RULES = `Return two colors as #rrggbb hex:
+- primary: the organization's main signature brand color (it may be dark).
+- accent: a vivid brand color that stands out clearly on a very dark background tinted with the primary color, for buttons and links. Use the brand's own bright or secondary color if it has one; otherwise a lighter, more vivid version of the primary.`
+
+const COLOR_PROPERTIES = {
+  primary: { type: 'string', description: 'Main brand color, #rrggbb' },
+  accent: { type: 'string', description: 'Vivid brand color for buttons on dark backgrounds, #rrggbb' },
+}
+
+function readColors(answer: Record<string, unknown>): BrandColors | null {
+  const primary = normalizeHex(answer.primary)
+  const accent = normalizeHex(answer.accent)
+  return primary && accent ? { primary, accent } : null
+}
+
 /**
- * Asks Claude for a ten-color scheme that reflects the company behind
- * `domain`, using colors found on its website. On failure returns a reason;
- * the app then keeps the current colors.
+ * Works out an organization's brand colors and builds its ten-color scheme.
+ *
+ * 1. By name: Claude is asked for the organization's official brand colors
+ *    (its brand guidelines), using the domain only to tell organizations with
+ *    similar names apart. If Claude knows them, they are used.
+ * 2. By website (fallback): Stratios reads the colors used on the domain's
+ *    home page and asks Claude to pick the brand colors from those.
+ *
+ * On failure returns a reason; the app then keeps the current colors.
  */
-export async function generateBrandTheme(domain: string, mode: ThemeMode = 'dark'): Promise<BrandThemeResult> {
+export async function generateBrandTheme(
+  organization: { name: string; domain: string | null },
+  mode: ThemeMode = 'dark',
+): Promise<BrandThemeResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim().replace(/^["']|["']$/g, '')
   if (!apiKey) return { theme: null, error: 'No Anthropic API key is set (ANTHROPIC_API_KEY).' }
-  if (!DOMAIN.test(domain)) return { theme: null, error: `"${domain}" is not a website domain that can be looked up.` }
-
-  const site = await readWebsite(domain)
-  const websiteRead = site.title !== null || site.colors.length > 0
-  const prompt = `Identify the brand colors of the organization that owns the domain "${domain}".
-
-Use what you know about this organization's brand identity (logo, signature colors) first. Well-known companies have recognizable brand colors; use them.
-${websiteRead ? `What we found on https://${domain} (use this to confirm or refine):
-- Page title: ${site.title ?? 'unknown'}
-- theme-color meta tag: ${site.themeColor ?? 'none'}
-- Most used colors (count in brackets): ${site.colors.length ? site.colors.join(', ') : 'none found'}` : `Their website could not be read, so rely on what you know about the brand.`}
-
-Return two colors as #rrggbb hex:
-- primary: the organization's main signature brand color (it may be dark).
-- accent: a vivid brand color that stands out clearly on a very dark background tinted with the primary color, for buttons and links. Use the brand's own bright or secondary color if it has one; otherwise a lighter, more vivid version of the primary.
-
-If you genuinely do not know the organization and found no colors, return primary #0f1d31 and accent #2ccbe8.`
-
-  const schema = {
-    type: 'object',
-    properties: {
-      primary: { type: 'string', description: 'Main brand color, #rrggbb' },
-      accent: { type: 'string', description: 'Vivid brand color for buttons on dark backgrounds, #rrggbb' },
-    },
-    required: ['primary', 'accent'],
-    additionalProperties: false,
-  }
+  const { name } = organization
+  const domain = organization.domain && DOMAIN.test(organization.domain) ? organization.domain : null
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: AbortSignal.timeout(30000),
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        // Only needed for API keys that are not tied to a workspace.
-        ...(process.env.ANTHROPIC_WORKSPACE_ID ? { 'anthropic-workspace-id': process.env.ANTHROPIC_WORKSPACE_ID.trim() } : {}),
+    // Step 1: the organization's brand guidelines, by name.
+    const byName = await askClaude(
+      apiKey,
+      `What are the official brand colors of the organization "${name}"${domain ? ` (website: ${domain})` : ''}, as set out in its brand guidelines or visual identity?
+
+Set "known" to true only if you are confident you know this specific organization's brand colors. If the name is ambiguous, generic, or you do not recognize the organization, set "known" to false and return #000000 for both colors.
+
+${COLOR_RULES}`,
+      {
+        type: 'object',
+        properties: { known: { type: 'boolean', description: 'True only if you confidently know this organization\'s brand colors' }, ...COLOR_PROPERTIES },
+        required: ['known', 'primary', 'accent'],
+        additionalProperties: false,
       },
-      body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
-        max_tokens: 256,
-        messages: [{ role: 'user', content: prompt }],
-        output_config: { format: { type: 'json_schema', schema } },
-      }),
-    })
-    if (!response.ok) {
-      const body = await response.text().catch(() => '')
-      const error = describeApiError(response.status, body)
-      console.error('Brand color request failed:', error)
-      return { theme: null, error }
+    )
+    const known = byName.known === true ? readColors(byName) : null
+    if (known) {
+      return {
+        theme: deriveTheme(known.primary, known.accent, mode),
+        brand: known,
+        note: `Colors are based on ${name}'s brand guidelines.`,
+      }
     }
-    const data = (await response.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string }
-    const text = data.content?.find((block) => block.type === 'text')?.text
-    if (!text) return { theme: null, error: `Claude returned no colors (stop reason: ${data.stop_reason ?? 'unknown'}).` }
-    const parsed = JSON.parse(text) as { primary?: unknown; accent?: unknown }
-    const primary = normalizeHex(parsed.primary)
-    const accent = normalizeHex(parsed.accent)
-    if (!primary || !accent) return { theme: null, error: 'Claude returned colors in an unexpected format.' }
+
+    // Step 2: fall back to the colors used on the organization's website.
+    if (!domain) {
+      return { theme: null, error: `Claude does not know ${name}'s brand colors, and there is no company website to look at. Set the colors by hand.` }
+    }
+    const site = await readWebsite(domain)
+    const websiteRead = site.title !== null || site.colors.length > 0
+    if (!websiteRead) {
+      return { theme: null, error: `Claude does not know ${name}'s brand colors, and ${domain} could not be read. Set the colors by hand.` }
+    }
+    const bySite = await askClaude(
+      apiKey,
+      `Pick the brand colors of the organization "${name}" from what we found on its website, https://${domain}:
+- Page title: ${site.title ?? 'unknown'}
+- theme-color meta tag: ${site.themeColor ?? 'none'}
+- Most used colors (count in brackets): ${site.colors.length ? site.colors.join(', ') : 'none found'}
+
+Ignore plain white, black and greys unless the brand is genuinely monochrome.
+
+${COLOR_RULES}`,
+      { type: 'object', properties: COLOR_PROPERTIES, required: ['primary', 'accent'], additionalProperties: false },
+    )
+    const fromSite = readColors(bySite)
+    if (!fromSite) return { theme: null, error: 'Claude returned colors in an unexpected format.' }
     return {
-      theme: deriveTheme(primary, accent, mode),
-      brand: { primary, accent },
-      note: websiteRead ? undefined : `${domain} could not be read (many large sites block automated visits), so the colors are based on what Claude knows about the brand.`,
+      theme: deriveTheme(fromSite.primary, fromSite.accent, mode),
+      brand: fromSite,
+      note: `${name}'s brand guidelines weren't known, so the colors were picked from ${domain}.`,
     }
   } catch (error) {
+    if (error instanceof ApiError) return { theme: null, error: error.message }
     console.error('Brand color generation failed', error)
-    const name = error instanceof Error ? error.name : ''
+    const errorName = error instanceof Error ? error.name : ''
     return {
       theme: null,
       error:
-        name === 'TimeoutError' ? 'The Claude API took too long to answer; try again.' :
-        name === 'SyntaxError' ? 'Claude returned colors in an unexpected format.' :
+        errorName === 'TimeoutError' ? 'The Claude API took too long to answer; try again.' :
+        errorName === 'SyntaxError' ? 'Claude returned colors in an unexpected format.' :
         'Stratios could not reach the Claude API from this computer.',
     }
   }

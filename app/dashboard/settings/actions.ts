@@ -16,7 +16,7 @@ async function loadOrganization(orgId: string) {
   const client = await clerkClient()
   const organization = await client.organizations.getOrganization({ organizationId: orgId })
   const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
-  return { domain, stored: parseTheme(organization.publicMetadata?.theme), ...parseBrandSettings(organization.publicMetadata?.theme) }
+  return { name: organization.name, domain, stored: parseTheme(organization.publicMetadata?.theme), ...parseBrandSettings(organization.publicMetadata?.theme) }
 }
 
 function saturation(hex: string): number {
@@ -77,18 +77,14 @@ export async function regenerateColors(): Promise<void> {
   let status = 'regenerated'
   let detail: string | undefined
   try {
-    const { domain, mode } = await loadOrganization(orgId)
-    if (!domain) {
-      status = 'no-domain'
+    const { name, domain, mode } = await loadOrganization(orgId)
+    const result = await generateBrandTheme({ name, domain }, mode)
+    if (result.theme) {
+      await saveOrgTheme(orgId, result.theme, { brand: result.brand, mode })
+      detail = result.note
     } else {
-      const result = await generateBrandTheme(domain, mode)
-      if (result.theme) {
-        await saveOrgTheme(orgId, result.theme, { brand: result.brand, mode })
-        detail = result.note
-      } else {
-        status = process.env.ANTHROPIC_API_KEY ? 'generate-failed' : 'no-key'
-        detail = result.error
-      }
+      status = process.env.ANTHROPIC_API_KEY ? 'generate-failed' : 'no-key'
+      detail = result.error
     }
   } catch (error) {
     console.error('regenerateColors failed', error)
