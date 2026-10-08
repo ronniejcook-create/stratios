@@ -429,3 +429,56 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 .menu-sub { font-size: 13px; padding: 0 10px; }
 .menu-item { font-size: 14px; min-height: 36px; padding: 0 10px; }
 .menu-item.menu-divider { margin-top: 6px; }
+
+/* Signed-in pages: text, spacing and controls sized like the navigation and
+   AI agent columns (14-15px text, 36px controls, 12-16px padding). */
+.shell-main { padding: 20px 20px 64px; font-size: 14px; line-height: 1.5; }
+.shell-main h1 { font-weight: 600; font-size: 20px; line-height: 1.3; }
+.shell-main .lede { margin-top: 4px; font-size: 14px; }
+.shell-main .panel { margin-top: 16px; padding: 16px; border-radius: 8px; }
+.shell-main .panel h2 { font-size: 15px; }
+.shell-main .notice p { margin-top: 6px; }
+.shell-main .note { margin-top: 6px; font-size: 13px; }
+.shell-main .empty { margin-top: 10px; }
+.shell-main .form-error, .shell-main .form-ok { margin-top: 10px; }
+.shell-main > .form-error { margin-top: 14px; }
+.shell-main .unsaved { font-size: 13px; }
+
+.shell-main .btn { min-height: 36px; padding: 0 14px; border-radius: 6px; font-size: 14px; }
+.shell-main .button-row { margin-top: 14px; gap: 8px; }
+.shell-main .link-button { min-height: 32px; font-size: 14px; }
+.shell-main .row-actions { gap: 0 14px; }
+
+.shell-main .form-row { margin-top: 12px; gap: 12px; }
+.shell-main .field { gap: 6px; }
+.shell-main .field label { font-size: 13px; }
+.shell-main .field input, .shell-main .field select { height: 36px; padding: 0 10px; border-radius: 6px; font-size: 14px; }
+
+.shell-main .table-scroll { margin-top: 10px; }
+.shell-main th, .shell-main td { padding: 8px 10px; }
+.shell-main th { font-size: 12px; }
+
+.shell-main .mode-toggle { margin-top: 12px; border-radius: 6px; }
+.shell-main .mode-toggle button { min-height: 36px; min-width: 80px; padding: 0 14px; font-size: 14px; }
+.shell-main .swatches { margin-top: 14px; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.shell-main .swatch { gap: 10px; padding: 8px; border-radius: 6px; }
+.shell-main .swatch input[type="color"] { width: 36px; height: 36px; }
+.shell-main .swatch label, .shell-main .swatch-text label { font-size: 14px; }
+.shell-main .swatch .hex { font-size: 12px; }
+.shell-main .swatch-text { gap: 2px; }
+.shell-main .hex-field { height: 28px; max-width: 104px; font-size: 13px; }
+
+.shell-main .graph-layout { margin-top: 14px; gap: 24px; }
+.shell-main .graph-fields { gap: 10px; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.shell-main .graph-preview { gap: 12px; }
+.shell-main .graph-legend { font-size: 13px; gap: 4px 16px; }
+.shell-main .start-from { margin-top: 20px; padding-top: 16px; }
+.shell-main .start-from h3 { font-size: 15px; }
+.shell-main .start-from .button-row { margin-top: 10px; }
+.shell-main .preset-grid { margin-top: 12px; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.shell-main .preset { min-height: 36px; gap: 10px; padding: 6px 10px; border-radius: 6px; font-size: 14px; }
+.shell-main .preset-dots span { width: 18px; height: 18px; }
+.shell-main .preset-dots span + span { margin-left: -6px; }
+.shell-main .preset-bars { width: 56px; height: 14px; }
+
+@media (max-width: 760px) { .shell-main { padding: 16px 12px 48px; } }

@@ -64,14 +64,17 @@ work and how data is isolated; this file covers how we work and where things sta
   - Graph Colors: 8 slots, pie and bar previews side by side, "Start from" chips including
     Generated Brand Colors and 31 presets. Palettes were checked for contrast and color-blind
     separation.
+- Search engines are told not to list the site (`robots` in `app/layout.tsx` and the
+  `X-Robots-Tag` header in `next.config.ts`). Remove both when the public site launches.
+- Signed-in visitors to `/` are sent straight to `/dashboard` (`app/page.tsx`).
+- Signed-in pages use compact sizing matched to the side columns (14px text, 36px controls,
+  16px panel padding); the overrides are the `.shell-main ...` block at the end of `globals.css`.
 - Theme logic: `lib/theme.ts` (roles, contrast, derive from two brand colors), `lib/chartColors.ts`.
   Settings storage: `lib/orgSettings.ts` (`organization_settings` table; falls back to Clerk
   metadata without a database).
 
 ## Ideas offered but not started
 
-- Hide dev.stratios.app from search engines ("noindex").
-- Send already-signed-in visitors from the landing page straight to the dashboard.
 - Wire up the Portfolio Analyst agent.
 - Document uploads (Supabase Storage) and a richer asset model (properties, leases, financials).
 - A read-only member list for non-admins.

@@ -1,8 +1,14 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { SignInButton, SignUpButton } from '@clerk/nextjs'
+import { auth } from '@clerk/nextjs/server'
 import { Logo } from '@/components/Logo'
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  // People who are already signed in skip the landing page.
+  const { userId } = await auth()
+  if (userId) redirect('/dashboard')
+
   return (
     <>
       <header className="site-header">

@@ -30,6 +30,9 @@ const clerkAppearance = {
 }
 
 export const metadata: Metadata = {
+  // dev.stratios.app is a test site: ask search engines not to list it.
+  // Remove this line (and the header in next.config.ts) when the public site launches.
+  robots: { index: false, follow: false },
   title: 'Stratios | Commercial real estate intelligence',
   description:
     'Structure your CRE assets, turn financial documents into reviewable data, and interrogate performance with an AI analyst.',
