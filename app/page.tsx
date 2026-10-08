@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { SignInButton, SignUpButton } from '@clerk/nextjs'
 import { Logo } from '@/components/Logo'
 
 export default function LandingPage() {
@@ -13,7 +14,9 @@ export default function LandingPage() {
           <nav className="nav" aria-label="Main">
             <a href="#product" className="nav-link">Product</a>
             <a href="#how" className="nav-link">How it works</a>
-            <Link href="/sign-in" className="btn btn-ghost btn-small">Sign in</Link>
+            <SignInButton mode="modal" fallbackRedirectUrl="/dashboard" signUpFallbackRedirectUrl="/dashboard">
+              <button type="button" className="btn btn-ghost btn-small">Sign in</button>
+            </SignInButton>
           </nav>
         </div>
       </header>
@@ -31,7 +34,9 @@ export default function LandingPage() {
             performance with an AI analyst.
           </p>
           <div className="actions">
-            <Link href="/sign-up" className="btn btn-primary">Sign up</Link>
+            <SignUpButton mode="modal" fallbackRedirectUrl="/dashboard" signInFallbackRedirectUrl="/dashboard">
+              <button type="button" className="btn btn-primary">Sign up</button>
+            </SignUpButton>
             <a href="#how" className="btn btn-ghost">See how it works</a>
           </div>
         </section>
@@ -117,10 +122,15 @@ export default function LandingPage() {
             <div className="signup-panel">
               <h3>New to Stratios?</h3>
               <p>Create your account, name your organization, then invite your colleagues by email.</p>
-              <Link href="/sign-up" className="btn btn-primary">Create your organization</Link>
+              <SignUpButton mode="modal" fallbackRedirectUrl="/dashboard" signInFallbackRedirectUrl="/dashboard">
+                <button type="button" className="btn btn-primary">Create your organization</button>
+              </SignUpButton>
               <p className="fine">
                 Joining a colleague&apos;s organization? Use the link in your invitation email. Already
-                have an account? <Link href="/sign-in">Sign in</Link>
+                have an account?{' '}
+                <SignInButton mode="modal" fallbackRedirectUrl="/dashboard" signUpFallbackRedirectUrl="/dashboard">
+                  <button type="button" className="text-link">Sign in</button>
+                </SignInButton>
               </p>
             </div>
           </div>

@@ -121,7 +121,16 @@ p { margin: 0; }
 }
 
 /* Sign-in and organization pages */
-.auth-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px 16px; }
+.auth-page {
+  min-height: calc(100vh - 81px); display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 48px 72px; padding: 48px 20px 72px;
+}
+.auth-intro { flex: 0 1 380px; }
+.auth-intro h1 { margin-top: 14px; font-family: var(--font-display), sans-serif; font-weight: 500; font-size: clamp(30px, 3.4vw, 42px); line-height: 1.1; color: var(--heading); }
+.auth-intro p { margin-top: 14px; color: var(--muted); line-height: 1.6; }
+.auth-form { flex: 0 1 auto; display: flex; justify-content: center; max-width: 100%; }
+@media (max-width: 860px) { .auth-intro { flex-basis: 100%; max-width: 420px; text-align: center; } }
+.text-link { background: none; border: 0; padding: 0; font: inherit; color: var(--link, var(--accent)); text-decoration: underline; cursor: pointer; }
 
 /* Signed-in app */
 .app-header .wrap { padding-top: 10px; padding-bottom: 10px; }
