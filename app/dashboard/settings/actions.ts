@@ -9,7 +9,7 @@ import { GRAPH_PRESETS } from '@/lib/presets'
 import { getOrgSettings } from '@/lib/orgSettings'
 import { THEME_ROLES, ensureReadable, normalizeHex, type BrandColors, type OrgTheme } from '@/lib/theme'
 
-// Nothing on the Brand colors page is saved until Save is clicked: presets,
+// Nothing on the Org Colors page is saved until Save is clicked: presets,
 // Dark/Light and hand edits are previewed in the browser, and these actions
 // store the result.
 

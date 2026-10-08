@@ -8,10 +8,10 @@ work and how data is isolated; this file covers how we work and where things sta
 - Ronnie is non-technical and on Windows. He prefers that Claude does the work end to end rather
   than handing him commands. Explain things in plain words and skip the jargon.
 - Use US spelling in the UI ("Color", "Organize").
-- Headers, nav items and panel titles use Title Case ("Brand Colors", "Add an Asset"); sentences,
+- Headers, nav items and panel titles use Title Case ("Org Colors", "Add an Asset"); sentences,
   and helper text stay in sentence case. Buttons and menu items are Title Case too ("Add Asset").
-- Font: Roboto for everything (`app/layout.tsx`). Headings and buttons use `--font-display`, which
-  `globals.css` points at the body font; Space Grotesk, Inter and Satoshi were tried and dropped.
+- Font: Inter for everything (`app/layout.tsx`). Headings and buttons use `--font-display`, which
+  `globals.css` points at the body font; Space Grotesk, IBM Plex Sans, Satoshi and Roboto were tried and dropped.
 - Never ask him to paste secrets (Clerk secret key, database connection string, Anthropic API key)
   into the chat. Secrets live only in `.env.local` on his computer (created by `keys.bat`) and in
   Vercel environment variables.
@@ -61,13 +61,13 @@ work and how data is isolated; this file covers how we work and where things sta
   "Stratios *for Org name*" with a drop-down only when the user belongs to more than one org.
 - Assets list per organization (`app/dashboard/page.tsx`, `lib/assets.ts`) with row-level security.
 - Members page (admins): invite by email, roles.
-- Admin Settings (`app/dashboard/settings/`):
+- Admin Settings (`app/dashboard/settings/`, the page and nav item are titled "Org Colors"):
   - Site Colors: 10 roles, Dark/Light toggle, hex editing, 16 presets (`lib/presets.ts`),
-    "Generated Brand Colors" (persisted, not re-fetched), "Stratios". Unsaved changes are preview
+    "Org Colors" with the AI icon (the generated brand colors; persisted, not re-fetched), "Stratios". Unsaved changes are preview
     only and revert on leaving the page. "Reset Colors" (beside Save in both editors) puts back the
     last saved colors; it is disabled when nothing has changed.
   - Graph Colors: 8 slots, pie and bar previews side by side, "Other Themes" chips including
-    Generated Brand Colors and 31 presets. Palettes were checked for contrast and color-blind
+    Org Colors (AI icon) and 31 presets. Palettes were checked for contrast and color-blind
     separation.
 - Search engines are told not to list the site (`robots` in `app/layout.tsx` and the
   `X-Robots-Tag` header in `next.config.ts`). Remove both when the public site launches.

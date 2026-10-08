@@ -1,11 +1,11 @@
 import type { Metadata } from 'next'
-import { Roboto } from 'next/font/google'
+import { Inter } from 'next/font/google'
 import { ClerkProvider } from '@clerk/nextjs'
 import './globals.css'
 
-// One font for everything: Roboto. Headings and buttons read it through --font-display,
+// One font for everything: Inter. Headings and buttons read it through --font-display,
 // which globals.css points at --font-body.
-const body = Roboto({ subsets: ['latin'], variable: '--font-body' })
+const body = Inter({ subsets: ['latin'], variable: '--font-body' })
 
 // Makes Clerk's sign-in, organization and account components use the
 // Stratios colors and fonts (see globals.css for the same palette).

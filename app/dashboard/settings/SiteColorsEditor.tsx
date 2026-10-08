@@ -157,7 +157,7 @@ export function SiteColorsEditor({ saved, savedMode, savedBrand, generatedBrand,
                 ) : null}
               </span>
               <AiIcon />
-              {generating ? 'Generating brand colors…' : 'Generated Brand Colors'}
+              {generating ? 'Generating Org Colors…' : 'Org Colors'}
             </button>
             <button type="button" className="preset" onClick={() => applyBrand(DEFAULT_BRAND)}>
               <span className="preset-dots" aria-hidden="true">
@@ -178,7 +178,7 @@ export function SiteColorsEditor({ saved, savedMode, savedBrand, generatedBrand,
           </div>
           <p className="note">
             Choosing an option or switching Dark/Light rebuilds all ten colors and previews them; click Save Colors to keep them, or Reset Colors to go back to your saved colors.
-            Generated Brand Colors are the colors Stratios found for your organization when it was set up.
+            Org Colors are the colors Stratios found for your organization when it was set up.
           </p>
         </div>
       ) : null}

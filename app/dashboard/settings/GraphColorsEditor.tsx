@@ -173,7 +173,7 @@ export function GraphColorsEditor({
                 ))}
               </span>
               <AiIcon />
-              Generated Brand Colors
+              Org Colors
             </button>
             {GRAPH_PRESETS.map((preset) => (
               <button key={preset.name} type="button" className="preset" onClick={() => choose(preset.colors, 'preset', preset.name)}>
@@ -187,7 +187,7 @@ export function GraphColorsEditor({
             ))}
           </div>
           <p className="note">
-            Choosing a palette previews it in the charts above; click Save Graph Colors to keep it, or Reset Colors to go back to your saved colors. Generated Brand Colors are
+            Choosing a palette previews it in the charts above; click Save Graph Colors to keep it, or Reset Colors to go back to your saved colors. The Org Colors palette is
             built from your saved site colors: your accent color first, then muted shades related to your site&apos;s colors.
           </p>
         </div>

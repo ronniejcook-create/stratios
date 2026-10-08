@@ -1,5 +1,5 @@
 :root {
-  --font-display: var(--font-body); /* headings use the same font as body text (Roboto, app/layout.tsx) */
+  --font-display: var(--font-body); /* headings use the same font as body text (Inter, app/layout.tsx) */
   --bg: #0f1d31;
   --bg-deep: #0c1829;
   --panel: #14253c;
@@ -249,7 +249,7 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 /* Signed-in header sits on the deeper background for a little depth. */
 .org-theme .site-header { background: var(--bg-deep); }
 
-/* Light/dark switch on the Brand colors page */
+/* Light/dark switch on the Org Colors page */
 .mode-toggle { margin-top: 16px; display: inline-flex; border: 1px solid var(--line-strong); border-radius: 4px; overflow: hidden; }
 .mode-toggle button {
   min-height: 44px; min-width: 96px; padding: 0 18px; border: 0; background: transparent; color: var(--text);
