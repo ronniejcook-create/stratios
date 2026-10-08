@@ -13,11 +13,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!orgId) redirect('/onboarding')
 
   const client = await clerkClient()
-  const memberships = await client.users.getOrganizationMembershipList({ userId, limit: 100 })
+  // Read the active organization directly: the copy embedded in the
+  // membership list can lag behind recent changes to its colors.
+  const [memberships, activeOrganization] = await Promise.all([
+    client.users.getOrganizationMembershipList({ userId, limit: 100 }),
+    client.organizations.getOrganization({ organizationId: orgId }),
+  ])
   const organizations = memberships.data.map((m) => ({ id: m.organization.id, name: m.organization.name }))
-  const current = organizations.find((org) => org.id === orgId) ?? { id: orgId, name: 'Organization' }
-  const activeOrganization = memberships.data.find((m) => m.organization.id === orgId)?.organization
-  const theme = parseTheme(activeOrganization?.publicMetadata?.theme) ?? DEFAULT_THEME
+  const theme = parseTheme(activeOrganization.publicMetadata?.theme) ?? DEFAULT_THEME
+  const current = { id: activeOrganization.id, name: activeOrganization.name }
 
   return (
     <div className="org-theme" style={themeToStyle(theme)}>

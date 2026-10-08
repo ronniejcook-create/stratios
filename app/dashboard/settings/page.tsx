@@ -6,6 +6,7 @@ import { SubmitButton } from './SubmitButton'
 export const dynamic = 'force-dynamic'
 
 const MESSAGES: Record<string, { text: string; error?: boolean }> = {
+  welcome: { text: 'Your organization is set up. Check the colors below: you can switch to light mode, adjust any color, or use the Stratios colors.' },
   saved: { text: 'Colors saved.' },
   'saved-adjusted': { text: 'Colors saved. Some text colors were adjusted so they stay readable.' },
   regenerated: { text: 'New colors picked from your website.' },

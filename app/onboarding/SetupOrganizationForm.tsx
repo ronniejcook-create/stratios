@@ -14,7 +14,8 @@ export function SetupOrganizationForm() {
   useEffect(() => {
     if (!state.organizationId) return
     setActive({ organization: state.organizationId }).then(() => {
-      window.location.assign('/dashboard')
+      // Open the new organization's Brand colors page so its colors can be checked.
+      window.location.assign('/dashboard/settings?status=welcome')
     })
   }, [state.organizationId, setActive])
 
