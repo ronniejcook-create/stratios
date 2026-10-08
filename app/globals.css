@@ -391,3 +391,7 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
   .shell-main { overflow: visible; padding: 24px 16px 64px; }
   .shell-top .brand-org { display: none; }
 }
+
+/* Hide the scroll bars inside the workspace columns (they still scroll). */
+.shell-main, .shell-nav, .shell-agent { scrollbar-width: none; }
+.shell-main::-webkit-scrollbar, .shell-nav::-webkit-scrollbar, .shell-agent::-webkit-scrollbar { display: none; }
