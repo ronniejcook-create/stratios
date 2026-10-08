@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAgentReferences } from '@/components/AgentContext'
 import { editText, formatPeriod, formatValue, isEmptyValue, type DataType, type StoredValue } from '@/lib/fieldFormat'
 import { loadHistory, saveField, type HistoryRow } from './actions'
 
@@ -21,7 +22,14 @@ export type FieldView = {
   sourceName: string | null
 }
 
-type Target = { assetId: string; recordType: string; recordId: string }
+export type Target = {
+  assetId: string
+  recordType: string
+  recordId: string
+  /** The record's permanent address, e.g. property:120-main-st */
+  recordRef: string
+  recordName: string
+}
 
 function thisMonth(): string {
   const now = new Date()
@@ -33,10 +41,14 @@ function when(iso: string): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-/** A group of fields on one record, each with its value, an edit form and its history. */
-export function FieldGroup({ target, fields }: { target: Target; fields: FieldView[] }) {
+/**
+ * A group of fields on one record, each with its value, an edit form and its
+ * history. Shown as a form (label and value on a line) or as tiles.
+ */
+export function FieldGroup({ target, fields, style = 'form' }: { target: Target; fields: FieldView[]; style?: 'form' | 'tiles' }) {
+  if (fields.length === 0) return <p className="note">No fields in this section yet.</p>
   return (
-    <div className="field-list">
+    <div className={`field-list${style === 'tiles' ? ' tiles' : ''}`}>
       {fields.map((field) => (
         <FieldRow key={field.id} target={target} field={field} />
       ))}
@@ -46,6 +58,7 @@ export function FieldGroup({ target, fields }: { target: Target; fields: FieldVi
 
 function FieldRow({ target, field }: { target: Target; field: FieldView }) {
   const router = useRouter()
+  const { addReference } = useAgentReferences()
   const [editing, setEditing] = useState(false)
   const [raw, setRaw] = useState('')
   const [month, setMonth] = useState('')
@@ -71,7 +84,15 @@ function FieldRow({ target, field }: { target: Target; field: FieldView }) {
   const save = () => {
     setError(null)
     startSaving(async () => {
-      const result = await saveField({ ...target, fieldId: field.id, month: field.monthly ? month : null, raw, note: note || null })
+      const result = await saveField({
+        assetId: target.assetId,
+        recordType: target.recordType,
+        recordId: target.recordId,
+        fieldId: field.id,
+        month: field.monthly ? month : null,
+        raw,
+        note: note || null,
+      })
       if (!result.ok) {
         setError(result.error)
         return
@@ -100,10 +121,20 @@ function FieldRow({ target, field }: { target: Target; field: FieldView }) {
 
   const numeric = field.dataType === 'number' || field.dataType === 'money' || field.dataType === 'percent'
 
+  // Clicking the field's name points the agent at exactly this value.
+  const reference = () =>
+    addReference({
+      reference: `${target.recordRef}.${field.key}${field.monthly && field.period ? `@${field.period.slice(0, 7)}` : ''}`,
+      label: `${target.recordName} · ${field.name}`,
+      detail: field.calculated ? undefined : shown ? `${shown}${field.monthly && field.period ? ` (${formatPeriod(field.period)})` : ''}` : 'Not set',
+    })
+
   return (
     <div className={`field-row${editing || historyOpen ? ' open' : ''}`}>
       <div className="field-line">
-        <div className="field-label" title={`Key: ${field.key}`}>{field.name}</div>
+        <button type="button" className="field-label" title="Reference this field in the agent panel" onClick={reference}>
+          {field.name}
+        </button>
         <div className="field-value">
           {field.calculated ? (
             <span className="field-unset" title={field.formula ?? undefined}>Calculated later</span>

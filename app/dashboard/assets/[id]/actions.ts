@@ -5,6 +5,7 @@ import { auth, clerkClient } from '@clerk/nextjs/server'
 import { PROPERTY_TYPES } from '@/lib/assets'
 import { withOrg } from '@/lib/db'
 import { listHistory, saveManualValue, type HistoryEntry } from '@/lib/fields'
+import { removeListRow, saveListRow } from '@/lib/lists'
 import { insertAddress, insertChild, isRecordType, isUuid, type AddressOwner } from '@/lib/records'
 
 // The organization always comes from the signed-in session, never from the
@@ -154,4 +155,59 @@ export async function addAddress(prev: AddState, formData: FormData): Promise<Ad
   revalidatePath(`/dashboard/assets/${assetId}`)
   revalidatePath('/dashboard')
   return { error: null, done: prev.done + 1 }
+}
+
+export type RowResult = { ok: true } | { ok: false; error: string }
+
+/** Adds an entry to a list, or changes one. */
+export async function saveRow(input: {
+  assetId: string
+  listId: string
+  recordType: string
+  recordId: string
+  rowId: string | null
+  values: Record<string, string>
+}): Promise<RowResult> {
+  const { userId, orgId } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  const { recordType } = input
+  if (!isRecordType(recordType) || !isUuid(input.recordId) || !isUuid(input.listId) || !isUuid(input.assetId) || (input.rowId !== null && !isUuid(input.rowId))) {
+    return { ok: false, error: 'That entry could not be saved.' }
+  }
+  // Only keep entries that look like "field id -> text".
+  const values: Record<string, string> = {}
+  for (const [fieldId, raw] of Object.entries(input.values ?? {})) {
+    if (isUuid(fieldId) && typeof raw === 'string') values[fieldId] = raw
+  }
+
+  try {
+    const result = await withOrg(orgId, (client) =>
+      saveListRow(client, orgId, userId, { listId: input.listId, recordType, recordId: input.recordId, rowId: input.rowId, values }),
+    )
+    if (!result.ok) return result
+  } catch (error) {
+    console.error('saveRow failed', error)
+    return { ok: false, error: 'That entry could not be saved. Try again.' }
+  }
+
+  revalidatePath(`/dashboard/assets/${input.assetId}`)
+  return { ok: true }
+}
+
+/** Removes an entry from a list. Its values and history are kept in the database. */
+export async function removeRow(input: { assetId: string; rowId: string }): Promise<RowResult> {
+  const { userId, orgId } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (!isUuid(input.rowId) || !isUuid(input.assetId)) return { ok: false, error: 'That entry could not be found.' }
+
+  try {
+    const removed = await withOrg(orgId, (client) => removeListRow(client, orgId, userId, input.rowId))
+    if (!removed) return { ok: false, error: 'That entry could not be found.' }
+  } catch (error) {
+    console.error('removeRow failed', error)
+    return { ok: false, error: 'That entry could not be removed. Try again.' }
+  }
+
+  revalidatePath(`/dashboard/assets/${input.assetId}`)
+  return { ok: true }
 }

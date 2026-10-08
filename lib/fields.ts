@@ -33,6 +33,10 @@ export type FieldDefinition = {
   whenEmpty: 'fill' | 'ask'
   whenDifferent: 'ask' | 'replace' | 'never'
   manualOverride: 'stays' | 'replaceable'
+  /** The list this field is a column of, or null for an ordinary field. */
+  listId: string | null
+  /** What a new list entry starts with. */
+  defaultValue: 'today' | 'currentUser' | null
   /** True for a Stratios standard field, false for one the organization added. */
   standard: boolean
   /** Settings this organization has changed on a standard field. */
@@ -62,7 +66,8 @@ export async function listFields(client: Queryable, orgId: string): Promise<Fiel
   const definitions = await client.query(
     `select id::text as id, org_id, key, name, applies_to, data_type, unit, options, tracking, rollup, calculated, formula,
             core_column, group_name, sort_order, ai_description, to_json(other_names) as other_names,
-            to_json(source_priority) as source_priority, when_empty, when_different, manual_override
+            to_json(source_priority) as source_priority, when_empty, when_different, manual_override,
+            list_id::text as list_id, default_value
      from field_definitions
      where (org_id is null or org_id = $1) and retired_at is null
      order by sort_order, name`,
@@ -91,6 +96,8 @@ export async function listFields(client: Queryable, orgId: string): Promise<Fiel
     whenEmpty: row.when_empty,
     whenDifferent: row.when_different,
     manualOverride: row.manual_override,
+    listId: row.list_id ?? null,
+    defaultValue: row.default_value ?? null,
     standard: row.org_id === null,
     modifiedSettings: [],
   }))
@@ -117,7 +124,7 @@ export type FieldValue = StoredValue & {
 
 const VALUE_COLUMNS = `value_text as text, value_number::float8 as number, value_date::text as date, value_bool as bool`
 
-/** Golden-record values for a set of records (all periods). */
+/** Golden-record values for a set of records (all periods). List rows are read separately, in lib/lists.ts. */
 export async function listValues(client: Queryable, orgId: string, recordIds: string[]): Promise<FieldValue[]> {
   if (recordIds.length === 0) return []
   const { rows } = await client.query(
@@ -152,6 +159,8 @@ export type SaveInput = {
   /** What the person typed. Empty clears the value. */
   raw: string
   note?: string | null
+  /** The list row this value belongs to; required for a list's column, otherwise left out. */
+  rowId?: string | null
 }
 
 export type SaveResult = { ok: true; changed: boolean } | { ok: false; error: string }
@@ -172,6 +181,21 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
   if (!field || field.appliesTo !== input.recordType) return { ok: false, error: 'That field could not be found.' }
   if (field.calculated) return { ok: false, error: `${field.name} is calculated, so it can't be entered by hand.` }
 
+  // A list's column needs a row of that list on this record; any other field must not have one.
+  const rowId = input.rowId ?? null
+  if (field.listId) {
+    const row = rowId
+      ? await client.query(
+          `select 1 as found from field_list_rows
+           where id = $1 and org_id = $2 and list_id = $3 and record_type = $4 and record_id = $5 and removed_at is null`,
+          [rowId, orgId, field.listId, input.recordType, input.recordId],
+        )
+      : { rows: [] }
+    if (row.rows.length === 0) return { ok: false, error: 'That entry could not be found.' }
+  } else if (rowId) {
+    return { ok: false, error: 'That field could not be found.' }
+  }
+
   let period: string | null = null
   if (field.tracking === 'monthly') {
     period = monthToPeriod(input.month ?? '')
@@ -191,9 +215,9 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
     `select id::text as id, ${VALUE_COLUMNS}
      from field_values
      where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4
-       and period is not distinct from $5::date and row_id is null
+       and period is not distinct from $5::date and row_id is not distinct from $6::uuid
      for update`,
-    [orgId, input.recordType, input.recordId, field.id, period],
+    [orgId, input.recordType, input.recordId, field.id, period, rowId],
   )
   let current: StoredValue = { ...EMPTY_VALUE }
   if (existing.rows.length > 0) {
@@ -214,15 +238,15 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
   await client.query(
     `delete from field_source_values
      where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4 and source_type = 'manual'
-       and period is not distinct from $5::date and row_id is null`,
-    [orgId, input.recordType, input.recordId, field.id, period],
+       and period is not distinct from $5::date and row_id is not distinct from $6::uuid`,
+    [orgId, input.recordType, input.recordId, field.id, period, rowId],
   )
   if (!isEmptyValue(next)) {
     await client.query(
       `insert into field_source_values
-         (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by)
-       values ($1, $2, $3, $4, $5::date, 'manual', $6, $7::numeric, $8::date, $9::boolean, $10)`,
-      [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, userId],
+         (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by, row_id)
+       values ($1, $2, $3, $4, $5::date, 'manual', $6, $7::numeric, $8::date, $9::boolean, $10, $11::uuid)`,
+      [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, userId, rowId],
     )
   }
 
@@ -241,9 +265,9 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
     await client.query(
       `insert into field_values
          (org_id, record_type, record_id, field_id, period, value_text, value_number, value_date, value_bool,
-          source_type, manual_override, status, note, updated_by)
-       values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, 'manual', true, 'approved', $10, $11)`,
-      [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, note, userId],
+          source_type, manual_override, status, note, updated_by, row_id)
+       values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, 'manual', true, 'approved', $10, $11, $12::uuid)`,
+      [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, note, userId, rowId],
     )
   }
   if (!changed) return { ok: true, changed: false }
@@ -251,12 +275,12 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
   await client.query(
     `insert into field_value_history
        (org_id, record_type, record_id, field_id, period,
-        old_text, old_number, old_date, old_bool, new_text, new_number, new_date, new_bool, source_type, note, changed_by)
-     values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, $10, $11::numeric, $12::date, $13::boolean, 'manual', $14, $15)`,
+        old_text, old_number, old_date, old_bool, new_text, new_number, new_date, new_bool, source_type, note, changed_by, row_id)
+     values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, $10, $11::numeric, $12::date, $13::boolean, 'manual', $14, $15, $16::uuid)`,
     [
       orgId, input.recordType, input.recordId, field.id, period,
       current.text, current.number, current.date, current.bool,
-      next.text, next.number, next.date, next.bool, note, userId,
+      next.text, next.number, next.date, next.bool, note, userId, rowId,
     ],
   )
 
@@ -284,6 +308,7 @@ export async function listHistory(
   recordType: RecordType,
   recordId: string,
   fieldId: string,
+  rowId: string | null = null,
 ): Promise<HistoryEntry[]> {
   const { rows } = await client.query(
     `select h.period::text as period,
@@ -294,9 +319,10 @@ export async function listHistory(
      from field_value_history h
      join source_types s on s.key = h.source_type
      where h.org_id = $1 and h.record_type = $2 and h.record_id = $3 and h.field_id = $4
+       and h.row_id is not distinct from $5::uuid
      order by h.changed_at desc, h.id
      limit 50`,
-    [orgId, recordType, recordId, fieldId],
+    [orgId, recordType, recordId, fieldId, rowId],
   )
   const num = (value: unknown) => (value === null || value === undefined ? null : Number(value))
   return rows.map((row) => ({

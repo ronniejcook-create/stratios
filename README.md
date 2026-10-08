@@ -64,6 +64,10 @@ units. Those tables have very few fixed columns. Everything else is a dynamic fi
 - `field_source_values` keeps what each source type (Manual Entry, Documents, Property Management
   System and so on) currently says, whether or not it matches the golden record.
 
+Fields are arranged by `screens` (the tabs on an asset), `sections` (titled groups, shown as a
+form, as tiles or as a list) and `section_fields`. A list (`field_lists`, `field_list_rows`) is a
+group of fields that repeats, one row per entry, such as Comments or Critical Dates.
+
 Every record and field has a short permanent key (`120-main-st`, `rentableSquareFeet`). The full
 design, including the parts not built yet, is in the "Stratios Data Design" document.
 
@@ -95,6 +99,7 @@ app/dashboard/assets/[id]    one asset: its properties, buildings and fields
 lib/db.ts                    organization-scoped database access
 lib/records.ts               assets, properties, buildings, floors, units, addresses
 lib/fields.ts                field dictionary, values, history
+lib/layout.ts, lib/lists.ts   screens and sections; lists and their rows
 lib/fieldFormat.ts           showing and reading values (safe for the browser)
 db/migrations                SQL schema
 proxy.ts                     route protection

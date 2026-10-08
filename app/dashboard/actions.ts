@@ -28,7 +28,7 @@ export async function addAsset(_prev: AddAssetState, formData: FormData): Promis
     )
   } catch (error) {
     console.error('addAsset failed', error)
-    if (isMissingSchema(error)) return { error: 'The database needs an update before assets can be added. Run db/migrations/003_fields.sql.' }
+    if (isMissingSchema(error)) return { error: 'The database needs an update before assets can be added. Run the newest file in db/migrations.' }
     return { error: 'The asset could not be saved. Try again.' }
   }
 

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { AgentReferenceProvider, type AgentReference } from './AgentContext'
 import { AgentPanel } from './AgentPanel'
 import { SideNav } from './SideNav'
 
@@ -21,7 +22,24 @@ export function AppShell({ brand, tools, isAdmin, children }: { brand: ReactNode
   const [navOpen, setNavOpen] = useState(true)
   const [agentOpen, setAgentOpen] = useState(true)
 
+  // Fields the person has clicked to point the agent at. Clicking one also
+  // opens the agent column so the reference is visible.
+  const [references, setReferences] = useState<AgentReference[]>([])
+  const addReference = useCallback((next: AgentReference) => {
+    setReferences((current) => [...current.filter((item) => item.reference !== next.reference), next].slice(-8))
+    setAgentOpen(true)
+  }, [])
+  const removeReference = useCallback((reference: string) => {
+    setReferences((current) => current.filter((item) => item.reference !== reference))
+  }, [])
+  const clearReferences = useCallback(() => setReferences([]), [])
+  const agentReferences = useMemo(
+    () => ({ references, addReference, removeReference, clearReferences }),
+    [references, addReference, removeReference, clearReferences],
+  )
+
   return (
+    <AgentReferenceProvider value={agentReferences}>
     <div className={`shell${navOpen ? '' : ' nav-closed'}${agentOpen ? '' : ' agent-closed'}`}>
       <header className="shell-top">
         <div className="shell-top-left">
@@ -57,5 +75,6 @@ export function AppShell({ brand, tools, isAdmin, children }: { brand: ReactNode
         <AgentPanel />
       </aside>
     </div>
+    </AgentReferenceProvider>
   )
 }

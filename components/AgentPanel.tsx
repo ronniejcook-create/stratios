@@ -1,3 +1,6 @@
+'use client'
+
+import { useAgentReferences } from './AgentContext'
 import { AiIcon } from './AiIcon'
 
 /**
@@ -5,6 +8,7 @@ import { AiIcon } from './AiIcon'
  * what it will do instead of offering controls that don't work.
  */
 export function AgentPanel() {
+  const { references, removeReference, clearReferences } = useAgentReferences()
   return (
     <div className="agent-panel">
       <div className="agent-tabs" role="presentation">
@@ -15,6 +19,31 @@ export function AgentPanel() {
         <span>Portfolio Analyst</span>
         <span className="agent-badge">Coming soon</span>
       </div>
+      {references.length > 0 ? (
+        <div className="agent-refs">
+          <div className="agent-refs-head">
+            <span>Referenced Fields</span>
+            <button type="button" className="link-button" onClick={clearReferences}>Clear All</button>
+          </div>
+          <ul>
+            {references.map((item) => (
+              <li key={item.reference}>
+                <div className="agent-ref-text">
+                  <span className="agent-ref-label">{item.label}</span>
+                  {item.detail ? <span className="agent-ref-detail">{item.detail}</span> : null}
+                  <code>{item.reference}</code>
+                </div>
+                <button type="button" className="icon-button" aria-label={`Remove ${item.label}`} onClick={() => removeReference(item.reference)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="agent-refs-note">The analyst will use these as the subject of your question once it is connected.</p>
+        </div>
+      ) : null}
       <div className="agent-empty">
         <p className="agent-empty-title">Ask About Your Portfolio</p>
         <p>

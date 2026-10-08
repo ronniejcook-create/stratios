@@ -272,9 +272,12 @@ create unique index if not exists field_source_values_idx on field_source_values
 );
 
 -- ---------------------------------------------------------------------------
--- Stratios standard fields (the starter set). Added before row-level security
--- is switched on for the dictionary.
+-- Stratios standard fields (the starter set). Standard rows have no
+-- organization, which the row-level security rules below would refuse, so
+-- the rules are lifted for the table owner here and put back further down.
 -- ---------------------------------------------------------------------------
+
+alter table field_definitions no force row level security;
 
 insert into field_definitions
   (key, name, applies_to, data_type, unit, options, tracking, rollup, calculated, formula, core_column,

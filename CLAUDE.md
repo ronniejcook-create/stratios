@@ -80,12 +80,28 @@ work and how data is isolated; this file covers how we work and where things sta
     (`app/dashboard/assets/[id]/`): fields grouped per asset, property and building, inline edit
     with an optional note, per-field history, monthly fields with a month picker, and adding
     properties, buildings, floors, units and addresses.
-  - Not built yet (later stages): sections and screens, lists, click-to-reference in the agent
-    panel, admin screens for fields, roles and field permissions, the Stratios-only master library
-    screen, documents and extraction, formulas (calculated fields show "Calculated later"),
-    tenants, leases, rent roll, cash flow, feeds and the source waterfall. Only Manual Entry
-    writes values today. Field groups are ordered by `GROUP_ORDER` in the asset page until
-    sections exist.
+  - Stage 2 is built too: `db/migrations/004_sections_and_lists.sql` (screens, sections,
+    section_fields, field_lists, field_list_rows; `list_id` and `default_value` on
+    field_definitions; the standard layout and the Comments and Critical Dates lists on assets and
+    properties). `lib/layout.ts` reads screens and sections; `lib/lists.ts` reads and saves list
+    rows (each cell goes through `saveManualValue` with a `rowId`, so it has history; removing a
+    row hides it, nothing is deleted). The asset page has screen tabs (`?screen=key`): Overview,
+    Financials (KPIs as tiles), Dates and Commentary (lists, `ListSection.tsx`). Fields not placed
+    in any section show under "Other Fields" on the first screen.
+  - Click-to-reference: clicking a field's name or a list row's number adds its permanent address
+    (`property:key.fieldKey@2026-03`, `asset:key.comments[2]`) to the agent column
+    (`components/AgentContext.tsx`, provided by `AppShell`, shown in `AgentPanel`). The analyst
+    itself is still not connected.
+  - Field keys are unique within a record type, so list columns carry their list in the key
+    (`commentDate`, `criticalDateType`).
+  - Standard rows have org_id null. Migrations lift FORCE row-level security on the dictionary
+    and layout tables while seeding them and put it back, so they work for an owner role without
+    BYPASSRLS and are safe to re-run in any order.
+  - Not built yet (later stages): admin screens for fields, sections and lists, roles and field
+    permissions, the Stratios-only master library screen, documents and extraction, formulas
+    (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
+    the source waterfall. Only Manual Entry writes values today. There is no history view for a
+    single list cell yet (the history is stored).
 - Members page (admins): invite by email, roles.
 - Admin Settings (`app/dashboard/settings/`, the page and nav item are titled "Org Colors"):
   - Site Colors: 10 roles, Dark/Light toggle, hex editing, 16 presets (`lib/presets.ts`),
