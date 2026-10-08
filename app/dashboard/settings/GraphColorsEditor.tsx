@@ -69,14 +69,14 @@ export function GraphColorsEditor({ initial, canEdit, action }: { initial: strin
         </fieldset>
         <figure className="graph-preview">
           <div className="graph-samples">
-          <svg viewBox="0 0 220 220" width="220" height="220" role="img" aria-label="Sample pie chart using the eight graph colors">
+          <svg viewBox="0 0 220 220" width="160" height="160" role="img" aria-label="Sample pie chart using the eight graph colors">
             {slices.map((slice) => (
               <path key={slice.label} d={slice.d} fill={slice.color} stroke="var(--panel)" strokeWidth="2" strokeLinejoin="round">
                 <title>{`${slice.label}: ${slice.share}%`}</title>
               </path>
             ))}
           </svg>
-          <svg viewBox="0 0 300 220" width="300" height="220" role="img" aria-label="Sample bar chart using the eight graph colors">
+          <svg viewBox="0 0 300 220" width="218" height="160" role="img" aria-label="Sample bar chart using the eight graph colors">
             {[0, 50, 100].map((tick) => {
               const y = 190 - (tick / BAR_MAX) * 170
               return (

@@ -41,4 +41,14 @@ export const GRAPH_PRESETS: { name: string; colors: string[] }[] = [
   { name: 'Nordic', colors: ['#4c6a92', '#a3be8c', '#bf616a', '#88c0d0', '#d08770', '#5e81ac', '#ebcb8b', '#b48ead'] },
   { name: 'Tropical', colors: ['#ff6b6b', '#ffd166', '#1a936f', '#06d6a0', '#ef476f', '#118ab2', '#f78c6b', '#8338ec'] },
   { name: 'Finance', colors: ['#1d3557', '#2a9d8f', '#e9c46a', '#6c757d', '#90be6d', '#457b9d', '#a8dadc', '#b5651d'] },
+  // One basic color in four shades, mixed with black and greys; ordered so
+  // neighbouring slices differ as much as possible.
+  { name: 'Red & Greys', colors: ['#d73431', '#1b1b1b', '#808080', '#febab2', '#94020d', '#fd7468', '#484848', '#bebebe'] },
+  { name: 'Green & Greys', colors: ['#1d9330', '#1b1b1b', '#808080', '#a4e0a5', '#045e17', '#54bf5c', '#484848', '#bebebe'] },
+  { name: 'Blue & Greys', colors: ['#2279dc', '#1b1b1b', '#808080', '#afd1fd', '#044b94', '#62a7fd', '#484848', '#bebebe'] },
+  { name: 'Orange & Greys', colors: ['#be5a0a', '#1b1b1b', '#808080', '#fdbd9a', '#7b3702', '#fa7c20', '#484848', '#bebebe'] },
+  { name: 'Purple & Greys', colors: ['#8c5ad3', '#d6c2fd', '#808080', '#1b1b1b', '#5f279e', '#b688fe', '#484848', '#bebebe'] },
+  { name: 'Teal & Greys', colors: ['#158b8c', '#1b1b1b', '#808080', '#95dddc', '#055959', '#16bbbc', '#484848', '#bebebe'] },
+  { name: 'Gold & Greys', colors: ['#95760d', '#1b1b1b', '#808080', '#e5cc89', '#5f4a02', '#c89f0d', '#484848', '#bebebe'] },
+  { name: 'Pink & Greys', colors: ['#c04688', '#1b1b1b', '#808080', '#ffb4d7', '#8a085a', '#f072b3', '#484848', '#bebebe'] },
 ]
