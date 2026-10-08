@@ -34,4 +34,15 @@ export const GRAPH_PRESETS: { name: string; colors: string[] }[] = [
   { name: 'Ocean', colors: ['#1f4e79', '#2ec4b6', '#3a86ff', '#90be6d', '#0b7a75', '#f4a261', '#5e60ce', '#48cae4'] },
   { name: 'Sunset', colors: ['#e76f51', '#2a9d8f', '#f4a261', '#264653', '#e9c46a', '#9b5de5', '#d62828', '#4cc9f0'] },
   { name: 'Corporate', colors: ['#1f3a5f', '#4f86c6', '#a3b8cc', '#f2a541', '#5c6b73', '#86bbd8', '#c05746', '#2f9c95'] },
+  // Single-family palettes: shades of one color, ordered so dark and light
+  // shades alternate and neighbouring slices differ as much as possible.
+  // Shades of one color are harder to tell apart than different colors, so
+  // these suit charts with only a few series best.
+  { name: 'Reds', colors: ['#6d031c', '#cb4747', '#fdac9f', '#ac3037', '#fdcec4', '#e5635b', '#8d1728', '#fe8072'] },
+  { name: 'Greens', colors: ['#024505', '#40aa62', '#065e17', '#5cc480', '#12772d', '#79dd9f', '#249145', '#91f4ba'] },
+  { name: 'Blues', colors: ['#003a64', '#317bcf', '#a2c5ff', '#004f8a', '#75acfd', '#1164b0', '#c9dcfc', '#5293e9'] },
+  { name: 'Purples', colors: ['#3d2472', '#8763c5', '#d5b2fe', '#6d4ea8', '#e6d0fd', '#a27bdc', '#54398d', '#bc94f2'] },
+  { name: 'Oranges', colors: ['#5c2602', '#b95e07', '#fed1aa', '#d77518', '#7a3705', '#ee9140', '#994a07', '#ffb06e'] },
+  { name: 'Teals', colors: ['#03413d', '#21a6a7', '#0e5955', '#4ebec2', '#0b726f', '#71d7dc', '#038c8b', '#8eedf4'] },
+  { name: 'Greys', colors: ['#34383d', '#8e9299', '#494d53', '#a7abb2', '#5f646a', '#c1c4cb', '#767b82', '#d8dbe1'] },
 ]
