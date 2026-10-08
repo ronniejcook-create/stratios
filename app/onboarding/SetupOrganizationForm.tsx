@@ -27,8 +27,9 @@ export function SetupOrganizationForm() {
         <input id="org-name" name="name" type="text" required maxLength={100} autoComplete="organization" placeholder="Your company name" />
       </div>
       <button type="submit" className="btn btn-primary" disabled={busy}>
-        {busy ? 'Setting up…' : 'Set up organization'}
+        {busy ? 'Setting up and picking your brand colors…' : 'Set up organization'}
       </button>
+      {busy ? <p className="note">This can take up to half a minute.</p> : null}
       {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
     </form>
   )

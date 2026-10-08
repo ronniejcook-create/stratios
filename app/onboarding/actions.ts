@@ -1,6 +1,5 @@
 'use server'
 
-import { after } from 'next/server'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { generateBrandTheme, saveOrgTheme } from '@/lib/brandColors'
 import { getOnboardingState } from '@/lib/organizations'
@@ -32,19 +31,17 @@ export async function setupOrganization(
       createdBy: userId, // becomes the organization's first admin
       publicMetadata: state.domain ? { domain: state.domain } : {},
     })
-    // Work out the organization's brand colors after responding, so set-up
-    // isn't held up; the new scheme shows on the next page load.
-    const domain = state.domain
-    if (domain) {
-      after(async () => {
-        try {
-          const result = await generateBrandTheme(domain)
-          if (result.theme) await saveOrgTheme(organization.id, result.theme, { brand: result.brand, mode: 'dark' })
-          else console.warn('Brand colors not set for', domain, '-', result.error)
-        } catch (error) {
-          console.error('Brand colors failed for', domain, error)
-        }
-      })
+    // Pick and save the organization's dark-mode brand colors before opening
+    // the app, so the very first page is already in its colors. If this fails,
+    // the organization simply starts with the Stratios colors.
+    if (state.domain) {
+      try {
+        const result = await generateBrandTheme(state.domain, 'dark')
+        if (result.theme) await saveOrgTheme(organization.id, result.theme, { brand: result.brand, mode: 'dark' })
+        else console.warn('Brand colors not set for', state.domain, '-', result.error)
+      } catch (error) {
+        console.error('Brand colors failed for', state.domain, error)
+      }
     }
     return { error: null, organizationId: organization.id }
   } catch (error) {
