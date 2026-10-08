@@ -14,7 +14,7 @@ start of the application: sign-in, invite-only organizations, and an organizatio
 
 1. Install: `npm install`
 2. Copy `.env.example` to `.env.local` and fill in the values (see below).
-3. Create the tables: run `db/migrations/001_init.sql` against your database
+3. Create the tables: run `db/migrations/001_init.sql` and then `db/migrations/002_organization_settings.sql` against your database
    (`psql "$DATABASE_URL" -f db/migrations/001_init.sql`, or paste it into your provider's SQL editor).
 4. Start: `npm run dev`, then open http://localhost:3000
 
@@ -41,6 +41,14 @@ start of the application: sign-in, invite-only organizations, and an organizatio
 - People who already have a membership or a pending invitation go to `/select-organization`.
 - In Clerk, turn off the setting that lets users create organizations themselves, so the only way to
   create one is the onboarding screen.
+
+## Where settings live
+
+Each organization's company domain, site colors and graph colors are kept in the
+`organization_settings` table. Organizations set up before the database existed
+had these in their Clerk metadata; they are copied into the table automatically the
+first time the organization is opened. Without `DATABASE_URL`, settings fall back to
+Clerk metadata.
 
 ## How data is isolated
 

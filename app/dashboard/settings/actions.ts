@@ -6,6 +6,7 @@ import { auth, clerkClient } from '@clerk/nextjs/server'
 import { generateBrandTheme, saveChartColors, saveGeneratedBrand, saveOrgTheme } from '@/lib/brandColors'
 import { CHART_SLOTS } from '@/lib/chartColors'
 import { GRAPH_PRESETS } from '@/lib/presets'
+import { getOrgSettings } from '@/lib/orgSettings'
 import { THEME_ROLES, ensureReadable, normalizeHex, type BrandColors, type OrgTheme } from '@/lib/theme'
 
 // Nothing on the Brand colors page is saved until Save is clicked: presets,
@@ -65,14 +66,13 @@ export async function getGeneratedBrand(): Promise<{ brand: BrandColors; note?: 
   if (!orgId || orgRole !== 'org:admin') return { error: 'Only administrators can change the colors.' }
   try {
     const client = await clerkClient()
-    const organization = await client.organizations.getOrganization({ organizationId: orgId })
-    const kept = organization.publicMetadata?.generatedBrand as { primary?: unknown; accent?: unknown } | undefined
+    const [organization, settings] = await Promise.all([client.organizations.getOrganization({ organizationId: orgId }), getOrgSettings(orgId)])
+    const kept = settings.generatedBrand as { primary?: unknown; accent?: unknown } | null
     const primary = normalizeHex(kept?.primary)
     const accent = normalizeHex(kept?.accent)
     if (primary && accent) return { brand: { primary, accent } }
 
-    const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
-    const result = await generateBrandTheme({ name: organization.name, domain })
+    const result = await generateBrandTheme({ name: organization.name, domain: settings.domain })
     if (!result.theme) return { error: result.error }
     await saveGeneratedBrand(orgId, result.brand)
     return { brand: result.brand, note: result.note }

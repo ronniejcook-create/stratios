@@ -3,6 +3,7 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { generateBrandTheme, saveGeneratedBrand, saveOrgTheme } from '@/lib/brandColors'
 import { getOnboardingState } from '@/lib/organizations'
+import { isDomainTaken, updateOrgSettings } from '@/lib/orgSettings'
 
 export type SetupOrganizationState = { error: string | null; organizationId: string | null }
 
@@ -29,8 +30,20 @@ export async function setupOrganization(
     const organization = await client.organizations.createOrganization({
       name,
       createdBy: userId, // becomes the organization's first admin
-      publicMetadata: state.domain ? { domain: state.domain } : {},
     })
+    if (state.domain) {
+      try {
+        await updateOrgSettings(organization.id, { domain: state.domain })
+      } catch (error) {
+        // Undo the organization if its domain could not be recorded (for example,
+        // a colleague set up the same company at the same moment).
+        await client.organizations.deleteOrganization(organization.id).catch(() => {})
+        if (isDomainTaken(error)) {
+          return { error: 'Your company was just set up by a colleague. Refresh the page to ask them for an invitation.', organizationId: null }
+        }
+        throw error
+      }
+    }
     // Pick and save the organization's dark-mode brand colors before opening
     // the app (by name first, its website second), so the very first page is
     // already in its colors. If this fails, it starts with the Stratios colors.

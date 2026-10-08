@@ -6,6 +6,7 @@ import { Logo } from '@/components/Logo'
 import { OrgMenu } from '@/components/OrgMenu'
 import { DEFAULT_THEME, parseBrandSettings, parseTheme, themeToStyle } from '@/lib/theme'
 import { displayChartColors, parseChartColors } from '@/lib/chartColors'
+import { getOrgSettings } from '@/lib/orgSettings'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, userId, orgId, redirectToSignIn } = await auth()
@@ -14,16 +15,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!orgId) redirect('/onboarding')
 
   const client = await clerkClient()
-  // Read the active organization directly: the copy embedded in the
-  // membership list can lag behind recent changes to its colors.
   const [memberships, activeOrganization] = await Promise.all([
     client.users.getOrganizationMembershipList({ userId, limit: 100 }),
     client.organizations.getOrganization({ organizationId: orgId }),
   ])
   const organizations = memberships.data.map((m) => ({ id: m.organization.id, name: m.organization.name }))
-  const theme = parseTheme(activeOrganization.publicMetadata?.theme) ?? DEFAULT_THEME
-  const { brand, mode } = parseBrandSettings(activeOrganization.publicMetadata?.theme)
-  const chartColors = displayChartColors(parseChartColors(activeOrganization.publicMetadata?.chartColors), theme, brand, mode)
+  const settings = await getOrgSettings(orgId)
+  const theme = parseTheme(settings.theme) ?? DEFAULT_THEME
+  const { brand, mode } = parseBrandSettings(settings.theme)
+  const chartColors = displayChartColors(parseChartColors(settings.chartColors), theme, brand, mode)
   // Graph colors are available to every chart as --chart-1 … --chart-8.
   const style = { ...themeToStyle(theme), ...Object.fromEntries(chartColors.map((c, i) => [`--chart-${i + 1}`, c])) }
   const current = { id: activeOrganization.id, name: activeOrganization.name }

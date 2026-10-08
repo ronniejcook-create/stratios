@@ -1,4 +1,4 @@
-import { clerkClient } from '@clerk/nextjs/server'
+import { updateOrgSettings } from './orgSettings'
 import { deriveTheme, normalizeHex, type BrandColors, type OrgTheme, type ThemeMode } from './theme'
 
 const DOMAIN = /^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
@@ -239,20 +239,15 @@ ${COLOR_RULES}`,
  * lookup.
  */
 export async function saveGeneratedBrand(organizationId: string, brand: BrandColors) {
-  const client = await clerkClient()
-  await client.organizations.updateOrganizationMetadata(organizationId, {
-    publicMetadata: { generatedBrand: { primary: brand.primary, accent: brand.accent } },
-  })
+  await updateOrgSettings(organizationId, { generatedBrand: { primary: brand.primary, accent: brand.accent } })
 }
-
 
 /** Saves (or with null, clears) an organization's graph colors. */
 export async function saveChartColors(
   organizationId: string,
   value: { colors: string[]; source: 'history' | 'brand' | 'manual' | 'preset'; name?: string } | null,
 ) {
-  const client = await clerkClient()
-  await client.organizations.updateOrganizationMetadata(organizationId, { publicMetadata: { chartColors: value } })
+  await updateOrgSettings(organizationId, { chartColors: value })
 }
 
 /**
@@ -264,7 +259,6 @@ export async function saveOrgTheme(
   theme: OrgTheme | null,
   settings: { brand?: BrandColors | null; mode?: ThemeMode } = {},
 ) {
-  const client = await clerkClient()
   const value = theme
     ? {
         ...theme,
@@ -272,5 +266,5 @@ export async function saveOrgTheme(
         ...(settings.brand ? { brandPrimary: settings.brand.primary, brandAccent: settings.brand.accent } : {}),
       }
     : null
-  await client.organizations.updateOrganizationMetadata(organizationId, { publicMetadata: { theme: value } })
+  await updateOrgSettings(organizationId, { theme: value })
 }

@@ -4,6 +4,7 @@ import { getGeneratedBrand, saveColors, saveGraphColors } from './actions'
 import { GraphColorsEditor } from './GraphColorsEditor'
 import { chartColorsFromSite, displayChartColors, fitToSurface, parseChartColors } from '@/lib/chartColors'
 import { SiteColorsEditor } from './SiteColorsEditor'
+import { getOrgSettings } from '@/lib/orgSettings'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,15 +27,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const message = status ? MESSAGES[status] : undefined
 
   const client = await clerkClient()
-  const organization = await client.organizations.getOrganization({ organizationId: orgId })
-  const stored = parseTheme(organization.publicMetadata?.theme)
+  const [organization, settings] = await Promise.all([client.organizations.getOrganization({ organizationId: orgId }), getOrgSettings(orgId)])
+  const stored = parseTheme(settings.theme)
   const theme = stored ?? DEFAULT_THEME
-  const { mode, brand } = parseBrandSettings(organization.publicMetadata?.theme)
-  const generatedRaw = organization.publicMetadata?.generatedBrand as { primary?: unknown; accent?: unknown } | undefined
+  const { mode, brand } = parseBrandSettings(settings.theme)
+  const generatedRaw = settings.generatedBrand as { primary?: unknown; accent?: unknown } | undefined
   const generatedPrimary = normalizeHex(generatedRaw?.primary)
   const generatedAccent = normalizeHex(generatedRaw?.accent)
   const generatedBrand = generatedPrimary && generatedAccent ? { primary: generatedPrimary, accent: generatedAccent } : null
-  const storedChart = parseChartColors(organization.publicMetadata?.chartColors)
+  const storedChart = parseChartColors(settings.chartColors)
   const chartColors = displayChartColors(storedChart, theme, brand, mode)
   const generatedChartColors = fitToSurface(chartColorsFromSite(theme, brand, mode), theme.surface)
   const chartSource =
@@ -42,7 +43,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     storedChart?.source === 'manual' ? 'These graph colors were set by hand.' :
     storedChart?.source === 'preset' ? `These graph colors are the ${storedChart.name ?? 'chosen'} palette.` :
     'These graph colors are generated from your site colors.'
-  const domain = typeof organization.publicMetadata?.domain === 'string' ? organization.publicMetadata.domain : null
+  const domain = settings.domain
 
   return (
     <>

@@ -1,5 +1,6 @@
 import { clerkClient, currentUser } from '@clerk/nextjs/server'
 import { getEmailDomain, isPublicEmailDomain } from './domains'
+import { findOrgIdByDomain } from './orgSettings'
 
 export type OnboardingState =
   // Already a member of, or invited to, an organization.
@@ -10,22 +11,6 @@ export type OnboardingState =
   // New company domain, or a public email provider (domain is null).
   | { kind: 'needs-setup'; email: string; domain: string | null }
 
-/**
- * Finds the organization that registered a company email domain.
- * The domain is stored on the organization's public metadata when it is set up.
- * This scans the organization list, which is fine for a small number of
- * organizations; move it to an indexed database lookup as the list grows.
- */
-export async function findOrganizationByDomain(domain: string) {
-  const client = await clerkClient()
-  const pageSize = 100
-  for (let offset = 0; ; offset += pageSize) {
-    const page = await client.organizations.getOrganizationList({ limit: pageSize, offset })
-    const match = page.data.find((org) => org.publicMetadata?.domain === domain)
-    if (match) return match
-    if (page.data.length < pageSize) return null
-  }
-}
 
 /** Works out what a signed-in user without an active organization should see. */
 export async function getOnboardingState(userId: string): Promise<OnboardingState> {
@@ -45,8 +30,11 @@ export async function getOnboardingState(userId: string): Promise<OnboardingStat
   const domain = getEmailDomain(email)
   if (!domain || isPublicEmailDomain(domain)) return { kind: 'needs-setup', email, domain: null }
 
-  const existing = await findOrganizationByDomain(domain)
-  if (existing) return { kind: 'domain-taken', email, domain, organizationName: existing.name }
+  const existingId = await findOrgIdByDomain(domain)
+  if (existingId) {
+    const existing = await client.organizations.getOrganization({ organizationId: existingId })
+    return { kind: 'domain-taken', email, domain, organizationName: existing.name }
+  }
 
   return { kind: 'needs-setup', email, domain }
 }

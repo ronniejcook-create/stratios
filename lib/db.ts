@@ -16,6 +16,12 @@ function getPool(): Pool {
   return globalForDb.stratiosPool
 }
 
+/** Runs one query outside any organization scope (for tables without per-organization rules). */
+export async function query<T extends object>(text: string, params: unknown[] = []): Promise<T[]> {
+  const result = await getPool().query<T>(text, params)
+  return result.rows
+}
+
 /**
  * Runs `fn` in a transaction scoped to one organization.
  * The organization ID is stored in a transaction-local setting that the
