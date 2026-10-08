@@ -41,5 +41,4 @@ export const GRAPH_PRESETS: { name: string; colors: string[] }[] = [
   { name: 'Nordic', colors: ['#4c6a92', '#a3be8c', '#bf616a', '#88c0d0', '#d08770', '#5e81ac', '#ebcb8b', '#b48ead'] },
   { name: 'Tropical', colors: ['#ff6b6b', '#ffd166', '#1a936f', '#06d6a0', '#ef476f', '#118ab2', '#f78c6b', '#8338ec'] },
   { name: 'Finance', colors: ['#1d3557', '#2a9d8f', '#e9c46a', '#6c757d', '#90be6d', '#457b9d', '#a8dadc', '#b5651d'] },
-] },
 ]
