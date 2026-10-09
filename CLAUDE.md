@@ -611,6 +611,8 @@ work and how data is isolated; this file covers how we work and where things sta
         Relatively High; 57 tracts within 3 miles; a quarter of a second), and the real panel
         and map in Chromium with a part of those answers. **Whether Vercel's servers can reach
         the service is not known.**
+    - **Tab order** (October 9, his request): None, Demographics, Schools, Transit, Flood
+      Zones, Natural Hazards (`LAYERS` in `AssetMap.tsx`).
     - Addresses on units are not listed with these actions or pinned (units show their address
       as a tooltip, as before).
     - Checked for the map: the real component in Chromium with the real Leaflet files and

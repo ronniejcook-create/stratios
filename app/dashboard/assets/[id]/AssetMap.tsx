@@ -68,9 +68,9 @@ function groupLimits(values: number[]): number[] {
 const LAYERS = [
   { key: 'none', label: 'None' },
   { key: 'demographics', label: 'Demographics' },
-  { key: 'flood', label: 'Flood Zones' },
   { key: 'schools', label: 'Schools' },
   { key: 'transit', label: 'Transit' },
+  { key: 'flood', label: 'Flood Zones' },
   { key: 'hazards', label: 'Natural Hazards' },
 ] as const
 type Layer = (typeof LAYERS)[number]['key']
