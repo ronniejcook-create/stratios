@@ -599,8 +599,49 @@ work and how data is isolated; this file covers how we work and where things sta
     them back somewhere else when rent rolls are built. Nothing else changed: the tables,
     `insertChild`, `AddChildForm` (still handles floor and unit) and any floors and units
     already entered are all kept, just not shown.
-  - Not built yet (later stages): formulas
-    (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
+  - **Stage 5, first part: values the agent takes or calculates from a document** (October 9,
+    late; `db/migrations/018_calculated_values.sql`). Ronnie's rules: the trigger is an event
+    such as a rent roll upload; a skill says which values to calculate; the recipe is in the
+    field's Agent Instructions; and **a figure the document itself shows is always taken as
+    shown**, because users reject a number that differs from the page. Calculation is for what
+    a source leaves out (later, lease data from MRI and Yardi, which carry no KPIs).
+    - The trigger today is a document being read (chat or Documents tab). There is no
+      Recalculate button and nothing calculates from stored data yet.
+    - Each value in the reading's answer has `basis`: `stated` or `calculated`. The prompt lets
+      the agent calculate only when the document does not show the value, a fitting skill
+      lists the field under values to calculate, the field's instructions have a
+      "How to Calculate" part, and every input is in the document; the working goes in `quote`.
+      Code also enforces: no "How to Calculate" on the field means the value is dropped
+      (`hasRecipe`), and a calculated value is never high confidence. Any field can be
+      calculated this way, not only those flagged `calculated`.
+    - Fields flagged `calculated` are now offered to the agent (`extractableFields`), so a cap
+      rate printed in a memorandum is filled in as Documents. They still can't be typed by
+      hand. They show their value when they have one and "Not calculated yet" otherwise.
+    - A calculated value is stored with source **Calculated** (golden record, history and
+      `field_source_values`, with the document and page); its history note is
+      `Calculated from "<file>", page N: <working>`. The field's usual rules (when empty, when
+      different) still decide filled / replaced / needs a decision. `document_findings.basis`
+      (018, read through `to_jsonb`, written only when the column exists) puts a "Calculated"
+      chip and the working on the review page.
+    - 018 appends "How to Calculate" to ten standard fields (Occupancy Rate, Percent Leased,
+      Number of Tenants, Weighted Average Lease Term, Average Rent per Square Foot, Total
+      Rentable Square Feet, Net Operating Income, Going-In Cap Rate, Debt Service Coverage
+      Ratio, Loan to Value) and adds two standard skills: **Reading a Rent Roll** (lists six
+      values to calculate, plus a critical date per lease expiring within 24 months) and
+      **Reading an Operating Statement** (monthly revenue, expenses and NOI as shown; NOI
+      calculated only when missing). An organization that edited a field's instructions does
+      not receive the recipe for it.
+    - Not built: storing the rent roll itself (tenants, leases), calculating from stored data,
+      roll-ups such as a property's square feet from its buildings, a Recalculate button, and
+      "a KPI built from a hidden field is hidden" (the agent is only offered fields the person
+      may edit, but a recipe's inputs are whatever the document shows).
+    - Checked: 018 twice as a role without BYPASSRLS, and offering, the prompt, the checks on
+      the answer, storage as Calculated, history, the review list and accepting in review on
+      the scratch database with a scripted answer. Not run against the real Claude API, so
+      the agent's arithmetic on a real rent roll is untested; the review page chip was not
+      opened in a browser.
+  - Not built yet (later stages): stored formulas
+    (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
     single list cell yet (the history is stored).
 - Members page (admins): invite by email, roles.

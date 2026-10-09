@@ -81,6 +81,7 @@ function describeField(field: FieldDefinition, column = false): string {
   if (field.dataType === 'picklist' && field.options?.length) type += `: ${field.options.join(' | ')}`
   lines.push(`  value: ${type}`)
   if (field.tracking === 'monthly') lines.push('  tracked: one value per month, so "month" is required')
+  if (field.calculated && field.formula) lines.push(`  worked out as: ${field.formula}`)
   if (field.aiDescription) lines.push(`  description: ${field.aiDescription.slice(0, MAX_FIELD_TEXT)}`)
   if (field.agentInstructions) {
     lines.push('  instructions:')
@@ -105,9 +106,10 @@ const SCHEMA = {
           month: { type: 'string', description: 'YYYY-MM for a field tracked per month; an empty string otherwise' },
           page: { type: 'integer', description: 'The PDF page the value is on, counting the first page as 1' },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-          quote: { type: 'string', description: 'The few words or the line from the document that state the value' },
+          basis: { type: 'string', enum: ['stated', 'calculated'], description: 'stated when the document itself shows this value; calculated when you worked it out from other figures in the document' },
+          quote: { type: 'string', description: 'For a stated value, the few words or the line from the document that state it. For a calculated value, the working: the inputs and the arithmetic' },
         },
-        required: ['record', 'field', 'value', 'month', 'page', 'confidence', 'quote'],
+        required: ['record', 'field', 'value', 'month', 'page', 'confidence', 'basis', 'quote'],
         additionalProperties: false,
       },
     },
@@ -243,12 +245,14 @@ Stratios keeps a library of skills: know-how for particular kinds of document or
 ${library}
 ` : ''}
 ## Rules
-- Return a value only when the document states it. Never estimate, calculate a figure the document does not show, or carry a value over from general knowledge.
+- Return a value the document states with basis "stated". When the document shows a figure, always return it exactly as shown, even if you would have calculated it differently: the reader will compare your answer with the page.
+- Calculate a value (basis "calculated") only when all of these hold: the document does not show the value itself; a skill that fits this document lists the field under values to calculate; the field's instructions have a "How to Calculate" part; and every input that part needs is in the document. Then follow "How to Calculate" exactly, put the working (the inputs and the arithmetic) in "quote", give the page the main inputs are on, and use medium or low confidence. If any of these is missing, leave the value out and say in the summary what could not be calculated and why.
+- Never estimate, and never carry a value over from general knowledge.
 - Write each value the way its "value" line asks. Convert units when the document uses different ones (for example a figure stated in thousands), and lower the confidence when you do.
 - For a field tracked per month, give the month the figure is for. If the document gives only an annual or trailing-twelve-month figure for such a field, leave it out and say so in the summary.
 - One value per record and field (and month). If the document gives conflicting figures, return the most authoritative one with low confidence and mention the conflict in the summary.
 - Confidence: high when the document states the value plainly and unambiguously; medium when you had to interpret a label or convert units; low when it is unclear, conflicting or hard to read.
-- quote: the few words or the line that state the value, copied from the document.
+- quote: for a stated value, the few words or the line that state it, copied from the document.
 - proposed_fields: facts in the document that a real estate owner would want to track and that match NO field in the dictionary, under any of its names. Check the dictionary carefully first, so "Cap Rate" and "Capitalization Rate" never become two fields. At most ${MAX_PROPOSALS}, the most useful first. Do not propose tenant-by-tenant, lease-by-lease or month-by-month figures.
 - addresses: a property or a building has one street address. When the document states the property's street address, give it once for the property: the number and street in "street" (no suite, no building name), with the city, the two-letter state and the ZIP code when stated. Give a building an address only when the document gives that building a street address different from its property's. Never make up or complete an address; if the document gives no street number and street, return nothing for that record.
 - list_rows: ${lists.length === 0 ? 'return an empty list.' : `add an entry when the document gives something worth keeping that fits a list, at most ${MAX_LIST_ROWS} entries in all, the most useful first. For a list of comments or commentary: the narrative an owner would want on file (investment highlights, location and market, tenancy and leasing, building condition and capital work, financial points, risks and assumptions), one entry per topic, written in your own plain words in ${MAX_COMMENT_WORDS} words or fewer, with facts and figures exactly as the document states them and no sales language. For a list of dates: one entry per dated event the document gives (a lease expiration, an option deadline, a rent step, a loan maturity), naming who or what it concerns in the description. Fill in only the columns the document supports and leave the others out. A column for who made or wrote the entry takes the firm that prepared the document. A date column takes YYYY-MM-DD: when the document gives only a month and year, use the last day of that month; when it gives only a year, leave the entry out of a list of dates. For a comment's date use the date of the document when it states one, and otherwise leave the date out. An entry about the investment as a whole belongs on the asset; one about a property, its buildings, tenants or surroundings belongs on that property. Do not repeat as an entry a single figure that already went into "values".`}
@@ -286,6 +290,9 @@ export type Reading = {
   /** The page the agent picked for the asset's main photo, if any. */
   mainPhotoPage: number | null
 }
+
+/** Whether a field's instructions say how to calculate it. Without that the agent may only take the value as a document shows it. */
+export const hasRecipe = (field: Pick<FieldDefinition, 'agentInstructions'>) => /how to calculate/i.test(field.agentInstructions ?? '')
 
 const text = (value: unknown, max: number) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 const pageOf = (value: unknown) => (Number.isInteger(value) && (value as number) > 0 && (value as number) < 100000 ? (value as number) : null)
@@ -327,7 +334,15 @@ export function interpretAnswer(answer: Record<string, unknown>, records: Record
     const id = `${record.id}:${field.id}:${period ?? ''}`
     if (seen.has(id)) continue
     seen.add(id)
-    const confidence = text(raw.confidence, 10).toLowerCase()
+    // A calculated value needs a recipe on its field, and is never more than medium confidence.
+    const calculated = text(raw.basis, 12).toLowerCase() === 'calculated'
+    if (calculated && !hasRecipe(field)) {
+      skipped += 1
+      seen.delete(id)
+      continue
+    }
+    const stated = text(raw.confidence, 10).toLowerCase()
+    const confidence = calculated && stated === 'high' ? 'medium' : stated
     candidates.push({
       recordType: record.type,
       recordId: record.id,
@@ -336,6 +351,7 @@ export function interpretAnswer(answer: Record<string, unknown>, records: Record
       value: parsed.value,
       page: pageOf(raw.page),
       confidence: (confidence === 'high' || confidence === 'medium' ? confidence : 'low') as Confidence,
+      basis: calculated ? 'calculated' : 'stated',
       quote: text(raw.quote, 500) || null,
     })
   }
@@ -510,8 +526,9 @@ export function sectionByField(screens: { sections: { id: string; fieldIds: stri
 }
 
 /**
- * The fields a document may fill in for one person: ordinary fields they are
- * allowed to change. Calculated fields, list columns and record names are
+ * The fields a document may fill in for one person: fields they are allowed
+ * to change, calculated ones included (a document may show the figure, or a
+ * skill may have the agent calculate it). List columns and record names are
  * left out, and so is anything the person can only view or cannot see, which
  * is how the agent follows the same permissions as the person it works for.
  */
@@ -522,7 +539,7 @@ export function extractableFields(
 ): FieldDefinition[] {
   return fields.filter(
     (field) =>
-      !field.calculated && !field.listId && field.coreColumn !== 'name' &&
+      !field.listId && field.coreColumn !== 'name' &&
       (field.appliesTo === 'asset' || field.appliesTo === 'property' || field.appliesTo === 'building') &&
       fieldLevel(field.id, sections.get(field.id) ?? null) === 'edit',
   )

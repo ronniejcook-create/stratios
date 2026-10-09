@@ -82,20 +82,18 @@ export function FieldGroup({
         {fields.map((field) => {
           const shown = formatValue(field, field.value)
           // A paragraph (a description, a summary) gets the full width and is cut short; the pop-up shows all of it.
-          const long = style !== 'tiles' && !field.calculated && field.dataType === 'text' && shown.length > LONG_TEXT
+          const long = style !== 'tiles' && field.dataType === 'text' && shown.length > LONG_TEXT
           return (
             <button key={field.id} type="button" className={`field-card${long ? ' field-card-long' : ''}`} onClick={() => setOpenId(field.id)} title={`Open ${field.name}`}>
               <span className="field-card-label">{field.name}</span>
               <span className="field-card-value">
-                {field.calculated ? (
-                  <span className="field-unset">Calculated later</span>
-                ) : shown ? (
+                {shown ? (
                   <>
                     <span>{shown}</span>
                     {field.monthly && field.period ? <span className="field-meta">{formatPeriod(field.period)}</span> : null}
                   </>
                 ) : (
-                  <span className="field-unset">Not set</span>
+                  <span className="field-unset">{field.calculated ? 'Not calculated yet' : 'Not set'}</span>
                 )}
               </span>
             </button>
@@ -189,7 +187,7 @@ function FieldDetails({ target, field, canManageFields, onClose }: { target: Tar
     addReference({
       reference: `${target.recordRef}.${field.key}${field.monthly && field.period ? `@${field.period.slice(0, 7)}` : ''}`,
       label: `${target.recordName} · ${field.name}`,
-      detail: field.calculated ? undefined : shown ? `${shown}${field.monthly && field.period ? ` (${formatPeriod(field.period)})` : ''}` : 'Not set',
+      detail: shown ? `${shown}${field.monthly && field.period ? ` (${formatPeriod(field.period)})` : ''}` : 'Not set',
     })
     setError(null)
     setMessage('Added to the agent column. Close this to ask the analyst about it.')
@@ -294,11 +292,13 @@ function FieldDetails({ target, field, canManageFields, onClose }: { target: Tar
           ) : (
             <>
               <p className={`field-modal-value${field.dataType === 'text' && shown.length > LONG_TEXT ? ' field-modal-long' : ''}`}>
-                {field.calculated ? 'Calculated later' : shown || 'Not set'}
-                {!field.calculated && shown && field.monthly && field.period ? <span className="field-meta"> {formatPeriod(field.period)}</span> : null}
+                {shown || (field.calculated ? 'Not calculated yet' : 'Not set')}
+                {shown && field.monthly && field.period ? <span className="field-meta"> {formatPeriod(field.period)}</span> : null}
               </p>
               <p className="note">
-                {field.calculated ? field.formula ?? 'This value will be worked out from other fields.' : 'Your role can view this field but not change it.'}
+                {field.calculated
+                  ? `This value is not typed in. It comes from a document that shows it, or the agent works it out${field.formula ? ` (${field.formula})` : ''}.${field.sourceName && shown ? ` The current value is from ${field.sourceName}.` : ''}`
+                  : 'Your role can view this field but not change it.'}
               </p>
             </>
           )

@@ -36,6 +36,8 @@ export type ReadSuccess = {
   skipped: number
   /** Entries added to lists: comments, critical dates and the like. */
   listRows: number
+  /** Values the agent worked out from the document's figures, rather than found stated in it. */
+  calculated: number
   /** Street addresses set on properties and buildings from the document. */
   addresses: number
   /** Photos copied out of the document onto the asset. */
@@ -214,6 +216,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       proposals: result.reading.proposals.length,
       skipped: result.reading.skipped,
       listRows,
+      calculated: result.reading.candidates.filter((candidate) => candidate.basis === 'calculated').length,
       addresses,
       photos,
       planPages: planPagesOf(result.reading.photos),
@@ -292,6 +295,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         proposals: reading.proposals.length,
         skipped: reading.skipped,
         listRows,
+        calculated: reading.candidates.filter((candidate) => candidate.basis === 'calculated').length,
         addresses: 0,
         found: reading.addresses,
         photos: 0,

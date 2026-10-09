@@ -128,7 +128,9 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
   const foundCell = ({ finding, field }: Row) => (
     <td>
       <span className="review-value">{formatValue(field, finding.value)}</span>
-      {finding.quote ? <div className="doc-sub review-quote">“{finding.quote}”</div> : null}
+      {finding.quote ? (
+        finding.basis === 'calculated' ? <div className="doc-sub">Working: {finding.quote}</div> : <div className="doc-sub review-quote">“{finding.quote}”</div>
+      ) : null}
     </td>
   )
   const currentCell = ({ finding, field }: Row) => (
@@ -140,6 +142,7 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
   const whereCell = ({ finding }: Row) => (
     <td className="review-where">
       {pageLink(finding.page)}
+      {finding.basis === 'calculated' ? <span className="chip chip-modified" title="The document does not show this value. The agent worked it out from the document's figures, following the field's instructions.">Calculated</span> : null}
       {finding.confidence ? <span className={`chip chip-${finding.confidence}`}>{CONFIDENCE_LABELS[finding.confidence]} Confidence</span> : null}
     </td>
   )

@@ -98,6 +98,7 @@ function describeReading(session: Session, result: ReadOutcome): string {
     values_confirmed: result.counts.confirmed,
     values_waiting_for_a_decision: result.counts.decision,
     values_kept_because_the_field_never_replaces: result.counts.kept,
+    of_all_those_values_how_many_the_agent_calculated_rather_than_found_stated: result.calculated,
     new_fields_proposed: result.proposals,
     comments_and_critical_dates_added_to_lists: result.listRows,
     street_addresses_set_from_the_document: result.addresses,

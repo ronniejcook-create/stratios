@@ -244,6 +244,8 @@ export type Candidate = {
   value: StoredValue
   page: number | null
   confidence: Confidence
+  /** Whether the document shows the value, or the agent worked it out from the document's figures. Stated when left out. */
+  basis?: 'stated' | 'calculated'
   quote: string | null
 }
 
@@ -304,6 +306,7 @@ async function writeGolden(
   next: StoredValue,
   confidence: Confidence | null,
   note: string,
+  source: 'documents' | 'calculated' = 'documents',
 ): Promise<void> {
   const { recordType, recordId, field, period } = target
   const score = confidence ? CONFIDENCE_SCORE[confidence] : null
@@ -311,29 +314,29 @@ async function writeGolden(
     await client.query(
       `update field_values
        set value_text = $2, value_number = $3::numeric, value_date = $4::date, value_bool = $5::boolean,
-           source_type = 'documents', manual_override = false, status = 'approved', confidence = $6::numeric,
+           source_type = $10, manual_override = false, status = 'approved', confidence = $6::numeric,
            note = $7, updated_by = $8, updated_at = now()
        where id = $1 and org_id = $9`,
-      [golden.rowId, next.text, next.number, next.date, next.bool, score, note, userId, orgId],
+      [golden.rowId, next.text, next.number, next.date, next.bool, score, note, userId, orgId, source],
     )
   } else {
     await client.query(
       `insert into field_values
          (org_id, record_type, record_id, field_id, period, value_text, value_number, value_date, value_bool,
           source_type, manual_override, status, confidence, note, updated_by)
-       values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, 'documents', false, 'approved', $10::numeric, $11, $12)`,
-      [orgId, recordType, recordId, field.id, period, next.text, next.number, next.date, next.bool, score, note, userId],
+       values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, $13, false, 'approved', $10::numeric, $11, $12)`,
+      [orgId, recordType, recordId, field.id, period, next.text, next.number, next.date, next.bool, score, note, userId, source],
     )
   }
   await client.query(
     `insert into field_value_history
        (org_id, record_type, record_id, field_id, period,
         old_text, old_number, old_date, old_bool, new_text, new_number, new_date, new_bool, source_type, note, changed_by)
-     values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, $10, $11::numeric, $12::date, $13::boolean, 'documents', $14, $15)`,
+     values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, $10, $11::numeric, $12::date, $13::boolean, $16, $14, $15)`,
     [
       orgId, recordType, recordId, field.id, period,
       golden.value.text, golden.value.number, golden.value.date, golden.value.bool,
-      next.text, next.number, next.date, next.bool, note, userId,
+      next.text, next.number, next.date, next.bool, note, userId, source,
     ],
   )
   if (field.coreColumn) {
@@ -342,6 +345,17 @@ async function writeGolden(
 }
 
 const sourceNote = (documentName: string, page: number | null) => `From "${documentName}"${page ? `, page ${page}` : ''}`
+/** The history note for a value the agent worked out: where the inputs are, and the working. */
+const calculatedNote = (documentName: string, page: number | null, working: string | null) =>
+  `Calculated from "${documentName}"${page ? `, page ${page}` : ''}${working ? `: ${working}` : ''}`.slice(0, 2000)
+
+/** Whether the review list can remember stated or calculated (migration 018). */
+async function hasBasisColumn(client: Queryable): Promise<boolean> {
+  const { rows } = await client.query(
+    `select 1 from information_schema.columns where table_schema = current_schema() and table_name = 'document_findings' and column_name = 'basis'`,
+  )
+  return rows.length > 0
+}
 
 /**
  * What should happen to a value found in a document, given the golden record
@@ -385,40 +399,46 @@ export async function applyReading(
   // A second reading replaces the first one's list; decisions already applied stay in the golden record.
   await client.query('delete from document_findings where org_id = $1 and document_id = $2', [orgId, document.id])
   await client.query(`delete from field_proposals where org_id = $1 and document_id = $2 and status = 'proposed'`, [orgId, document.id])
+  const keepBasis = await hasBasisColumn(client)
 
   for (const candidate of reading.candidates) {
     const { recordType, recordId, field, period, value: found } = candidate
     if (isEmptyValue(found) || !(await recordExists(client, orgId, recordType, recordId))) continue
     const golden = await readGolden(client, orgId, recordType, recordId, field, period)
     const { outcome, reason } = decideOutcome(field, golden, found)
+    // A value the agent worked out is recorded as Calculated, not as what the document says.
+    const source = candidate.basis === 'calculated' ? 'calculated' : 'documents'
 
     await client.query(
       `delete from field_source_values
-       where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4 and source_type = 'documents'
+       where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4 and source_type = $6
          and period is not distinct from $5::date and row_id is null`,
-      [orgId, recordType, recordId, field.id, period],
+      [orgId, recordType, recordId, field.id, period, source],
     )
     await client.query(
       `insert into field_source_values
          (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by, document_id, page)
-       values ($1, $2, $3, $4, $5::date, 'documents', $6, $7::numeric, $8::date, $9::boolean, $10, $11, $12)`,
-      [orgId, recordType, recordId, field.id, period, found.text, found.number, found.date, found.bool, userId, document.id, candidate.page],
+       values ($1, $2, $3, $4, $5::date, $13, $6, $7::numeric, $8::date, $9::boolean, $10, $11, $12)`,
+      [orgId, recordType, recordId, field.id, period, found.text, found.number, found.date, found.bool, userId, document.id, candidate.page, source],
     )
 
     if (outcome === 'filled' || outcome === 'replaced') {
-      await writeGolden(client, orgId, userId, { recordType, recordId, field, period }, golden, found, candidate.confidence, sourceNote(document.name, candidate.page))
+      const note = source === 'calculated' ? calculatedNote(document.name, candidate.page, candidate.quote) : sourceNote(document.name, candidate.page)
+      await writeGolden(client, orgId, userId, { recordType, recordId, field, period }, golden, found, candidate.confidence, note, source)
     }
-    await client.query(
+    const finding = await client.query(
       `insert into document_findings
          (org_id, document_id, record_type, record_id, field_id, period, value_text, value_number, value_date, value_bool,
           page, confidence, quote, outcome, reason, current_text, current_number, current_date_value, current_bool, current_source)
-       values ($1, $2, $3, $4, $5, $6::date, $7, $8::numeric, $9::date, $10::boolean, $11, $12, $13, $14, $15, $16, $17::numeric, $18::date, $19::boolean, $20)`,
+       values ($1, $2, $3, $4, $5, $6::date, $7, $8::numeric, $9::date, $10::boolean, $11, $12, $13, $14, $15, $16, $17::numeric, $18::date, $19::boolean, $20)
+       returning id::text as id`,
       [
         orgId, document.id, recordType, recordId, field.id, period, found.text, found.number, found.date, found.bool,
         candidate.page, candidate.confidence, candidate.quote?.slice(0, 500) ?? null, outcome, reason,
         golden.value.text, golden.value.number, golden.value.date, golden.value.bool, golden.sourceType,
       ],
     )
+    if (keepBasis) await client.query('update document_findings set basis = $2 where id = $1 and org_id = $3', [finding.rows[0].id, candidate.basis ?? 'stated', orgId])
     counts[outcome] += 1
   }
 
@@ -452,6 +472,8 @@ export type Finding = {
   page: number | null
   confidence: Confidence | null
   quote: string | null
+  /** Whether the document showed the value or the agent calculated it. */
+  basis: 'stated' | 'calculated'
   outcome: Outcome
   reason: 'empty' | 'different' | 'manual' | null
   current: StoredValue
@@ -462,7 +484,7 @@ export type Finding = {
 export async function listFindings(client: Queryable, orgId: string, documentId: string): Promise<Finding[]> {
   const { rows } = await client.query(
     `select id::text as id, record_type, record_id::text as record_id, field_id::text as field_id, period::text as period,
-            ${VALUE_COLUMNS}, page, confidence, quote, outcome, reason,
+            ${VALUE_COLUMNS}, page, confidence, quote, outcome, reason, to_jsonb(document_findings) ->> 'basis' as basis,
             current_text, current_number::float8 as current_number, current_date_value::text as current_date, current_bool, current_source, decision
      from document_findings where org_id = $1 and document_id = $2 order by created_at, id`,
     [orgId, documentId],
@@ -478,6 +500,7 @@ export async function listFindings(client: Queryable, orgId: string, documentId:
     page: row.page ?? null,
     confidence: row.confidence ?? null,
     quote: row.quote ?? null,
+    basis: row.basis === 'calculated' ? 'calculated' : 'stated',
     outcome: row.outcome,
     reason: row.reason ?? null,
     current: { text: row.current_text ?? null, number: number(row.current_number), date: row.current_date ?? null, bool: row.current_bool ?? null },
@@ -541,7 +564,11 @@ export async function decideFinding(
       await writeGolden(
         client, orgId, userId,
         { recordType: finding.recordType, recordId: finding.recordId, field, period: finding.period },
-        golden, finding.value, finding.confidence, `${sourceNote(finding.documentName, finding.page)}; chosen in review`,
+        golden, finding.value, finding.confidence,
+        finding.basis === 'calculated'
+          ? `${calculatedNote(finding.documentName, finding.page, finding.quote).slice(0, 1900)}; chosen in review`
+          : `${sourceNote(finding.documentName, finding.page)}; chosen in review`,
+        finding.basis === 'calculated' ? 'calculated' : 'documents',
       )
     }
   }
