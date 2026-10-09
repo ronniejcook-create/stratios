@@ -158,6 +158,34 @@ work and how data is isolated; this file covers how we work and where things sta
   Settings storage: `lib/orgSettings.ts` (`organization_settings` table; falls back to Clerk
   metadata without a database).
 
+## Where we left off (October 8, 2026)
+
+Stages 1 to 3 of the data design's build order are built, deployed and confirmed by Ronnie as
+visible: the asset hierarchy and fields, screens/sections/lists with click-to-reference, the
+Fields and Layout admin, roles and field permissions, and the Master Library. Migrations 003 to
+006 have been run on Supabase. He chose to spend time trying what is built before going further.
+
+Next up, when he is ready: **stage 4, document upload and the extraction agent** (upload an
+Offering Memorandum to an asset, the agent finds values for the dictionary's fields using each
+field's AI description, other names and extraction hints, then a review list of what was filled,
+confirmed, needs a decision, and proposed as new fields). It needs file storage (Supabase Storage
+was the idea), writes values with source type `documents` into `field_source_values`, and is the
+first place the per-field rules (when empty, when different, manual override, source priority)
+actually take effect. After that: stage 5 formulas and AI skills, stage 6 tenants, leases, rent
+roll, cash flow and feeds.
+
+Things not yet verified or still owed:
+
+- None of the stage 1 to 3 screens were seen in a browser by Claude; Ronnie has only confirmed
+  they appear. Expect small layout or behavior fixes as he uses them.
+- Signing in as a non-administrator (to see hidden and view-only fields) has not been tried.
+- The Member role defaults to view, so non-admins can't edit until given a role. This follows
+  the design document; he was told and can change the Member default to edit.
+- Agents must follow field permissions, and a KPI built from a hidden field must be hidden, once
+  the analyst and formulas exist.
+- Organizations can't rename, reorder or hide standard sections and screens yet.
+- The design document's build-order section doesn't yet say which stages are done.
+
 ## Ideas offered but not started
 
 - Wire up the Portfolio Analyst agent.
