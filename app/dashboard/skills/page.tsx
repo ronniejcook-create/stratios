@@ -1,52 +1,57 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
-import { isDatabaseConfigured, isMissingSchema, withStratiosAdmin } from '@/lib/db'
+import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
 import { listSkills, type Skill } from '@/lib/skills'
-import { isStratiosAdmin } from '@/lib/stratios'
 import { SkillEditor } from './SkillEditor'
+import { addOrgSkill, saveOrgSkill } from './actions'
 
 export const dynamic = 'force-dynamic'
+
+const SOURCE_LABELS: Record<Skill['source'], string> = { standard: 'Stratios Standard', modified: 'Modified', own: 'Yours' }
 
 export default async function SkillsPage() {
   const { orgId, orgRole } = await auth()
   if (!orgId) return null // the layout redirects before this renders
-  // Stratios administrators only. Everyone else gets "not found", as if the page didn't exist.
-  if (!isDatabaseConfigured() || !(await isStratiosAdmin(orgId, orgRole))) notFound()
+  if (orgRole !== 'org:admin') redirect('/dashboard')
 
   let skills: Skill[] = []
-  try {
-    skills = await withStratiosAdmin(orgId, (client) => listSkills(client))
-  } catch (error) {
-    console.error('SkillsPage failed', error)
+  let problem: 'none' | 'update' | 'failed' = isDatabaseConfigured() ? 'none' : 'failed'
+  if (problem === 'none') {
+    try {
+      skills = await withOrg(orgId, (client) => listSkills(client, orgId))
+    } catch (error) {
+      console.error('SkillsPage failed', error)
+      problem = isMissingSchema(error) ? 'update' : 'failed'
+    }
+  }
+  if (problem !== 'none') {
     return (
       <>
-        <h1>Skills Library</h1>
+        <h1>Skills</h1>
         <div className="panel notice">
-          <h2>{isMissingSchema(error) ? 'Database Update Needed' : 'The Library Could Not Be Loaded'}</h2>
-          <p>{isMissingSchema(error) ? 'Run db/migrations/011_skills.sql against the database, then reload this page.' : 'Check the database connection and try again.'}</p>
+          <h2>{problem === 'update' ? 'Database Update Needed' : 'The Skills Could Not Be Loaded'}</h2>
+          <p>{problem === 'update' ? 'Run the newest files in db/migrations against the database, then reload this page.' : 'Check the database connection and try again.'}</p>
         </div>
       </>
     )
   }
-  const when = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
   return (
     <>
-      <h1>Skills Library</h1>
-      <p className="lede">Know-how the agents pick from, for every organization: how to read a kind of document, or how to handle a kind of request.</p>
+      <h1>Skills</h1>
+      <p className="lede">Know-how your organization&apos;s agents pick from: how to read a kind of document, or how to handle a kind of request.</p>
       <div className="panel notice">
         <h2>How Skills Are Used</h2>
         <p>
-          When a document is read, the agent first works out what kind of document it is, then follows every skill whose Use When fits. In a conversation, the analyst sees the
-          list and opens the skills a request calls for. How the analyst behaves in every conversation is set in{' '}
-          <Link href="/dashboard/analyst">Analyst Instructions</Link>. A skill changes how an agent does something; a new ability, such as looking something up on the web,
-          needs a new tool.
+          When a document is read, the agent works out what kind of document it is, then follows every skill in use whose Use When fits. In a conversation, the analyst sees
+          the list and opens the skills a request calls for. Stratios standard skills come with Stratios; you can change one or turn it off for your organization, and add
+          skills of your own. Nothing here affects any other organization.
         </p>
       </div>
 
       <section className="panel">
-        <h2>Skills</h2>
+        <h2>Your Organization&apos;s Skills</h2>
         {skills.length === 0 ? (
           <p className="empty">No skills yet. Add the first one below.</p>
         ) : (
@@ -56,8 +61,8 @@ export default async function SkillsPage() {
                 <tr>
                   <th scope="col">Skill</th>
                   <th scope="col">Use When</th>
+                  <th scope="col">From</th>
                   <th scope="col">Status</th>
-                  <th scope="col">Last Changed</th>
                 </tr>
               </thead>
               <tbody>
@@ -65,8 +70,8 @@ export default async function SkillsPage() {
                   <tr key={skill.id}>
                     <td><Link href={`/dashboard/skills/${skill.id}`}>{skill.name}</Link></td>
                     <td>{skill.useWhen}</td>
-                    <td><span className={`chip${skill.enabled ? ' chip-own' : ''}`}>{skill.enabled ? 'In Use' : 'Turned Off'}</span></td>
-                    <td>{when(skill.updatedAt)}</td>
+                    <td><span className={`chip${skill.source === 'modified' ? ' chip-modified' : skill.source === 'own' ? ' chip-own' : ''}`}>{SOURCE_LABELS[skill.source]}</span></td>
+                    <td className={skill.enabled ? undefined : 'muted'}>{skill.enabled ? 'In Use' : 'Turned Off'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -77,7 +82,8 @@ export default async function SkillsPage() {
 
       <section className="panel">
         <h2>Add a Skill</h2>
-        <SkillEditor />
+        <p className="note">A skill you add belongs to your organization only.</p>
+        <SkillEditor actions={{ add: addOrgSkill, save: saveOrgSkill }} basePath="/dashboard/skills" />
       </section>
     </>
   )

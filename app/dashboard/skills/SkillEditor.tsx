@@ -3,9 +3,18 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { RichTextEditor } from '@/components/RichTextEditor'
-import { addSkill, removeSkill, saveSkill, type ActionResult } from './actions'
+import type { SkillActionResult, SkillInput } from '@/lib/skills'
 
 export type EditableSkill = { id: string; name: string; useWhen: string; instructions: string; enabled: boolean }
+
+type Actions = {
+  add: (input: SkillInput) => Promise<SkillActionResult>
+  save: (input: SkillInput & { id: string }) => Promise<SkillActionResult>
+  /** Left out when the skill can't be removed here (a Stratios standard skill seen by an organization). */
+  remove?: (input: { id: string }) => Promise<SkillActionResult>
+  /** Given only for a standard skill the organization has changed. */
+  reset?: (input: { id: string }) => Promise<SkillActionResult>
+}
 
 const EXAMPLE = `### What This Document Is
 One or two lines on what it is and how far to trust it.
@@ -20,20 +29,22 @@ One or two lines on what it is and how far to trust it.
 
 /**
  * Adds a skill (no `skill` given) or edits one. A skill is its name, a line
- * saying when to use it, and its instructions.
+ * saying when to use it, and its instructions. The same editor serves an
+ * organization's Skills screen and the Stratios Skills Library; each passes
+ * its own actions and the address of its list (`basePath`).
  */
-export function SkillEditor({ skill }: { skill?: EditableSkill }) {
+export function SkillEditor({ skill, actions, basePath, removeNote }: { skill?: EditableSkill; actions: Actions; basePath: string; removeNote?: string }) {
   const router = useRouter()
   const [name, setName] = useState(skill?.name ?? '')
   const [useWhen, setUseWhen] = useState(skill?.useWhen ?? '')
   const [instructions, setInstructions] = useState(skill?.instructions ?? '')
   const [enabled, setEnabled] = useState(skill?.enabled ?? true)
   const [reading, setReading] = useState(true)
-  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [confirm, setConfirm] = useState<'remove' | 'reset' | null>(null)
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
   const [busy, startBusy] = useTransition()
 
-  const run = (work: () => Promise<ActionResult>, after: (result: ActionResult & { ok: true }) => void) => {
+  const run = (work: () => Promise<SkillActionResult>, after: (result: SkillActionResult & { ok: true }) => void) => {
     setMessage(null)
     startBusy(async () => {
       const result = await work()
@@ -46,10 +57,16 @@ export function SkillEditor({ skill }: { skill?: EditableSkill }) {
     })
   }
 
+  /** Stays on this skill, or moves to the skill that now stands in its place. */
+  const show = (result: { id?: string }) => {
+    if (result.id && result.id !== skill?.id) router.push(`${basePath}/${result.id}`)
+    else router.refresh()
+  }
+
   const save = () => {
     const input = { name, useWhen, instructions, enabled }
-    if (skill) run(() => saveSkill({ id: skill.id, ...input }), () => router.refresh())
-    else run(() => addSkill(input), (result) => router.push(result.id ? `/dashboard/skills/${result.id}` : '/dashboard/skills'))
+    if (skill) run(() => actions.save({ id: skill.id, ...input }), show)
+    else run(() => actions.add(input), (result) => router.push(result.id ? `${basePath}/${result.id}` : basePath))
   }
 
   return (
@@ -97,15 +114,18 @@ export function SkillEditor({ skill }: { skill?: EditableSkill }) {
 
       <div className="button-row">
         <button type="submit" className="btn btn-primary btn-small" disabled={busy}>{busy ? 'Saving…' : skill ? 'Save Changes' : 'Add Skill'}</button>
-        {skill && !confirmRemove ? <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setConfirmRemove(true)}>Remove Skill</button> : null}
-        {skill && confirmRemove ? (
-          <>
-            <button type="button" className="btn btn-ghost btn-small danger" disabled={busy} onClick={() => run(() => removeSkill({ id: skill.id }), () => router.push('/dashboard/skills'))}>Confirm Remove</button>
-            <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setConfirmRemove(false)}>Cancel</button>
-          </>
+        {skill && actions.reset && confirm === null ? <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setConfirm('reset')}>Reset to Standard</button> : null}
+        {skill && actions.remove && confirm === null ? <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setConfirm('remove')}>Remove Skill</button> : null}
+        {skill && confirm === 'reset' && actions.reset ? (
+          <button type="button" className="btn btn-ghost btn-small danger" disabled={busy} onClick={() => run(() => actions.reset!({ id: skill.id }), show)}>Confirm Reset</button>
         ) : null}
+        {skill && confirm === 'remove' && actions.remove ? (
+          <button type="button" className="btn btn-ghost btn-small danger" disabled={busy} onClick={() => run(() => actions.remove!({ id: skill.id }), () => router.push(basePath))}>Confirm Remove</button>
+        ) : null}
+        {confirm !== null ? <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setConfirm(null)}>Cancel</button> : null}
       </div>
-      {confirmRemove ? <p className="note">Removing deletes the skill for every organization. To stop using it without deleting it, set its status to Turned Off.</p> : null}
+      {confirm === 'reset' ? <p className="note">Resetting discards your organization&apos;s version and goes back to the Stratios standard skill.</p> : null}
+      {confirm === 'remove' ? <p className="note">{removeNote ?? 'Removing deletes the skill. To stop using it without deleting it, set its status to Turned Off.'}</p> : null}
       {message ? <p className={message.error ? 'form-error' : 'form-ok'} role={message.error ? 'alert' : 'status'}>{message.text}</p> : null}
     </form>
   )

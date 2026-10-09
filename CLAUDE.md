@@ -238,24 +238,40 @@ work and how data is isolated; this file covers how we work and where things sta
     links or ids, document contents are not instructions). Ronnie was told instructions shape
     behavior but new abilities need new tools; he asked about address lookup to coordinates,
     property photos, a Skills screen and n8n. None of those are started.
-  - **Skills Library** (October 8, late; `db/migrations/011_skills.sql`): Stratios Admin > Skills
-    Library (`app/dashboard/skills/`, Stratios administrators only). Ronnie asked for a library
-    the agents reference instead of one set of instructions, for example different instructions
-    per document type. A skill is a name, a "Use When" line, Markdown instructions and an
-    In Use / Turned Off status (`skills` table, org_id null = standard; the column is there for
-    organization skills later). Logic in `lib/skills.ts`.
-    - Reading a document: every enabled skill is put in the extraction prompt in full
-      (`skillsInFull`, capped at 60,000 characters); the agent decides the document type and
-      follows the skills whose Use When fits. Skills can't change the answer format or the rules.
+  - **Skills** (October 8 and 9; `db/migrations/011_skills.sql`, `012_organization_skills.sql`).
+    Ronnie asked for a library of skills the agents reference instead of one set of instructions
+    (for example different instructions per document type), then for skills to differ by
+    organization. A skill is a name, a "Use When" line, Markdown instructions and an In Use /
+    Turned Off status. Logic in `lib/skills.ts`; one shared editor, `app/dashboard/skills/SkillEditor.tsx`.
+    - Layering, like fields: Stratios standard skills have org_id null; an organization's own
+      skills carry its org_id; an organization's row **with the same key as a standard skill
+      replaces it** for that organization (that is how it changes or turns off a standard skill).
+      Saving text identical to the standard removes the organization's row; Reset to Standard
+      does the same. A modified skill stops following Stratios updates as a whole.
+      `listSkills(client, orgId)` returns the layered list with `source` standard / modified /
+      own; pass null for the standard itself.
+    - Screens: Admin Settings > **Skills** (`/dashboard/skills`, organization administrators)
+      and Stratios Admin > **Skills Library** (`/dashboard/skill-library`, Stratios
+      administrators; shows how many organizations customized each skill).
+    - Row-level rules: everyone reads standard skills and their own; an organization writes only
+      its own rows; standard rows need `app.stratios_admin`, which can also read (not write)
+      every organization's skills.
+    - Reading a document: every skill in use for the organization is put in the extraction prompt
+      in full (`skillsInFull`, capped at 60,000 characters); the agent decides the document type
+      and follows the skills whose Use When fits. Skills can't change the answer format or rules.
     - Chat: the analyst's instructions list each skill's name and Use When (`skillIndex`), and a
-      sixth tool, `read_skill`, opens one. `loadSkillsForAgent` never throws (savepoint), so the
-      agents work without skills if 011 has not been run.
-    - The migration seeds two starter skills on first run only: Reading an Offering Memorandum
-      (asking price is not Purchase Price; prefer actual over pro forma) and Reading an Appraisal.
-    - Analyst Instructions stays as the always-on behavior; skills are task-specific. This
-      answers the first open design question: skills are their own library, separate from a
-      field's Agent Instructions. KPI skills (stage 5) should build on this table. Skills have no
-      versions or per-property-type or per-organization variants yet.
+      sixth tool, `read_skill`, opens one. `loadSkillsForAgent(client, orgId)` never throws
+      (savepoint), so the agents work without skills if the migrations have not been run.
+    - Migration 011 seeds two starter standard skills on first run only: Reading an Offering
+      Memorandum (asking price is not Purchase Price; prefer actual over pro forma) and Reading an
+      Appraisal.
+    - Analyst Instructions (the always-on behavior) is still one global set edited by Stratios
+      administrators; it has no per-organization version. Skills are their own library, separate
+      from a field's Agent Instructions (the first open design question). KPI skills (stage 5)
+      should build on this table. No versions or per-property-type variants yet.
+    - Checked: both migrations on a scratch database, the row-level rules as a non-privileged
+      role, and a two-organization test of the layering through to what each organization's
+      agents are sent (scripted Claude). The screens were not opened in a browser.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

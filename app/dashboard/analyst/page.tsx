@@ -40,7 +40,7 @@ export default async function AnalystInstructionsPage() {
       <h1>Analyst Instructions</h1>
       <p className="lede">
         How the Portfolio Analyst works and writes in every conversation, for every organization. Know-how for a particular task or kind of document belongs in
-        the <Link href="/dashboard/skills">Skills Library</Link>.
+        the <Link href="/dashboard/skill-library">Skills Library</Link>.
       </p>
 
       {needsUpdate ? (

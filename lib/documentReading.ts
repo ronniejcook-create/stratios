@@ -64,7 +64,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       if (!document.assetId) await attachDocument(client, orgId, documentId, targetId)
       const file = await readDocumentFile(client, orgId, documentId)
       const fields = extractableFields(await listFields(client, orgId), sectionByField(await listScreens(client, orgId)), access.fieldLevel)
-      return { ok: true as const, document, tree, file, fields, skills: await loadSkillsForAgent(client) }
+      return { ok: true as const, document, tree, file, fields, skills: await loadSkillsForAgent(client, orgId) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)
@@ -117,7 +117,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
       if (!(await startReading(client, orgId, userId, documentId))) return { ok: false as const, error: busyMessage(document.status), status: 409 }
       const file = await readDocumentFile(client, orgId, documentId)
       const fields = extractableFields(await listFields(client, orgId), sectionByField(await listScreens(client, orgId)), access.fieldLevel)
-      return { ok: true as const, document, file, fields, skills: await loadSkillsForAgent(client) }
+      return { ok: true as const, document, file, fields, skills: await loadSkillsForAgent(client, orgId) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)

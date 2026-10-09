@@ -243,7 +243,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
     console.error('Reading the analyst instructions failed; using the built-in ones', error)
   }
   // The skills library is read on its own, so a problem with one never hides the other.
-  session.skills = await withOrg(caller.orgId, (client) => loadSkillsForAgent(client)).catch(() => [])
+  session.skills = await withOrg(caller.orgId, (client) => loadSkillsForAgent(client, caller.orgId)).catch(() => [])
   const system = buildAnalystPrompt(instructions, skillIndex(session.skills))
   const tools = session.skills.length > 0 ? [...TOOLS, READ_SKILL] : TOOLS
 
