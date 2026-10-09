@@ -296,6 +296,14 @@ work and how data is isolated; this file covers how we work and where things sta
     `ReviewSection` in `ReviewControls.tsx`), because the row leaves the table on success and a
     message on the row flashed and vanished. A section whose last row was just settled stays
     until the message is dismissed or the page is reloaded. Errors still show on the row.
+  - **Fields Library grid** (October 9): both Fields Library pages show one grid instead of a
+    table per level (`app/dashboard/fields/FieldsGrid.tsx`, shared; each page builds plain
+    `FieldRow`s on the server). "Belongs To" is a column. Search by name or key, a filter per
+    column, and sorting by clicking a heading (A to Z, Z to A, then back to the standard order);
+    all in the browser, nothing is remembered between visits. **Add Field** is a button that
+    opens a pop-up (a native `<dialog class="modal">`, the first modal in the app; reuse its
+    styles) holding `AddFieldForm`; on success it closes and the message shows above the grid.
+    Checked with a static mock only.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

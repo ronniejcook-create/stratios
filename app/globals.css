@@ -744,3 +744,34 @@ td.muted { color: var(--dim); }
 .muted { color: var(--dim); }
 .fixed-rules { margin: 10px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--text); }
 .standard-text { margin: 10px 0 0; padding: 12px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Fields Library grid: search, filters, sortable headings and the Add Field pop-up. */
+.grid-toolbar { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.grid-toolbar input, .grid-toolbar select {
+  height: 36px; padding: 0 10px; background: var(--bg); color: var(--heading);
+  border: 1px solid var(--line-strong); border-radius: 6px; font: inherit; font-size: 14px; max-width: 220px;
+}
+.grid-toolbar input::placeholder { color: var(--placeholder); }
+.grid-toolbar .grid-search { flex: 1 1 200px; max-width: 280px; }
+.grid-toolbar .grid-add { margin-left: auto; }
+.shell-main .grid-count { margin-top: 10px; }
+.sort-button {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0; background: none; border: 0;
+  font: inherit; color: inherit; cursor: pointer; white-space: nowrap;
+}
+.sort-button:hover, .sort-button.active { color: var(--heading); }
+.sort-arrow { font-size: 10px; opacity: 0.55; }
+.sort-button.active .sort-arrow { opacity: 1; color: var(--link); }
+.fields-grid td { vertical-align: top; }
+
+.modal {
+  width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; padding: 20px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: 10px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+.modal::backdrop { background: rgba(4, 10, 20, 0.6); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.modal-head h2 { font-size: 17px; }
+.modal-head .icon-button { font-size: 20px; }
+.modal-head .icon-button:hover { background: var(--bg); }
+.modal .modal-actions { justify-content: flex-end; }

@@ -6,19 +6,13 @@ import { DATA_TYPES } from '@/lib/fieldAdmin'
 import { listFields, type FieldDefinition } from '@/lib/fields'
 import { listScreens, type Screen } from '@/lib/layout'
 import { listLists, type ListDefinition } from '@/lib/lists'
-import { RECORD_LABELS, RECORD_TYPES, type RecordType } from '@/lib/records'
-import { AddFieldForm } from './Forms'
+import { RECORD_LABELS, RECORD_TYPES } from '@/lib/records'
+import { FieldsGrid, type FieldRow } from './FieldsGrid'
 
 export const dynamic = 'force-dynamic'
 
 const LEVELS = RECORD_TYPES.map((type) => ({ value: type, label: RECORD_LABELS[type] }))
 const TYPE_LABELS = new Map(DATA_TYPES.map((type) => [type.value as string, type.label]))
-
-function Status({ field }: { field: FieldDefinition }) {
-  if (!field.standard) return <span className="chip chip-own">Added by You</span>
-  if (field.modifiedSettings.length > 0) return <span className="chip chip-modified">Customized</span>
-  return <span className="chip">Standard</span>
-}
 
 export default async function FieldsPage() {
   const { orgId, orgRole } = await auth()
@@ -79,9 +73,29 @@ export default async function FieldsPage() {
     ),
     ...lists.map((list) => ({ value: `list:${list.id}`, label: `Column of List: ${list.name}`, appliesTo: list.appliesTo as string })),
   ]
-  const levelsInUse = RECORD_TYPES.filter((type) => fields.some((field) => field.appliesTo === type))
   const customized = fields.filter((field) => field.standard && field.modifiedSettings.length > 0).length
   const added = fields.filter((field) => !field.standard).length
+
+  const rows: FieldRow[] = RECORD_TYPES.flatMap((type) =>
+    fields
+      .filter((field) => field.appliesTo === type)
+      .sort((a, b) => shownIn(a).localeCompare(shownIn(b)) || a.sortOrder - b.sortOrder)
+      .map((field) => {
+        const modified = field.standard && field.modifiedSettings.length > 0
+        return {
+          id: field.id,
+          href: `/dashboard/fields/${field.id}`,
+          name: field.name,
+          fieldKey: field.key,
+          belongsTo: RECORD_LABELS[type],
+          type: `${TYPE_LABELS.get(field.dataType) ?? field.dataType}${field.tracking === 'monthly' ? ', Monthly' : ''}${field.calculated ? ', Calculated' : ''}`,
+          shownIn: shownIn(field),
+          status: !field.standard ? 'Added by You' : modified ? 'Customized' : 'Standard',
+          statusTone: !field.standard ? 'own' as const : modified ? 'modified' as const : 'plain' as const,
+          statusOrder: !field.standard ? 2 : modified ? 1 : 0,
+        }
+      }),
+  )
 
   return (
     <>
@@ -91,52 +105,20 @@ export default async function FieldsPage() {
       </p>
 
       <section className="panel">
-        <h2>Add a Field</h2>
-        <AddFieldForm levels={LEVELS} types={DATA_TYPES.map((type) => ({ value: type.value, label: type.label }))} places={places} />
-      </section>
-
-      <section className="panel">
         <h2>Fields</h2>
         <p className="note">
           Click a field to change its settings. Changing a Stratios standard field marks only that setting as customized; everything else keeps
           following Stratios updates. Screens and sections are managed in <Link href="/dashboard/layouts">Layouts</Link>.
         </p>
-        {levelsInUse.map((type: RecordType) => (
-          <div key={type} className="record-group">
-            <h3>{RECORD_LABELS[type]}</h3>
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Name</th>
-                    <th scope="col">Key</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">Shown In</th>
-                    <th scope="col">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fields
-                    .filter((field) => field.appliesTo === type)
-                    .sort((a, b) => shownIn(a).localeCompare(shownIn(b)) || a.sortOrder - b.sortOrder)
-                    .map((field) => (
-                      <tr key={field.id}>
-                        <td><Link href={`/dashboard/fields/${field.id}`}>{field.name}</Link></td>
-                        <td><code className="key">{field.key}</code></td>
-                        <td>
-                          {TYPE_LABELS.get(field.dataType) ?? field.dataType}
-                          {field.tracking === 'monthly' ? ', Monthly' : ''}
-                          {field.calculated ? ', Calculated' : ''}
-                        </td>
-                        <td>{shownIn(field)}</td>
-                        <td><Status field={field} /></td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
+        <FieldsGrid
+          rows={rows}
+          statusHeading="Status"
+          belongsToOrder={LEVELS.map((level) => level.label)}
+          addTitle="Add a Field"
+          levels={LEVELS}
+          types={DATA_TYPES.map((type) => ({ value: type.value, label: type.label }))}
+          places={places}
+        />
       </section>
     </>
   )

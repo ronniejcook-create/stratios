@@ -8,7 +8,7 @@ import { listScreens, type Screen } from '@/lib/layout'
 import { listLists, type ListDefinition } from '@/lib/lists'
 import { RECORD_LABELS, RECORD_TYPES } from '@/lib/records'
 import { isStratiosAdmin } from '@/lib/stratios'
-import { AddFieldForm } from '../fields/Forms'
+import { FieldsGrid, type FieldRow } from '../fields/FieldsGrid'
 import { addLibraryField } from './actions'
 
 export const dynamic = 'force-dynamic'
@@ -64,7 +64,26 @@ export default async function LibraryPage() {
     ),
     ...lists.map((list) => ({ value: `list:${list.id}`, label: `Column of List: ${list.name}`, appliesTo: list.appliesTo as string })),
   ]
-  const levelsInUse = RECORD_TYPES.filter((type) => fields.some((field) => field.appliesTo === type))
+  const rows: FieldRow[] = RECORD_TYPES.flatMap((type) =>
+    fields
+      .filter((field) => field.appliesTo === type)
+      .sort((a, b) => shownIn(a).localeCompare(shownIn(b)) || a.sortOrder - b.sortOrder)
+      .map((field) => {
+        const orgs = customized.get(field.id) ?? 0
+        return {
+          id: field.id,
+          href: `/dashboard/library/${field.id}`,
+          name: field.name,
+          fieldKey: field.key,
+          belongsTo: RECORD_LABELS[type],
+          type: `${TYPE_LABELS.get(field.dataType) ?? field.dataType}${field.tracking === 'monthly' ? ', Monthly' : ''}${field.calculated ? ', Calculated' : ''}`,
+          shownIn: shownIn(field),
+          status: orgs === 0 ? 'None' : orgs === 1 ? '1 organization' : `${orgs} organizations`,
+          statusTone: orgs === 0 ? 'muted' as const : 'modified' as const,
+          statusOrder: orgs,
+        }
+      }),
+  )
 
   return (
     <>
@@ -82,51 +101,17 @@ export default async function LibraryPage() {
       </div>
 
       <section className="panel">
-        <h2>Add a Standard Field</h2>
-        <AddFieldForm action={addLibraryField} levels={LEVELS} types={DATA_TYPES.map((type) => ({ value: type.value, label: type.label }))} places={places} />
-      </section>
-
-      <section className="panel">
         <h2>Standard Fields</h2>
-        {levelsInUse.map((type) => (
-          <div key={type} className="record-group">
-            <h3>{RECORD_LABELS[type]}</h3>
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Name</th>
-                    <th scope="col">Key</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">Shown In</th>
-                    <th scope="col">Customized By</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fields
-                    .filter((field) => field.appliesTo === type)
-                    .sort((a, b) => shownIn(a).localeCompare(shownIn(b)) || a.sortOrder - b.sortOrder)
-                    .map((field) => {
-                      const orgs = customized.get(field.id) ?? 0
-                      return (
-                        <tr key={field.id}>
-                          <td><Link href={`/dashboard/library/${field.id}`}>{field.name}</Link></td>
-                          <td><code className="key">{field.key}</code></td>
-                          <td>
-                            {TYPE_LABELS.get(field.dataType) ?? field.dataType}
-                            {field.tracking === 'monthly' ? ', Monthly' : ''}
-                            {field.calculated ? ', Calculated' : ''}
-                          </td>
-                          <td>{shownIn(field)}</td>
-                          <td>{orgs === 0 ? <span className="muted">None</span> : <span className="chip chip-modified">{orgs === 1 ? '1 organization' : `${orgs} organizations`}</span>}</td>
-                        </tr>
-                      )
-                    })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
+        <FieldsGrid
+          rows={rows}
+          statusHeading="Customized By"
+          belongsToOrder={LEVELS.map((level) => level.label)}
+          addTitle="Add a Standard Field"
+          addAction={addLibraryField}
+          levels={LEVELS}
+          types={DATA_TYPES.map((type) => ({ value: type.value, label: type.label }))}
+          places={places}
+        />
       </section>
     </>
   )

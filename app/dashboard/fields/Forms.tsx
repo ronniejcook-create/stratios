@@ -7,7 +7,7 @@ import { addField, addScreen, addSection, generateDescription, type FormState } 
 const initialState: FormState = { error: null, message: null, done: 0 }
 
 /** A form's server action. Each form uses the organization's own by default; the Master Library passes its own. */
-type FormAction = (prev: FormState, formData: FormData) => Promise<FormState>
+export type FormAction = (prev: FormState, formData: FormData) => Promise<FormState>
 
 export type LevelOption = { value: string; label: string }
 export type PlaceOption = { value: string; label: string; appliesTo: string }
@@ -32,8 +32,13 @@ export function AddFieldForm({
   types,
   places,
   action = addField,
+  onDone,
+  onCancel,
 }: {
   action?: FormAction
+  /** Called with the success message once the field is added (the pop-up closes itself with it). */
+  onDone?: (message: string) => void
+  onCancel?: () => void
   levels: LevelOption[]
   types: LevelOption[]
   /** Sections ("section:<id>") and lists ("list:<id>") a field can be shown in. */
@@ -47,13 +52,16 @@ export function AddFieldForm({
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [generating, startGenerating] = useTransition()
   const formRef = useResetOnDone(state.done)
+  const finished = useRef(onDone)
+  finished.current = onDone
   useEffect(() => {
     if (state.done > 0) {
       setType('text')
       setShowIn('')
       setDescription('')
+      finished.current?.(state.message ?? 'The field was added.')
     }
-  }, [state.done])
+  }, [state.done, state.message])
 
   // Fills the Description box from what has been typed into the form so far.
   const generate = () => {
@@ -152,11 +160,14 @@ export function AddFieldForm({
           </div>
           <input id="new-field-ai" name="aiDescription" type="text" maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this field means, in plain words" />
         </div>
-        <button type="submit" className="btn btn-primary btn-small" disabled={pending}>{pending ? 'Adding…' : 'Add Field'}</button>
       </div>
       <p className="note">The key is made from the name and never changes afterward. Type and tracking can&apos;t be changed once the field exists.</p>
       {generateError ? <p className="form-error" role="alert">{generateError}</p> : null}
       <Feedback state={state} />
+      <div className="button-row modal-actions">
+        {onCancel ? <button type="button" className="btn btn-ghost btn-small" disabled={pending} onClick={onCancel}>Cancel</button> : null}
+        <button type="submit" className="btn btn-primary btn-small" disabled={pending}>{pending ? 'Adding…' : 'Add Field'}</button>
+      </div>
     </form>
   )
 }
