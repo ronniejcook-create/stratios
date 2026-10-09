@@ -402,27 +402,6 @@ export default async function AssetPage({
                                 <FieldGroup target={targetOf(buildingRecord)} fields={buildingUnplaced} canManageFields={isAdmin} />
                               </div>
                             ) : null}
-
-                            {isFirstScreen ? (
-                              <div className="record-group">
-                                <h4>Floors and Units</h4>
-                                {building.floors.length === 0 ? <p className="note">No floors added yet. Add them only if you need unit-level detail.</p> : null}
-                                <ul className="floor-list">
-                                  {building.floors.map((floor) => (
-                                    <li key={floor.id}>
-                                      <span className="floor-name">{floor.name}</span>
-                                      <span className="unit-chips">
-                                        {floor.units.map((unit) => (
-                                          <span key={unit.id} className="unit-chip" title={unit.addresses.map(formatAddress).join('; ') || undefined}>{unit.name}</span>
-                                        ))}
-                                      </span>
-                                      {access.canAddRecords ? <AddChildForm type="unit" parentId={floor.id} assetId={tree.id} /> : null}
-                                    </li>
-                                  ))}
-                                </ul>
-                                {access.canAddRecords ? <AddChildForm type="floor" parentId={building.id} assetId={tree.id} /> : null}
-                              </div>
-                            ) : null}
                           </div>
                         )
                       })

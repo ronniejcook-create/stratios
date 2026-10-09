@@ -584,6 +584,11 @@ work and how data is isolated; this file covers how we work and where things sta
       the city-only address, keeping an existing one, the building rules, lookup failure,
       organization isolation, and replacement by hand including old extras. The changed form
       was not opened in a browser; the agent's addresses were not run against the real Claude API.
+  - **Floors and Units are off the asset page** (October 9, late; Ronnie's request). The
+    "Floors and Units" block under each building was removed from `page.tsx`; he will bring
+    them back somewhere else when rent rolls are built. Nothing else changed: the tables,
+    `insertChild`, `AddChildForm` (still handles floor and unit) and any floors and units
+    already entered are all kept, just not shown.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
