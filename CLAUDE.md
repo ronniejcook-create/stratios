@@ -40,7 +40,9 @@ work and how data is isolated; this file covers how we work and where things sta
 2. If his computer is linked, also copy changed files to his folder: stage them in a fresh
    `/mnt/user-data/outputs/push-<timestamp>/` folder, write them with `device_commit_files`
    (force), then stage them back and diff (strip `\r`) to confirm. Reusing an old staging folder or
-   running copies in parallel once delivered stale files.
+   running copies in parallel once delivered stale files. PNG pictures copied this way gain a
+   provenance tag (an extra `caBX` chunk), so they are larger on his computer and won't compare
+   byte for byte; the picture itself is unchanged, and GitHub and Vercel have the originals.
 3. npm can't reach the registry from the cloud workspace, so the app there can't be built or run;
    say so and ask him to check the result on localhost or dev.stratios.app. What can be checked:
    - SQL and the data layer: Postgres 16 is installed (`/usr/lib/postgresql/16/bin`, run as the
