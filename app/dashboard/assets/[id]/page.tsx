@@ -8,6 +8,7 @@ import { EMPTY_VALUE } from '@/lib/fieldFormat'
 import { listFields, listSourceTypes, listValues, type FieldDefinition, type FieldValue } from '@/lib/fields'
 import { listScreens, type Screen, type Section } from '@/lib/layout'
 import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from '@/lib/lists'
+import { typeAheadEnabled } from '@/lib/googlePlaces'
 import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
 import { AddAddressForm, AddChildForm, AddressList } from './AddForms'
@@ -126,6 +127,8 @@ export default async function AssetPage({
     source: photo.documentName ? `From ${photo.documentName}${photo.page ? `, page ${photo.page}` : ''}` : photo.page ? `From a document that was removed, page ${photo.page}` : 'Uploaded',
   }))
   const mainPhoto = photos.find((photo) => photo.isMain)
+  // Suggestions while typing an address are on when a Google key is set (lib/googlePlaces.ts).
+  const addressTypeAhead = typeAheadEnabled()
 
   // Pages the agent marked as plans or maps, for the Photos tab to offer. Missing notes are not an error.
   let planPages = new Map<string, PlanPage[]>()
@@ -322,7 +325,7 @@ export default async function AssetPage({
                   {isFirstScreen ? (
                     <div className="record-addresses">
                       <AddressList addresses={addressRows(property.addresses)} canEdit={access.canAddRecords} />
-                      {access.canAddRecords ? <AddAddressForm ownerType="property" ownerId={property.id} assetId={tree.id} /> : null}
+                      {access.canAddRecords ? <AddAddressForm ownerType="property" ownerId={property.id} assetId={tree.id} typeAhead={addressTypeAhead} /> : null}
                     </div>
                   ) : null}
 
@@ -361,7 +364,7 @@ export default async function AssetPage({
                             {isFirstScreen ? (
                               <div className="record-addresses">
                                 <AddressList addresses={addressRows(building.addresses)} canEdit={access.canAddRecords} />
-                                {access.canAddRecords ? <AddAddressForm ownerType="building" ownerId={building.id} assetId={tree.id} /> : null}
+                                {access.canAddRecords ? <AddAddressForm ownerType="building" ownerId={building.id} assetId={tree.id} typeAhead={addressTypeAhead} /> : null}
                               </div>
                             ) : null}
 

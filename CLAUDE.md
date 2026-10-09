@@ -405,6 +405,20 @@ work and how data is isolated; this file covers how we work and where things sta
       numbers, so it lands on the right block rather than exactly on the building. Google and
       Mapbox were not used because they need an account and a key, and their terms limit
       storing coordinates; swapping the service means changing only this file.
+    - **Suggestions while typing** (October 9, later; Ronnie asked for Google type-ahead):
+      `lib/googlePlaces.ts`, on when `GOOGLE_MAPS_API_KEY` is set (Vercel and `.env.local`;
+      `.env.example` lists it). The box asks `suggestAddress` 250 ms after typing pauses
+      (Places API (New) Autocomplete, street addresses and named buildings, one session token
+      per round) and `pickSuggestedAddress` reads the picked place's address parts (Place
+      Details with the field mask `id,addressComponents`). The key never reaches the browser.
+      **Coordinates still come from the Census lookup, on purpose:** Google's terms allow
+      coordinates from the Places API to be kept for 30 days only (checked against the Service
+      Specific Terms, June 2026), and Stratios keeps them. Never add `location` to that field
+      mask. An address Census doesn't know (new buildings, anything outside the U.S.) is saved
+      without a location. If a suggestions call fails the box quietly stops asking and Find
+      Address still works. "Powered by Google" shows under the list. The Google place id is
+      not stored. He was given the Google Cloud steps; whether he has added the key is not
+      known, so check before assuming suggestions are on.
     - Each saved address shows **Map** (opens Google Maps at the point) when it has coordinates,
       **Find Location** for one typed by hand (`locateAddress`: looks it up and saves the
       coordinates of the first match, leaving the text alone) and **Remove** (`removeAddress`;
@@ -414,6 +428,9 @@ work and how data is isolated; this file covers how we work and where things sta
       without locations. An asset created from a document still gets a city-only address.
     - No map screen yet: this only captures the coordinates. Addresses on units are not listed
       with these actions (units show their address as a tooltip, as before).
+    - Checked for suggestions: the Google code with scripted answers, and the real form in
+      Chromium with stand-in answers (typing, arrow keys, picking, slow answers, failure).
+      Never run against Google itself: there is no key here.
     - Checked: the reading of a real Census answer for his Knoll Trail address, storage before
       and after 015 on the scratch database, organization isolation, and the real form and list
       in Chromium with a stand-in lookup. Whether Vercel can reach the Census service was not

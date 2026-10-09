@@ -16,6 +16,8 @@ export type AddressMatch = {
   latitude: number
   longitude: number
 }
+/** An address ready to be added: its parts, an optional suite, and its place on the map when one was found. */
+export type FoundAddress = { street: string; suite: string | null; city: string; state: string; postalCode: string; latitude: number | null; longitude: number | null }
 export type LookupResult = { ok: true; matches: AddressMatch[] } | { ok: false; error: string }
 
 const ENDPOINT = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress'

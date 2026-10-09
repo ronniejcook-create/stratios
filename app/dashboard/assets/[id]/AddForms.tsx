@@ -1,9 +1,10 @@
 'use client'
 
-import { useActionState, useEffect, useState, useTransition } from 'react'
+import { useActionState, useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import type { AddressMatch } from '@/lib/geocode'
-import { addAddress, addChild, findAddress, locateAddress, removeAddress, type AddState } from './actions'
+import type { FoundAddress } from '@/lib/geocode'
+import type { Suggestion } from '@/lib/googlePlaces'
+import { addAddress, addChild, findAddress, locateAddress, pickSuggestedAddress, removeAddress, suggestAddress, type AddState } from './actions'
 
 const initialState: AddState = { error: null, done: 0 }
 
@@ -67,24 +68,45 @@ export function AddChildForm({
   )
 }
 
-const matchLine = (match: AddressMatch) => `${match.street}, ${match.city}, ${[match.state, match.postalCode].filter(Boolean).join(' ')}`
+const matchLine = (match: FoundAddress) => `${match.street}, ${match.city}, ${[match.state, match.postalCode].filter(Boolean).join(' ')}`
+
+/** A fresh label for one round of suggestions, which Google uses to bill the keystrokes and the pick as one. */
+const newSession = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `s-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
 /**
- * "+ Add Address": type the whole address in one box and look it up. Picking
- * a match saves its street, city, state and ZIP together with its latitude
- * and longitude. The five separate boxes are still there under "Enter It by
- * Hand" for addresses the lookup doesn't know (it covers the United States).
+ * "+ Add Address": one box for the whole address.
+ * - With suggestions on (`typeAhead`, a Google key is set), matching addresses
+ *   appear under the box while typing; picking one fills in its parts.
+ * - Find Address looks the typed text up without suggestions (the Census
+ *   lookup), which also works when suggestions are off.
+ * Either way the address is shown with its map location before it is added,
+ * and "Enter It by Hand" keeps the five separate boxes.
  */
-export function AddAddressForm({ ownerType, ownerId, assetId }: { ownerType: 'property' | 'building' | 'unit'; ownerId: string; assetId: string }) {
+export function AddAddressForm({
+  ownerType,
+  ownerId,
+  assetId,
+  typeAhead = false,
+}: {
+  ownerType: 'property' | 'building' | 'unit'
+  ownerId: string
+  assetId: string
+  typeAhead?: boolean
+}) {
   const [state, formAction, pending] = useActionState(addAddress, initialState)
   const [open, setOpen] = useState(false)
   const [byHand, setByHand] = useState(false)
   const [text, setText] = useState('')
   const [suite, setSuite] = useState('')
-  const [matches, setMatches] = useState<AddressMatch[] | null>(null)
+  const [matches, setMatches] = useState<FoundAddress[] | null>(null)
   const [picked, setPicked] = useState(0)
   const [lookupError, setLookupError] = useState<string | null>(null)
   const [looking, startLooking] = useTransition()
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [active, setActive] = useState(-1)
+  const [suggestionsOff, setSuggestionsOff] = useState(false)
+  const session = useRef('')
+  const latest = useRef(0)
 
   const reset = () => {
     setOpen(false)
@@ -94,22 +116,78 @@ export function AddAddressForm({ ownerType, ownerId, assetId }: { ownerType: 'pr
     setMatches(null)
     setPicked(0)
     setLookupError(null)
+    setSuggestions([])
+    setActive(-1)
+    latest.current += 1
   }
   useEffect(() => {
     if (state.done > 0) reset()
   }, [state.done])
 
+  // Ask for suggestions a moment after the typing pauses; an answer for older text is ignored.
+  // Not while a pick or a lookup is in flight: the box's text changes then, and that is not typing.
+  const wantSuggestions = typeAhead && !suggestionsOff && open && !byHand && matches === null && !looking
+  useEffect(() => {
+    if (!wantSuggestions) return
+    const typed = text.trim()
+    if (typed.length < 3) {
+      setSuggestions([])
+      return
+    }
+    const request = (latest.current += 1)
+    const timer = window.setTimeout(async () => {
+      if (!session.current) session.current = newSession()
+      const result = await suggestAddress({ text: typed, session: session.current })
+      if (request !== latest.current) return
+      if (!result.ok) {
+        // Suggestions are a convenience: if they fail, stop asking and leave Find Address to do the job.
+        setSuggestionsOff(true)
+        setSuggestions([])
+        return
+      }
+      setSuggestions(result.suggestions)
+      setActive(-1)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [text, wantSuggestions])
+
+  const show = (found: FoundAddress[]) => {
+    latest.current += 1 // any suggestions still on their way are for text that has been dealt with
+    setMatches(found)
+    setPicked(0)
+    setSuite(found[0]?.suite ?? '')
+    setSuggestions([])
+    setActive(-1)
+  }
+
   const find = () => {
     setLookupError(null)
     setMatches(null)
+    setSuggestions([])
+    latest.current += 1
     startLooking(async () => {
       const result = await findAddress({ text })
       if (!result.ok) {
         setLookupError(result.error)
         return
       }
-      setMatches(result.matches)
-      setPicked(0)
+      show(result.matches.map((match) => ({ ...match, suite: null })))
+    })
+  }
+
+  const choose = (suggestion: Suggestion) => {
+    setLookupError(null)
+    setSuggestions([])
+    latest.current += 1
+    setText([suggestion.main, suggestion.secondary].filter(Boolean).join(', '))
+    startLooking(async () => {
+      const result = await pickSuggestedAddress({ placeId: suggestion.placeId, session: session.current })
+      session.current = '' // the pick closes this round; the next typing starts a new one
+      if (!result.ok) {
+        setLookupError(result.error)
+        return
+      }
+      show([result.address])
     })
   }
 
@@ -166,17 +244,25 @@ export function AddAddressForm({ ownerType, ownerId, assetId }: { ownerType: 'pr
   }
 
   const match = matches?.[picked]
+  const listOpen = suggestions.length > 0
+  const suggesting = typeAhead && !suggestionsOff
   return (
     <div className="address-lookup">
       <div className="inline-form">
-        <div className="field field-wide">
+        <div className="field field-wide address-box">
           <label htmlFor={`${id}-text`}>Address</label>
           <input
             id={`${id}-text`}
             type="text"
             maxLength={300}
-            placeholder="15400 Knoll Trail Dr, Dallas, TX"
+            placeholder={suggesting ? 'Start typing an address' : '15400 Knoll Trail Dr, Dallas, TX'}
             autoFocus
+            autoComplete="off"
+            role="combobox"
+            aria-expanded={listOpen}
+            aria-controls={`${id}-suggestions`}
+            aria-autocomplete="list"
+            aria-activedescendant={listOpen && active >= 0 ? `${id}-suggestion-${active}` : undefined}
             value={text}
             onChange={(event) => {
               setText(event.target.value)
@@ -184,11 +270,46 @@ export function AddAddressForm({ ownerType, ownerId, assetId }: { ownerType: 'pr
               setLookupError(null)
             }}
             onKeyDown={(event) => {
+              if (listOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                event.preventDefault()
+                setActive((current) => (event.key === 'ArrowDown' ? (current + 1) % suggestions.length : (current <= 0 ? suggestions.length : current) - 1))
+                return
+              }
+              if (listOpen && event.key === 'Escape') {
+                event.preventDefault()
+                setSuggestions([])
+                return
+              }
               if (event.key !== 'Enter') return
               event.preventDefault()
-              if (text.trim() && !looking) find()
+              if (looking) return
+              if (listOpen && active >= 0) choose(suggestions[active])
+              else if (text.trim()) find()
             }}
           />
+          {listOpen ? (
+            <ul id={`${id}-suggestions`} className="address-suggestions" role="listbox" aria-label="Suggested addresses">
+              {suggestions.map((suggestion, index) => (
+                <li
+                  key={suggestion.placeId}
+                  id={`${id}-suggestion-${index}`}
+                  role="option"
+                  aria-selected={index === active}
+                  className={index === active ? 'active' : undefined}
+                  // mousedown, so the pick lands before the box loses focus
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    choose(suggestion)
+                  }}
+                  onMouseEnter={() => setActive(index)}
+                >
+                  <span className="address-suggestion-main">{suggestion.main}</span>
+                  {suggestion.secondary ? <span className="address-suggestion-rest">{suggestion.secondary}</span> : null}
+                </li>
+              ))}
+              <li className="address-suggestions-credit" aria-hidden="true">Powered by Google</li>
+            </ul>
+          ) : null}
         </div>
         <div className="field-edit-buttons">
           <button type="button" className="btn btn-primary btn-small" disabled={looking || pending || text.trim().length === 0} onClick={find}>{looking ? 'Looking…' : 'Find Address'}</button>
@@ -196,8 +317,10 @@ export function AddAddressForm({ ownerType, ownerId, assetId }: { ownerType: 'pr
         </div>
       </div>
       <p className="note address-note">
-        Type the street address with its city and state, then Find Address. United States addresses only;{' '}
-        <button type="button" className="link-button" onClick={() => setByHand(true)}>Enter It by Hand</button> for anything else.
+        {suggesting
+          ? 'Start typing and pick the address from the list, or type it all and use Find Address.'
+          : 'Type the street address with its city and state, then Find Address. United States addresses only.'}{' '}
+        <button type="button" className="link-button" onClick={() => setByHand(true)}>Enter It by Hand</button> instead.
       </p>
       {lookupError ? <p className="form-error" role="alert">{lookupError}</p> : null}
 
@@ -215,8 +338,12 @@ export function AddAddressForm({ ownerType, ownerId, assetId }: { ownerType: 'pr
           <input type="hidden" name="city" value={match.city} />
           <input type="hidden" name="state" value={match.state} />
           <input type="hidden" name="postalCode" value={match.postalCode} />
-          <input type="hidden" name="latitude" value={match.latitude} />
-          <input type="hidden" name="longitude" value={match.longitude} />
+          {match.latitude !== null && match.longitude !== null ? (
+            <>
+              <input type="hidden" name="latitude" value={match.latitude} />
+              <input type="hidden" name="longitude" value={match.longitude} />
+            </>
+          ) : null}
           {matches.length === 1 ? (
             <p className="address-match"><strong>{matchLine(match)}</strong></p>
           ) : (
@@ -230,10 +357,14 @@ export function AddAddressForm({ ownerType, ownerId, assetId }: { ownerType: 'pr
               ))}
             </fieldset>
           )}
-          <p className="doc-sub">
-            Map location: {match.latitude.toFixed(5)}, {match.longitude.toFixed(5)} ·{' '}
-            <a href={mapLink(match.latitude, match.longitude)} target="_blank" rel="noreferrer">Check on a Map</a>
-          </p>
+          {match.latitude !== null && match.longitude !== null ? (
+            <p className="doc-sub">
+              Map location: {match.latitude.toFixed(5)}, {match.longitude.toFixed(5)} ·{' '}
+              <a href={mapLink(match.latitude, match.longitude)} target="_blank" rel="noreferrer">Check on a Map</a>
+            </p>
+          ) : (
+            <p className="doc-sub">No map location was found for this address. You can still add it, and try Find Location on it later.</p>
+          )}
           <div className="inline-form">
             <div className="field field-narrow">
               <label htmlFor={`${id}-suite`}>Suite (Optional)</label>

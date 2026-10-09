@@ -11,7 +11,8 @@ import { listDocuments, readDocumentFile } from '@/lib/documents'
 import { extractPhotos } from '@/lib/photoExtraction'
 import { joinSpreads } from '@/lib/photoJoin'
 import { isPhotoCategory, removePhoto, savePhotosFromDocument, setMainPhoto, updatePhoto } from '@/lib/photos'
-import { LOCATION_SOURCE, lookUpAddress, type AddressMatch } from '@/lib/geocode'
+import { LOCATION_SOURCE, lookUpAddress, type AddressMatch, type FoundAddress } from '@/lib/geocode'
+import { addressOfSuggestion, suggestAddresses, type Suggestion } from '@/lib/googlePlaces'
 import { deleteAddress, formatAddress, getAddress, insertAddress, insertChild, isRecordType, isUuid, setAddressLocation, type AddressOwner, type Queryable } from '@/lib/records'
 
 const NO_PERMISSION = "You don't have permission to change this."
@@ -386,6 +387,34 @@ export async function findAddress(input: { text: string }): Promise<FindAddressR
   const { userId, orgId } = await auth()
   if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
   return lookUpAddress(String(input.text ?? ''))
+}
+
+export type SuggestAddressResult = { ok: true; suggestions: Suggestion[] } | { ok: false; error: string }
+
+/** Suggestions under the address box while someone types (Google). Nothing is saved. */
+export async function suggestAddress(input: { text: string; session: string }): Promise<SuggestAddressResult> {
+  const { userId, orgId } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  return suggestAddresses(String(input.text ?? ''), String(input.session ?? ''))
+}
+
+export type PickAddressResult = { ok: true; address: FoundAddress } | { ok: false; error: string }
+
+/**
+ * The address behind a suggestion the person picked: its parts from Google,
+ * and its latitude and longitude from the Census lookup, which may be kept
+ * (Google's may not). An address the Census lookup doesn't know comes back
+ * without a location and can still be added.
+ */
+export async function pickSuggestedAddress(input: { placeId: string; session: string }): Promise<PickAddressResult> {
+  const { userId, orgId } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  const picked = await addressOfSuggestion(String(input.placeId ?? ''), String(input.session ?? ''))
+  if (!picked.ok) return picked
+  const { address } = picked
+  const located = await lookUpAddress([address.street, address.city, [address.state, address.postalCode.slice(0, 5)].filter(Boolean).join(' ')].filter(Boolean).join(', '))
+  const match = located.ok ? located.matches[0] : undefined
+  return { ok: true, address: { ...address, latitude: match?.latitude ?? null, longitude: match?.longitude ?? null } }
 }
 
 /** Runs a change to one address for someone allowed to add records, then refreshes its asset's page. */

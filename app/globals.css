@@ -844,3 +844,13 @@ td.muted { color: var(--dim); }
 .address-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
 .shell-main .address-action { min-height: 0; font-size: 12px; }
 .shell-main .address-error { margin-top: 4px; flex-basis: 100%; }
+.address-box { position: relative; }
+.address-suggestions {
+  position: absolute; z-index: 40; top: 100%; left: 0; right: 0; margin: 4px 0 0; padding: 4px; list-style: none;
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+.address-suggestions li[role="option"] { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; padding: 7px 8px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.address-suggestions li.active { background: var(--bg); }
+.address-suggestion-main { color: var(--heading); font-weight: 500; }
+.address-suggestion-rest { color: var(--muted); font-size: 13px; }
+.address-suggestions-credit { padding: 4px 8px 2px; text-align: right; font-size: 11px; color: var(--dim); }
