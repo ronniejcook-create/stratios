@@ -87,11 +87,14 @@ export function AddAddressForm({
   ownerId,
   assetId,
   typeAhead = false,
+  replacing = false,
 }: {
   ownerType: 'property' | 'building' | 'unit'
   ownerId: string
   assetId: string
   typeAhead?: boolean
+  /** True when the property or building already has an address: saving another replaces it. */
+  replacing?: boolean
 }) {
   const [state, formAction, pending] = useActionState(addAddress, initialState)
   const [open, setOpen] = useState(false)
@@ -192,10 +195,11 @@ export function AddAddressForm({
   if (!open) {
     return (
       <button type="button" className="link-button add-link" onClick={() => setOpen(true)}>
-        + Add Address
+        {replacing ? 'Change Address' : '+ Add Address'}
       </button>
     )
   }
+  const replaceNote = replacing ? <p className="note address-note">A {ownerType} has one address. Saving this one replaces the current address.</p> : null
 
   const owner = (
     <>
@@ -230,11 +234,12 @@ export function AddAddressForm({
           <input id={`${id}-postal`} name="postalCode" type="text" maxLength={200} />
         </div>
         <div className="field-edit-buttons">
-          <button type="submit" className="btn btn-primary btn-small" disabled={pending}>{pending ? 'Adding…' : 'Add Address'}</button>
+          <button type="submit" className="btn btn-primary btn-small" disabled={pending}>{pending ? 'Saving…' : replacing ? 'Replace Address' : 'Add Address'}</button>
           <button type="button" className="btn btn-ghost btn-small" disabled={pending} onClick={() => setByHand(false)}>Back to Lookup</button>
           <button type="button" className="btn btn-ghost btn-small" disabled={pending} onClick={reset}>Cancel</button>
         </div>
         <p className="note address-note">An address entered by hand has no map location until you use Find Location on it.</p>
+        {replaceNote}
         {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
       </form>
     )
@@ -370,8 +375,9 @@ export function AddAddressForm({
             <p className="doc-sub">No map location was found for this address. You can still add it, and try Find Location on it later.</p>
           )}
           <div className="field-edit-buttons address-add">
-            <button type="submit" className="btn btn-primary btn-small" disabled={pending}>{pending ? 'Adding…' : 'Add This Address'}</button>
+            <button type="submit" className="btn btn-primary btn-small" disabled={pending}>{pending ? 'Saving…' : replacing ? 'Replace With This Address' : 'Add This Address'}</button>
           </div>
+          {replaceNote}
           {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
         </form>
       ) : null}
@@ -395,6 +401,8 @@ export function AddressList({ addresses, canEdit }: { addresses: AddressRow[]; c
   const [removing, setRemoving] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   if (addresses.length === 0) return null
+  // From before a property or building was limited to one address.
+  const extras = addresses.length > 1
 
   const act = (work: () => Promise<{ ok: true } | { ok: false; error: string }>) => {
     setError(null)
@@ -433,6 +441,7 @@ export function AddressList({ addresses, canEdit }: { addresses: AddressRow[]; c
           )
         })}
       </ul>
+      {extras && canEdit ? <p className="note address-note">There should be one address here. Remove the extras, or use Change Address to replace them all with one.</p> : null}
       {error ? <p className="form-error address-error" role="alert">{error}</p> : null}
     </>
   )

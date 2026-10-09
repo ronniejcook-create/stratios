@@ -127,6 +127,23 @@ const SCHEMA = {
         additionalProperties: false,
       },
     },
+    addresses: {
+      type: 'array',
+      description: 'The street address of a property or building, when the document states one',
+      items: {
+        type: 'object',
+        properties: {
+          record: { type: 'string', description: 'The address of the property or building record, copied exactly from the list of records' },
+          street: { type: 'string', description: 'The number and street alone, for example "15400 Knoll Trail Drive"' },
+          city: { type: 'string', description: 'The city; an empty string if not stated' },
+          state: { type: 'string', description: 'The state as its two-letter abbreviation; an empty string if not stated' },
+          postal_code: { type: 'string', description: 'The ZIP or postal code; an empty string if not stated' },
+          page: { type: 'integer', description: 'The PDF page the address is on, counting the first page as 1' },
+        },
+        required: ['record', 'street', 'city', 'state', 'postal_code', 'page'],
+        additionalProperties: false,
+      },
+    },
     list_rows: {
       type: 'array',
       description: 'Entries to add to the lists, such as comments and critical dates',
@@ -170,7 +187,7 @@ const SCHEMA = {
     },
     main_photo_page: { type: 'integer', description: 'The page with the best single photograph of the property itself, or 0 when the document has none' },
   },
-  required: ['document_type', 'summary', 'values', 'proposed_fields', 'list_rows', 'photos', 'main_photo_page'],
+  required: ['document_type', 'summary', 'values', 'proposed_fields', 'addresses', 'list_rows', 'photos', 'main_photo_page'],
   additionalProperties: false,
 }
 
@@ -233,6 +250,7 @@ ${library}
 - Confidence: high when the document states the value plainly and unambiguously; medium when you had to interpret a label or convert units; low when it is unclear, conflicting or hard to read.
 - quote: the few words or the line that state the value, copied from the document.
 - proposed_fields: facts in the document that a real estate owner would want to track and that match NO field in the dictionary, under any of its names. Check the dictionary carefully first, so "Cap Rate" and "Capitalization Rate" never become two fields. At most ${MAX_PROPOSALS}, the most useful first. Do not propose tenant-by-tenant, lease-by-lease or month-by-month figures.
+- addresses: a property or a building has one street address. When the document states the property's street address, give it once for the property: the number and street in "street" (no suite, no building name), with the city, the two-letter state and the ZIP code when stated. Give a building an address only when the document gives that building a street address different from its property's. Never make up or complete an address; if the document gives no street number and street, return nothing for that record.
 - list_rows: ${lists.length === 0 ? 'return an empty list.' : `add an entry when the document gives something worth keeping that fits a list, at most ${MAX_LIST_ROWS} entries in all, the most useful first. For a list of comments or commentary: the narrative an owner would want on file (investment highlights, location and market, tenancy and leasing, building condition and capital work, financial points, risks and assumptions), one entry per topic, written in your own plain words in ${MAX_COMMENT_WORDS} words or fewer, with facts and figures exactly as the document states them and no sales language. For a list of dates: one entry per dated event the document gives (a lease expiration, an option deadline, a rent step, a loan maturity), naming who or what it concerns in the description. Fill in only the columns the document supports and leave the others out. A column for who made or wrote the entry takes the firm that prepared the document. A date column takes YYYY-MM-DD: when the document gives only a month and year, use the last day of that month; when it gives only a year, leave the entry out of a list of dates. For a comment's date use the date of the document when it states one, and otherwise leave the date out. An entry about the investment as a whole belongs on the asset; one about a property, its buildings, tenants or surroundings belongs on that property. Do not repeat as an entry a single figure that already went into "values".`}
 - photos: Stratios copies the photographs out of the document and uses your notes to label them. List each photograph of a reasonable size (not logos, icons, headshots of people, charts or tables), at most ${MAX_PHOTO_NOTES}. Categories: exterior (the property's buildings from outside), interior (lobbies, suites, amenities), aerial (the property seen from above), area (the neighborhood, skyline, transit or nearby places rather than the property), plan, other. Use plan for a page whose main content is a floor plan, site plan, stacking plan, survey or location map, even though these are drawings rather than photographs: Stratios saves the whole page as a picture, so list each such page once and say in the caption what it is (for example "Floor plans, floors 1 to 5"). When one photograph is spread across two facing pages, list both pages with the same category and a caption that describes the whole photograph: Stratios joins the two halves into one picture.
 - main_photo_page: choose the clearest photograph of the property's exterior; for a two-page photograph give either of its pages. 0 when there is none.
@@ -242,6 +260,16 @@ ${library}
 const MAX_PHOTO_NOTES = 60
 const PHOTO_NOTE_CATEGORIES = ['exterior', 'interior', 'aerial', 'area', 'plan', 'other'] as const
 
+export type DocumentAddress = {
+  recordType: 'property' | 'building'
+  recordId: string
+  street: string
+  city: string | null
+  state: string | null
+  postalCode: string | null
+  page: number | null
+}
+
 export type Reading = {
   candidates: Candidate[]
   proposals: ProposalInput[]
@@ -249,6 +277,8 @@ export type Reading = {
   summary: string | null
   /** Values the agent returned that could not be used: unknown record or field, wrong level, or a value that did not fit the field's type. */
   skipped: number
+  /** The street address the document states for a property or building, at most one per record. */
+  addresses: DocumentAddress[]
   /** Entries for lists (comments, critical dates and the like), checked against each list's columns. */
   rows: DocumentRow[]
   /** What the agent said about the photographs, by page, for labeling the pictures copied out of the file. */
@@ -332,6 +362,24 @@ export function interpretAnswer(answer: Record<string, unknown>, records: Record
     })
   }
 
+  // Addresses: one per property or building, and only with a street that starts like one.
+  const addresses: DocumentAddress[] = []
+  for (const raw of Array.isArray(answer.addresses) ? (answer.addresses as Record<string, unknown>[]) : []) {
+    const record = recordByRef.get(text(raw?.record, 300).toLowerCase())
+    const street = text(raw?.street, 200)
+    if (!record || (record.type !== 'property' && record.type !== 'building') || street.length < 5 || !/[A-Za-z]/.test(street)) continue
+    if (addresses.some((address) => address.recordId === record.id)) continue
+    addresses.push({
+      recordType: record.type,
+      recordId: record.id,
+      street,
+      city: text(raw.city, 200) || null,
+      state: text(raw.state, 20).toUpperCase() || null,
+      postalCode: text(raw.postal_code, 20) || null,
+      page: pageOf(raw.page),
+    })
+  }
+
   // List entries: a cell that does not fit its column is dropped, and so is an entry left with nothing, or
   // with no value in the column its list is ordered by (a critical date with no date) unless that column fills itself in.
   const listByKey = new Map(lists.map((entry) => [`${entry.list.appliesTo}:${entry.list.key.toLowerCase()}`, entry]))
@@ -383,6 +431,7 @@ export function interpretAnswer(answer: Record<string, unknown>, records: Record
     documentType: text(answer.document_type, 100) || null,
     summary: text(answer.summary, 2000) || null,
     skipped,
+    addresses,
     rows,
     photos,
     mainPhotoPage: pageOf(answer.main_photo_page),

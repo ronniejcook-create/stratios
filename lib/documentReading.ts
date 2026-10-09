@@ -9,15 +9,16 @@ import { createAssetWithDefaults } from './assets'
 import { withOrg } from './db'
 import { describeFailure, NO_PERMISSION, type Caller } from './documentRequests'
 import { applyReading, attachDocument, failReading, getDocument, readDocumentFile, startReading, type Outcome } from './documents'
-import { extractableFields, extractableLists, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField, type Reading } from './extraction'
+import { extractableFields, extractableLists, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField, type DocumentAddress, type Reading } from './extraction'
 import { listFields } from './fields'
+import { LOCATION_SOURCE, lookUpAddress } from './geocode'
 import { listScreens } from './layout'
 import { addDocumentRows, listLists, type DocumentRow } from './lists'
 import { loadAccess } from './permissions'
 import { extractPhotos } from './photoExtraction'
 import { joinSpreads } from './photoJoin'
 import { planPagesOf, saveDocumentPhotoNotes, savePhotosFromDocument, type PlanPage } from './photos'
-import { getAssetTree, type Queryable } from './records'
+import { getAssetTree, insertAddress, type Queryable } from './records'
 import { loadSkillsForAgent } from './skills'
 
 export type ReadSuccess = {
@@ -35,6 +36,8 @@ export type ReadSuccess = {
   skipped: number
   /** Entries added to lists: comments, critical dates and the like. */
   listRows: number
+  /** Street addresses set on properties and buildings from the document. */
+  addresses: number
   /** Photos copied out of the document onto the asset. */
   photos: number
   /** Pages the agent marked as plans or maps. The browser draws these as pictures and adds them to the photos. */
@@ -90,6 +93,64 @@ async function addListRows(client: Queryable, caller: Caller, document: { id: st
   }
 }
 
+const sameStreet = (a: string | null, b: string | null) => (a ?? '').toLowerCase().replace(/[^a-z0-9]/g, '') === (b ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/**
+ * Sets the street addresses the document states, each with its place on the
+ * map when the lookup knows it. A property or building keeps a street address
+ * it already has; only a missing one, or the city-only one a new asset starts
+ * with, is filled in. A building's address is skipped when it is the same as
+ * its property's. Like the photos this is an extra, in its own step: a
+ * failure here never fails the reading. Returns how many were set.
+ */
+export async function addAddresses(caller: Caller, assetId: string, found: DocumentAddress[]): Promise<number> {
+  if (found.length === 0) return 0
+  try {
+    // Look them up first, with no database transaction open. An address the lookup doesn't know is saved as the document wrote it.
+    const located = await Promise.all(
+      found.slice(0, 6).map(async (address) => {
+        const line = [address.street, address.city, [address.state, address.postalCode?.slice(0, 5)].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+        const result = await lookUpAddress(line, 6000)
+        return { address, match: result.ok ? result.matches[0] ?? null : null }
+      }),
+    )
+    return await withOrg(caller.orgId, async (client) => {
+      const tree = await getAssetTree(client, caller.orgId, assetId)
+      if (!tree) return 0
+      let added = 0
+      // Properties first, so a building can be compared with its property's new address.
+      const propertyStreet = new Map<string, string | null>()
+      for (const type of ['property', 'building'] as const) {
+        for (const { address, match } of located) {
+          if (address.recordType !== type) continue
+          const property = tree.properties.find((candidate) => (type === 'property' ? candidate.id === address.recordId : candidate.buildings.some((building) => building.id === address.recordId)))
+          if (!property) continue
+          const current = type === 'property' ? property.addresses : property.buildings.find((building) => building.id === address.recordId)!.addresses
+          const street = match?.street ?? address.street
+          if (type === 'property') propertyStreet.set(property.id, current.find((existing) => existing.street)?.street ?? street)
+          if (current.some((existing) => existing.street)) continue
+          if (type === 'building' && sameStreet(propertyStreet.get(property.id) ?? property.addresses.find((existing) => existing.street)?.street ?? null, street)) continue
+          const saved = await insertAddress(client, caller.orgId, caller.userId, type, address.recordId, {
+            street,
+            suite: null,
+            city: match?.city ?? address.city,
+            state: match?.state ?? address.state,
+            postalCode: match?.postalCode ?? address.postalCode,
+            latitude: match?.latitude ?? null,
+            longitude: match?.longitude ?? null,
+            locationSource: match ? LOCATION_SOURCE : null,
+          })
+          if (saved) added += 1
+        }
+      }
+      return added
+    })
+  } catch (error) {
+    console.error('Setting addresses from a document failed', error)
+    return 0
+  }
+}
+
 async function giveUp(caller: Caller, documentId: string, error: string, status = 502): Promise<ReadOutcome> {
   await withOrg(caller.orgId, (client) => failReading(client, caller.orgId, documentId, error)).catch((failure) => console.error('Recording a failed reading failed', failure))
   return { ok: false, error, status }
@@ -138,6 +199,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       const applied = await applyReading(client, orgId, userId, { id: documentId, name: document.name }, result.reading)
       return { counts: applied, listRows: await addListRows(client, caller, { id: documentId, name: document.name }, result.reading.rows) }
     })
+    const addresses = await addAddresses(caller, tree.id, result.reading.addresses)
     const photos = await addPhotos(caller, tree.id, documentId, prepared.file, result.reading)
     return {
       ok: true,
@@ -152,6 +214,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       proposals: result.reading.proposals.length,
       skipped: result.reading.skipped,
       listRows,
+      addresses,
       photos,
       planPages: planPagesOf(result.reading.photos),
     }
@@ -212,6 +275,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         candidates: result.reading.candidates.map((candidate) => ({ ...candidate, recordId: real[candidate.recordId] ?? candidate.recordId })),
         proposals: result.reading.proposals.map((proposal) => ({ ...proposal, recordId: real[proposal.recordId] ?? proposal.recordId })),
         rows: result.reading.rows.map((row) => ({ ...row, recordId: real[row.recordId] ?? row.recordId })),
+        addresses: result.reading.addresses.map((address) => ({ ...address, recordId: real[address.recordId] ?? address.recordId })),
       }
       const counts = await applyReading(client, orgId, userId, { id: documentId, name: document.name }, reading)
       const listRows = await addListRows(client, caller, { id: documentId, name: document.name }, reading.rows)
@@ -228,11 +292,15 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         proposals: reading.proposals.length,
         skipped: reading.skipped,
         listRows,
+        addresses: 0,
+        found: reading.addresses,
         photos: 0,
         planPages: planPagesOf(reading.photos),
       }
     })
-    return { ...created, photos: await addPhotos(caller, created.assetId, documentId, prepared.file, result.reading) }
+    const { found, ...success } = created
+    const addresses = await addAddresses(caller, created.assetId, found)
+    return { ...success, addresses, photos: await addPhotos(caller, created.assetId, documentId, prepared.file, result.reading) }
   } catch (error) {
     console.error('Creating an asset from a document failed', error)
     return giveUp(caller, documentId, describeFailure(error, 'The asset could not be created from this document. Try again.'), 500)

@@ -344,7 +344,7 @@ export default async function AssetPage({
                   {isFirstScreen ? (
                     <div className="record-addresses">
                       <AddressList addresses={addressRows(property.addresses)} canEdit={access.canAddRecords} />
-                      {access.canAddRecords ? <AddAddressForm ownerType="property" ownerId={property.id} assetId={tree.id} typeAhead={addressTypeAhead} /> : null}
+                      {access.canAddRecords ? <AddAddressForm ownerType="property" ownerId={property.id} assetId={tree.id} typeAhead={addressTypeAhead} replacing={property.addresses.length > 0} /> : null}
                     </div>
                   ) : null}
 
@@ -383,7 +383,7 @@ export default async function AssetPage({
                             {isFirstScreen ? (
                               <div className="record-addresses">
                                 <AddressList addresses={addressRows(building.addresses)} canEdit={access.canAddRecords} />
-                                {access.canAddRecords ? <AddAddressForm ownerType="building" ownerId={building.id} assetId={tree.id} typeAhead={addressTypeAhead} /> : null}
+                                {access.canAddRecords ? <AddAddressForm ownerType="building" ownerId={building.id} assetId={tree.id} typeAhead={addressTypeAhead} replacing={building.addresses.length > 0} /> : null}
                               </div>
                             ) : null}
 

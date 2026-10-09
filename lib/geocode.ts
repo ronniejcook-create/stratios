@@ -72,12 +72,12 @@ export function readMatches(body: unknown): AddressMatch[] {
 }
 
 /** Finds a typed address. An address that isn't found is `ok` with no matches; `ok: false` means the lookup itself failed. */
-export async function lookUpAddress(text: string): Promise<LookupResult> {
+export async function lookUpAddress(text: string, timeoutMs = 12000): Promise<LookupResult> {
   const address = text.replace(/\s+/g, ' ').trim().slice(0, 300)
   if (address.length < 5) return { ok: false, error: 'Type the street address with its city and state, for example 100 Main St, Dallas, TX.' }
   const query = new URLSearchParams({ address, benchmark: 'Public_AR_Current', format: 'json' })
   try {
-    const response = await fetch(`${ENDPOINT}?${query}`, { signal: AbortSignal.timeout(12000), headers: { accept: 'application/json' }, cache: 'no-store' })
+    const response = await fetch(`${ENDPOINT}?${query}`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: 'application/json' }, cache: 'no-store' })
     if (!response.ok) return { ok: false, error: 'The address lookup is not answering right now. Try again, or enter the address by hand.' }
     return { ok: true, matches: readMatches(await response.json()) }
   } catch (error) {

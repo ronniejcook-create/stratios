@@ -428,7 +428,8 @@ work and how data is isolated; this file covers how we work and where things sta
       addresses could not be removed before). All need `access.canAddRecords`.
     - `insertAddress` saves coordinates only when the columns exist (`hasCoordinateColumns`), and
       the asset page reads them through `to_jsonb`, so everything works before 015 is run, just
-      without locations. An asset created from a document still gets a city-only address.
+      without locations. An asset created from a document starts with a city-only address, which the
+      document's street address then replaces (see "One address per property and building").
     - **Map tab** (October 9, later; Ronnie asked for it): every asset has a Map tab (key `_map`,
       before Photos) with a pin for each property and building address that has coordinates
       (`components/PropertyMap.tsx`). One pin is shown at street level with its pop-up open;
@@ -560,6 +561,29 @@ work and how data is isolated; this file covers how we work and where things sta
       long-text block and box were clicked through in Chromium. The review page section was
       not opened in a browser, and nothing was run against the real Claude API, so how good
       the comments are shows on his first memorandum.
+  - **One address per property and building, and addresses from documents** (October 9, late;
+    no migration; Ronnie's request).
+    - `insertAddress` in `lib/records.ts` deletes whatever address a property or building had
+      before saving the new one (units are unchanged and may have several). There is no
+      database constraint, because older data may hold several; the app is the rule. The asset
+      page shows **Change Address** instead of "+ Add Address" once there is one
+      (`AddAddressForm` `replacing`), with "Replace With This Address" and a line saying the
+      current one is replaced. A record still holding several from before shows them all with
+      Remove and a note; saving one clears the rest.
+    - The reading's answer format gained `addresses` (record, street, city, state, postal code,
+      page): the property's street address, and a building's only when the document gives it a
+      different one. `addAddresses` in `lib/documentReading.ts` runs after the reading is saved,
+      in its own step (a failure never fails the reading): each address is looked up with the
+      Census service (6 second limit, no transaction open) and saved with its coordinates and
+      the service's tidy spelling, or as the document wrote it, without a location, when the
+      lookup doesn't know it. A street address already on the record is **kept**; only a missing
+      one, or the city-only address a new asset starts with, is filled in. A building address
+      with the same street as its property is skipped (it would be a second pin on the same
+      spot). The analyst is told how many were set. The review page does not list them.
+    - Checked on the scratch database with a stand-in lookup: the answer checks, replacement of
+      the city-only address, keeping an existing one, the building rules, lookup failure,
+      organization isolation, and replacement by hand including old extras. The changed form
+      was not opened in a browser; the agent's addresses were not run against the real Claude API.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

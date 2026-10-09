@@ -275,7 +275,11 @@ export type AddressInput = {
 
 export type AddressOwner = 'property' | 'building' | 'unit'
 
-/** Adds an address to a property, building or unit. False when the owner isn't this organization's. */
+/**
+ * Sets the address of a property or building, or adds one to a unit. A
+ * property or a building has one address, so saving one replaces whatever it
+ * had. False when the owner isn't this organization's.
+ */
 export async function insertAddress(
   client: Queryable,
   orgId: string,
@@ -286,6 +290,7 @@ export async function insertAddress(
 ): Promise<boolean> {
   if (!(await recordExists(client, orgId, ownerType, ownerId))) return false
   const column = ownerType === 'property' ? 'property_id' : ownerType === 'building' ? 'building_id' : 'unit_id'
+  if (ownerType !== 'unit') await client.query(`delete from addresses where org_id = $1 and ${column} = $2`, [orgId, ownerId])
   const located = typeof input.latitude === 'number' && typeof input.longitude === 'number'
   if (located && (await hasCoordinateColumns(client))) {
     await client.query(
