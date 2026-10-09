@@ -10,6 +10,8 @@ export type MapPin = { id: string; title: string; subtitle: string; address: str
  * `edge` is the color of its outline; left out, a thin light line keeps neighboring areas apart.
  */
 export type MapArea = { id: string; outline: [number, number][][]; color: string | null; label: string; edge?: string }
+/** A colored dot on the map for a place that is not one of the pins, with what hovering it says. */
+export type MapPoint = { id: string; position: [number, number]; color: string; label: string }
 /** A square around a point, so many miles each way, that the map should take in. */
 export type MapReach = { center: [number, number]; miles: number }
 /** Circles drawn around a point, each so many miles out. */
@@ -36,6 +38,7 @@ type Leaflet = {
   layerGroup(): LeafletGroup
   polygon(outline: [number, number][][], options: Record<string, unknown>): LeafletLayer
   circle(center: [number, number], options: Record<string, unknown>): LeafletLayer
+  circleMarker(center: [number, number], options: Record<string, unknown>): LeafletLayer
 }
 
 /** Street-map pictures come from OpenStreetMap, which asks for this credit on the map. */
@@ -105,12 +108,12 @@ const safe = (text: string) => text.replace(/[&<>"']/g, (character) => `&#${char
  * only sized and centered once its box has a real size. It fills the height
  * left on the screen, and the scroll wheel zooms it.
  *
- * `areas` and `rings` lay information over the map (shaded neighborhoods,
- * distance circles). They are drawn under the pins and can change without the
+ * `areas`, `rings` and `points` lay information over the map (shaded
+ * neighborhoods, distance circles, dots for nearby places). They are drawn under the pins and can change without the
  * map starting over; when rings appear the view widens to take them in, and
  * failing rings it moves to take in `reach`.
  */
-export function PropertyMap({ pins, areas, rings, reach }: { pins: MapPin[]; areas?: MapArea[]; rings?: MapRings | null; reach?: MapReach | null }) {
+export function PropertyMap({ pins, areas, rings, reach, points }: { pins: MapPin[]; areas?: MapArea[]; rings?: MapRings | null; reach?: MapReach | null; points?: MapPoint[] }) {
   const box = useRef<HTMLDivElement>(null)
   const [problem, setProblem] = useState<string | null>(null)
   // The live map and Leaflet itself, once ready, for the overlay to draw on.
@@ -195,7 +198,7 @@ export function PropertyMap({ pins, areas, rings, reach }: { pins: MapPin[]; are
     const { leaflet, map } = ready
     const group = leaflet.layerGroup().addTo(map)
     // The pin's pop-up would sit on top of what is being shown, so it steps aside; clicking the pin brings it back.
-    if ((areas && areas.length > 0) || rings) map.closePopup()
+    if ((areas && areas.length > 0) || rings || (points && points.length > 0)) map.closePopup()
     for (const area of areas ?? []) {
       leaflet
         .polygon(area.outline, {
@@ -204,6 +207,13 @@ export function PropertyMap({ pins, areas, rings, reach }: { pins: MapPin[]; are
           fillColor: area.color ?? '#000000', fillOpacity: area.color ? 0.62 : 0, fillRule: 'evenodd',
         })
         .bindTooltip(safe(area.label).replace(/\n/g, '<br>'), { sticky: true, direction: 'top', className: 'map-tip' })
+        .addTo(group)
+    }
+    // Dots go on last, so they stay clickable above the shading.
+    for (const point of points ?? []) {
+      leaflet
+        .circleMarker(point.position, { radius: 6, color: '#111827', weight: 1.5, opacity: 0.9, fillColor: point.color, fillOpacity: 1 })
+        .bindTooltip(safe(point.label).replace(/\n/g, '<br>'), { direction: 'top', className: 'map-tip' })
         .addTo(group)
     }
     if (rings) {
@@ -227,7 +237,7 @@ export function PropertyMap({ pins, areas, rings, reach }: { pins: MapPin[]; are
       group.remove()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, areas, ringKey, reachKey])
+  }, [ready, areas, ringKey, reachKey, points])
 
   if (problem) return <p className="form-error" role="alert">{problem}</p>
   return <div ref={box} className="property-map" role="region" aria-label="Map of this asset's addresses" />

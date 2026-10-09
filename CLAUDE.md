@@ -482,7 +482,7 @@ work and how data is isolated; this file covers how we work and where things sta
         and map in Chromium with made-up figures. Never run against the real Data API (no key
         here); TIGERweb's field names were confirmed against a live answer.
     - **Flood zones on the map** (October 9, late; no migration; the first of the "other public
-      overlays" he asked about, crime and the rest are not started). Under Demographics in the
+      overlays" he asked about; schools followed, crime and the rest are not started). Under Demographics in the
       Map tab's side panel, **Show Flood Zones** (`AssetMap.tsx`) loads
       `GET /api/flood-zones?addressId=` (an address of the organization, like demographics) ->
       `lib/floodZones.ts`, which asks **FEMA's National Flood Hazard Layer** (free, no key;
@@ -511,6 +511,36 @@ work and how data is isolated; this file covers how we work and where things sta
         **Whether Vercel's servers can reach hazards.fema.gov is not known** (the cloud
         workspace can't); if he reports "could not be reached", ask FEMA from the browser
         instead: everything in `lib/floodZones.ts` above `floodProfile` is browser-safe.
+    - **Schools on the map** (October 9, late; no migration; his second overlay). Under Flood
+      Zones in the Map tab's side panel, **Show Schools** loads `GET /api/schools?addressId=` ->
+      `lib/schools.ts`, which asks the **National Center for Education Statistics** map
+      services (`nces.ed.gov/opengis/rest/services`, free, no key) four things at once: public
+      schools within 3 miles (level, grades, students, students per teacher, charter, the
+      district that runs it), private schools and colleges or career schools within 3 miles
+      (name and place only), and the school district the point is in (grades, schools,
+      students). Answers are kept a month.
+      - **NCES names each service by school year** (`EDGE_ADMINDATA_PUBLICSCH_2425`,
+        `EDGE_GEOCODE_PRIVATESCH_2324`, `EDGE_GEOCODE_POSTSECONDARYSCH_2526`,
+        `EDGE_ADMINDATA_SCHOOLDISTRICTS_SY2425`). The constants at the top of the file and
+        `SCHOOL_YEARS` need moving on by hand when a new year is published; old years stay up.
+      - **Left out on purpose:** the public school service also carries students by race and
+        free-lunch eligibility. They are not requested, stored or shown. Do not add them.
+      - The panel: a School District box, a color key of the six kinds (Public Elementary,
+        Middle, High, Other Public, Private, College or Career School; graph colors 1 to 6)
+        whose tick boxes show and hide a kind, and a list nearest first (10, then Show All)
+        with each school's facts and distance; a public school run by another district than
+        the address's says so. Schools are dots on the map (`points` on `PropertyMap`) with a
+        hover label, and the map takes in the 3 miles. Names NCES writes in capitals are
+        tidied (`tidyName`: "ANNE FRANK EL" becomes "Anne Frank Elementary"). Closed, inactive
+        and planned schools are dropped; private schools listed twice are shown once.
+      - He was told: there are no ratings or test scores (those are licensed, for example
+        GreatSchools), and the nearest school is not always the assigned one (attendance zones
+        are not in this data). Nothing is stored on the property.
+      - Checked: the real services answered for his Knoll Trail address through the browser on
+        his computer (19 public, 15 private, 5 colleges, Dallas ISD; under a second), and the
+        real panel and map in Chromium with a part of those answers under two palettes. As
+        with flood zones, **whether Vercel's servers can reach nces.ed.gov is not known**;
+        everything above `schoolProfile` is browser-safe if the questions have to move there.
     - Addresses on units are not listed with these actions or pinned (units show their address
       as a tooltip, as before).
     - Checked for the map: the real component in Chromium with the real Leaflet files and

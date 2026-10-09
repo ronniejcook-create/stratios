@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { PropertyMap, type MapArea, type MapPin } from '@/components/PropertyMap'
+import { PropertyMap, type MapArea, type MapPin, type MapPoint } from '@/components/PropertyMap'
 import type { AreaProfile, TractArea } from '@/lib/demographics'
+import { SCHOOL_KINDS, SCHOOL_LABELS, SCHOOL_YEARS, type School, type SchoolKind, type SchoolProfile } from '@/lib/schools'
 import { FLOOD_LABELS, FLOOD_MEANINGS, type FloodKind, type FloodProfile } from '@/lib/floodZones'
 
 /** What the neighborhoods can be shaded by. Each reads one figure from a census tract and says how to write it. */
@@ -24,6 +25,22 @@ const SHADES = ['#c0daf9', '#86b6ef', '#3987e5', '#1c5cab', '#184076']
  */
 const FLOOD_SHADE: Partial<Record<FloodKind, number>> = { floodway: 4, coastal: 3, high: 2, moderate: 1, levee: 0 }
 const NOT_STUDIED = '#8a8f98'
+
+/** The dot colors for the six kinds of school until the organization's graph colors have been read. */
+const DOTS = ['#184076', '#1c5cab', '#3987e5', '#86b6ef', '#c0daf9', '#5f9fe9']
+/** How many schools the list shows before "Show All". */
+const SCHOOLS_SHOWN = 10
+
+/** "Public Elementary · PK to 5 · 1,119 students": what is known about a school, in one line. */
+function schoolFacts(school: School): string {
+  return [
+    school.charter ? 'Public Charter' : SCHOOL_LABELS[school.kind],
+    school.grades ? `Grades ${school.grades}` : '',
+    school.students !== null ? `${school.students.toLocaleString('en-US')} students` : '',
+    school.studentsPerTeacher !== null ? `${school.studentsPerTeacher} per teacher` : '',
+  ].filter(Boolean).join(' · ')
+}
+const milesText = (miles: number) => `${miles < 0.1 ? 'Under 0.1' : miles.toFixed(1)} mi`
 
 const whole = (value: number) => value.toLocaleString('en-US')
 const percent = (value: number | null) => (value === null ? 'Not available' : `${Math.round(value * 100)}%`)
@@ -63,9 +80,33 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   const [floodLoading, setFloodLoading] = useState(false)
   const [floodError, setFloodError] = useState<string | null>(null)
 
+  const [schoolSets, setSchoolSets] = useState<Record<string, SchoolProfile>>({})
+  const [schoolsWanted, setSchoolsWanted] = useState(false)
+  const [schoolsLoading, setSchoolsLoading] = useState(false)
+  const [schoolsError, setSchoolsError] = useState<string | null>(null)
+  const [hiddenKinds, setHiddenKinds] = useState<SchoolKind[]>([])
+  const [allSchools, setAllSchools] = useState(false)
+
   const around = pins.find((pin) => pin.id === aroundId) ?? pins[0]
   const profile = around ? profiles[around.id] : undefined
   const flood = around ? floods[around.id] : undefined
+  const schools = around ? schoolSets[around.id] : undefined
+
+  const loadSchools = async (pin: MapPin) => {
+    setSchoolsWanted(true)
+    setSchoolsError(null)
+    if (schoolSets[pin.id]) return
+    setSchoolsLoading(true)
+    try {
+      const response = await fetch(`/api/schools?addressId=${pin.id}`)
+      const result = (await response.json().catch(() => null)) as { ok?: boolean; profile?: SchoolProfile; error?: string } | null
+      if (result?.ok && result.profile) setSchoolSets((current) => ({ ...current, [pin.id]: result.profile! }))
+      else setSchoolsError(result?.error ?? 'The schools could not be loaded. Try again.')
+    } catch {
+      setSchoolsError('The schools could not be loaded. Check your connection and try again.')
+    }
+    setSchoolsLoading(false)
+  }
 
   const loadFlood = async (pin: MapPin) => {
     setFloodWanted(true)
@@ -105,11 +146,16 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   // from the page once it is on screen.
   const frame = useRef<HTMLDivElement>(null)
   const [shades, setShades] = useState(SHADES)
+  // Each kind of school has its own graph color, the first six in the order of the color key.
+  const [dots, setDots] = useState(DOTS)
+  const dotOf = (kind: SchoolKind) => dots[SCHOOL_KINDS.indexOf(kind)]
   useEffect(() => {
     if (!frame.current) return
     const style = getComputedStyle(frame.current)
     const found = [5, 4, 3, 2, 1].map((slot) => style.getPropertyValue(`--chart-${slot}`).trim())
     if (found.every((color) => /^#[0-9a-f]{6}$/i.test(color))) setShades(found)
+    const six = [1, 2, 3, 4, 5, 6].map((slot) => style.getPropertyValue(`--chart-${slot}`).trim())
+    if (six.every((color) => /^#[0-9a-f]{6}$/i.test(color))) setDots(six)
   }, [])
 
   const chosen = MEASURES.find((entry) => entry.key === measure)
@@ -151,14 +197,28 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
     })
   }, [floodWanted, flood, shades])
   const drawn = useMemo(() => (areas || floodAreas.length > 0 ? [...(areas ?? []), ...floodAreas] : undefined), [areas, floodAreas])
-  const reach = floodWanted && flood && around ? { center: [around.latitude, around.longitude] as [number, number], miles: flood.miles } : null
+  // Schools: the kinds ticked in the color key, as dots on the map and a list nearest first.
+  const listed = useMemo(() => (schoolsWanted && schools ? schools.schools.filter((school) => !hiddenKinds.includes(school.kind)) : []), [schoolsWanted, schools, hiddenKinds])
+  const points = useMemo(
+    () =>
+      listed.map((school): MapPoint => ({
+        id: school.id,
+        position: [school.latitude, school.longitude],
+        color: dots[SCHOOL_KINDS.indexOf(school.kind)],
+        label: `${school.name}\n${schoolFacts(school)}\n${milesText(school.miles)} away`,
+      })),
+    [listed, dots],
+  )
+  // The map takes in the widest of what is being shown around the address.
+  const reachMiles = Math.max(floodWanted && flood ? flood.miles : 0, schoolsWanted && schools ? schools.miles : 0)
+  const reach = reachMiles > 0 && around ? { center: [around.latitude, around.longitude] as [number, number], miles: reachMiles } : null
 
   const rings = wanted && profile && showRings && around ? { center: [around.latitude, around.longitude] as [number, number], miles: profile.rings.map((ring) => ring.miles) } : null
 
   return (
     <div className="map-layout" ref={frame}>
       <div className="map-main">
-        <PropertyMap pins={pins} areas={drawn} rings={rings} reach={reach} />
+        <PropertyMap pins={pins} areas={drawn} rings={rings} reach={reach} points={points} />
       </div>
 
       <aside className="map-side" aria-label="Map layers">
@@ -173,6 +233,7 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
                 const next = pins.find((pin) => pin.id === event.target.value)
                 if (wanted && next) void load(next)
                 if (floodWanted && next) void loadFlood(next)
+                if (schoolsWanted && next) void loadSchools(next)
               }}
             >
               {pins.map((pin) => (
@@ -299,6 +360,83 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
               <a href="https://msc.fema.gov/portal/home" target="_blank" rel="noreferrer">FEMA&apos;s Flood Map Service Center</a>. This is not an official flood determination.
             </p>
             <button type="button" className="link-button" onClick={() => setFloodWanted(false)}>Hide Flood Zones</button>
+          </>
+        ) : null}
+
+        <h3 className="map-side-next">Schools</h3>
+        {!schoolsWanted ? (
+          <>
+            <p className="note">The school district for this address, and the public schools, private schools and colleges within 3 miles.</p>
+            <button type="button" className="btn btn-primary btn-small" disabled={!around} onClick={() => around && void loadSchools(around)}>Show Schools</button>
+          </>
+        ) : null}
+        {schoolsLoading ? <p className="note" role="status">Getting the schools. This can take a few seconds…</p> : null}
+        {schoolsError ? (
+          <>
+            <p className="form-error" role="alert">{schoolsError}</p>
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => around && void loadSchools(around)}>Try Again</button>
+          </>
+        ) : null}
+        {schoolsWanted && schools ? (
+          <>
+            {schools.district ? (
+              <div className="flood-at">
+                <span className="flood-at-label">School District</span>
+                <strong>{schools.district.name}</strong>
+                <dl>
+                  {schools.district.grades ? <div><dt>Grades</dt><dd>{schools.district.grades}</dd></div> : null}
+                  {schools.district.schools !== null ? <div><dt>Schools</dt><dd>{whole(schools.district.schools)}</dd></div> : null}
+                  {schools.district.students !== null ? <div><dt>Students</dt><dd>{whole(schools.district.students)}</dd></div> : null}
+                  {schools.district.studentsPerTeacher !== null ? <div><dt>Students per Teacher</dt><dd>{schools.district.studentsPerTeacher}</dd></div> : null}
+                </dl>
+              </div>
+            ) : schools.missing.includes('the school district') ? null : (
+              <p className="note">No school district was found for this spot.</p>
+            )}
+            {schools.schools.length > 0 ? (
+              <ul className="map-legend" aria-label="Kinds of school to show">
+                {SCHOOL_KINDS.filter((kind) => schools.counts[kind] > 0).map((kind) => (
+                  <li key={kind}>
+                    <label className="map-check">
+                      <input
+                        type="checkbox"
+                        checked={!hiddenKinds.includes(kind)}
+                        onChange={(event) => setHiddenKinds((current) => (event.target.checked ? current.filter((entry) => entry !== kind) : [...current, kind]))}
+                      />
+                      <span className="map-dot" style={{ background: dotOf(kind) }} aria-hidden="true" />
+                      {SCHOOL_LABELS[kind]} ({schools.counts[kind]})
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="note">No schools were found within {schools.miles} miles.</p>
+            )}
+            {listed.length > 0 ? (
+              <ol className="school-list" aria-label={`Schools within ${schools.miles} miles, nearest first`}>
+                {(allSchools ? listed : listed.slice(0, SCHOOLS_SHOWN)).map((school) => (
+                  <li key={school.id}>
+                    <span className="map-dot" style={{ background: dotOf(school.kind) }} aria-hidden="true" />
+                    <div>
+                      <strong>{school.name}</strong>
+                      <span>{schoolFacts(school)}</span>
+                      {school.operator && !school.charter ? <span>{school.operator}{school.inDistrict ? '' : ' (a different district from this address)'}</span> : null}
+                    </div>
+                    <span className="school-miles">{milesText(school.miles)}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            {listed.length > SCHOOLS_SHOWN ? (
+              <button type="button" className="link-button" onClick={() => setAllSchools((current) => !current)}>{allSchools ? 'Show Fewer' : `Show All ${listed.length}`}</button>
+            ) : null}
+            {schools.missing.length > 0 ? <p className="note">Could not be loaded this time: {schools.missing.join(', ')}.</p> : null}
+            <p className="doc-sub">
+              Source: National Center for Education Statistics (public schools {SCHOOL_YEARS.public}, private schools {SCHOOL_YEARS.private},
+              colleges {SCHOOL_YEARS.college}). Distances are straight lines. The nearest school is not always the assigned one: each
+              district draws its own attendance zones, which are not in this data. There are no ratings or test scores here.
+            </p>
+            <button type="button" className="link-button" onClick={() => setSchoolsWanted(false)}>Hide Schools</button>
           </>
         ) : null}
       </aside>
