@@ -122,7 +122,21 @@ work and how data is isolated; this file covers how we work and where things sta
       and `sectionOfField`. History follows the field's level.
     - Not done yet: the agent isn't connected, so "agents follow the same rules" and "a KPI built
       from a hidden field is hidden" still have to be honored when the analyst and formulas arrive.
-  - Not built yet (later stages): the Stratios-only master library screen (stage 3, part 3), documents and extraction, formulas
+  - Stage 3, part 3 is built: the Master Library (`app/dashboard/library/`, nav group "Stratios
+    Admin"), where Stratios staff manage the standard fields and layout for every organization.
+    - Who gets it: administrators of the Stratios organization. `lib/stratios.ts` decides that by
+      the organization's company domain being `stratios.app` in `organization_settings`, or its id
+      matching the optional `STRATIOS_ORG_ID` env var. The Stratios org was created by hand in
+      Clerk (`org_3KORIXREU8taMpsPwTA1obv5xRL`, no @stratios.app mailbox exists yet), so
+      `db/migrations/006_master_library.sql` records its domain. Everyone else gets "not found".
+    - How writes are allowed: migration 006 adds policies that let a transaction change org_id-null
+      rows only when `app.stratios_admin` is `on`; `withStratiosAdmin` in `lib/db.ts` sets it, and
+      is only called after `isStratiosAdmin`. Passing null as the organization to `listFields`,
+      `listScreens`, `listLists`, `createField`, `createScreen`, `createSection`, `createList`
+      means "the standard itself". New standard keys are checked against every organization's.
+    - A change is live for all organizations at once; settings an organization modified keep
+      their value (that is just how `field_settings` overrides already work).
+  - Not built yet (later stages): documents and extraction, formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
     single list cell yet (the history is stored).

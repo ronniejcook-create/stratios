@@ -23,8 +23,8 @@ export type Screen = {
   sections: Section[]
 }
 
-/** Every screen this organization sees, in order, each with its sections. */
-export async function listScreens(client: Queryable, orgId: string): Promise<Screen[]> {
+/** Every screen this organization sees, in order, each with its sections. Pass null for the Stratios standard layout alone. */
+export async function listScreens(client: Queryable, orgId: string | null): Promise<Screen[]> {
   const screens = await client.query(
     `select id::text as id, key, name from screens where org_id is null or org_id = $1 order by sort_order, name`,
     [orgId],

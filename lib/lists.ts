@@ -19,7 +19,8 @@ export type ListDefinition = {
   sortDescending: boolean
 }
 
-export async function listLists(client: Queryable, orgId: string): Promise<ListDefinition[]> {
+/** Every list this organization sees. Pass null for the Stratios standard lists alone. */
+export async function listLists(client: Queryable, orgId: string | null): Promise<ListDefinition[]> {
   const { rows } = await client.query(
     `select id::text as id, key, name, applies_to, section_id::text as section_id, sort_field_key, sort_descending
      from field_lists where org_id is null or org_id = $1 order by name`,

@@ -8,6 +8,7 @@ import { OrgMenu } from '@/components/OrgMenu'
 import { DEFAULT_THEME, parseBrandSettings, parseTheme, themeToStyle } from '@/lib/theme'
 import { displayChartColors, parseChartColors } from '@/lib/chartColors'
 import { getOrgSettings } from '@/lib/orgSettings'
+import { isStratiosAdmin } from '@/lib/stratios'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, userId, orgId, orgRole, redirectToSignIn } = await auth()
@@ -28,11 +29,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // Graph colors are available to every chart as --chart-1 … --chart-8.
   const style = { ...themeToStyle(theme), ...Object.fromEntries(chartColors.map((c, i) => [`--chart-${i + 1}`, c])) }
   const current = { id: activeOrganization.id, name: activeOrganization.name }
+  // Administrators of the Stratios organization also get the Master Library.
+  const stratiosAdmin = await isStratiosAdmin(orgId, orgRole)
 
   return (
     <div className="org-theme" style={style}>
       <AppShell
         isAdmin={orgRole === 'org:admin'}
+        isStratiosAdmin={stratiosAdmin}
         brand={
           <div className="brand-row">
             <Link href="/dashboard" className="brand">

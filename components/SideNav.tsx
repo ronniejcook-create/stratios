@@ -10,7 +10,7 @@ const icon = (path: ReactNode) => (
   </svg>
 )
 
-const SECTIONS: { title: string; adminOnly?: boolean; items: { label: string; href: string; icon: ReactNode }[] }[] = [
+const SECTIONS: { title: string; adminOnly?: boolean; stratiosOnly?: boolean; items: { label: string; href: string; icon: ReactNode }[] }[] = [
   {
     title: 'Portfolio',
     items: [
@@ -27,15 +27,26 @@ const SECTIONS: { title: string; adminOnly?: boolean; items: { label: string; hr
       { label: 'Org Colors', href: '/dashboard/settings', icon: icon(<><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z" /><circle cx="7.5" cy="11" r="1" /><circle cx="10.5" cy="7.5" r="1" /><circle cx="15" cy="8" r="1" /></>) },
     ],
   },
+  {
+    title: 'Stratios Admin',
+    stratiosOnly: true,
+    items: [
+      { label: 'Master Library', href: '/dashboard/library', icon: icon(<><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5v-13z" /><path d="M10 4h4v16h-4z" /><path d="M14.6 6.2l3.6-1 3.3 12.6-3.6 1z" /></>) },
+    ],
+  },
 ]
 
-/** The left-hand navigation, with a filter box. Admin Settings is shown to administrators only. */
-export function SideNav({ isAdmin }: { isAdmin: boolean }) {
+/**
+ * The left-hand navigation, with a filter box. Admin Settings is shown to
+ * administrators only, and Stratios Admin only to administrators of the
+ * Stratios organization.
+ */
+export function SideNav({ isAdmin, isStratiosAdmin = false }: { isAdmin: boolean; isStratiosAdmin?: boolean }) {
   const pathname = usePathname()
   const [filter, setFilter] = useState('')
   const term = filter.trim().toLowerCase()
 
-  const sections = SECTIONS.filter((section) => isAdmin || !section.adminOnly).map((section) => ({
+  const sections = SECTIONS.filter((section) => (isAdmin || !section.adminOnly) && (isStratiosAdmin || !section.stratiosOnly)).map((section) => ({
     ...section,
     items: section.items.filter((item) => !term || item.label.toLowerCase().includes(term)),
   })).filter((section) => section.items.length > 0)

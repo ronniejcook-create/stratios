@@ -5,6 +5,9 @@ import { addField, addScreen, addSection, type FormState } from './actions'
 
 const initialState: FormState = { error: null, message: null, done: 0 }
 
+/** A form's server action. Each form uses the organization's own by default; the Master Library passes its own. */
+type FormAction = (prev: FormState, formData: FormData) => Promise<FormState>
+
 export type LevelOption = { value: string; label: string }
 export type PlaceOption = { value: string; label: string; appliesTo: string }
 
@@ -27,13 +30,15 @@ export function AddFieldForm({
   levels,
   types,
   places,
+  action = addField,
 }: {
+  action?: FormAction
   levels: LevelOption[]
   types: LevelOption[]
   /** Sections ("section:<id>") and lists ("list:<id>") a field can be shown in. */
   places: PlaceOption[]
 }) {
-  const [state, formAction, pending] = useActionState(addField, initialState)
+  const [state, formAction, pending] = useActionState(action, initialState)
   const [level, setLevel] = useState(levels[0]?.value ?? 'asset')
   const [type, setType] = useState('text')
   const [showIn, setShowIn] = useState('')
@@ -124,8 +129,8 @@ export function AddFieldForm({
   )
 }
 
-export function AddScreenForm() {
-  const [state, formAction, pending] = useActionState(addScreen, initialState)
+export function AddScreenForm({ action = addScreen }: { action?: FormAction }) {
+  const [state, formAction, pending] = useActionState(action, initialState)
   const formRef = useResetOnDone(state.done)
   return (
     <form action={formAction} ref={formRef}>
@@ -141,8 +146,8 @@ export function AddScreenForm() {
   )
 }
 
-export function AddSectionForm({ levels, screens }: { levels: LevelOption[]; screens: LevelOption[] }) {
-  const [state, formAction, pending] = useActionState(addSection, initialState)
+export function AddSectionForm({ levels, screens, action = addSection }: { levels: LevelOption[]; screens: LevelOption[]; action?: FormAction }) {
+  const [state, formAction, pending] = useActionState(action, initialState)
   const formRef = useResetOnDone(state.done)
   return (
     <form action={formAction} ref={formRef}>

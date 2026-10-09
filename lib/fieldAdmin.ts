@@ -10,6 +10,11 @@
 //
 // Callers must check that the person is an administrator. Every function
 // takes the database client of a transaction scoped to one organization.
+//
+// The functions that add things take an `owner`: the organization the new
+// field, screen, section or list belongs to, or null to add it to the Stratios
+// standard for every organization. Null is only for the Master Library, inside
+// withStratiosAdmin.
 
 import { listFields, OVERRIDABLE, type FieldDefinition, type OverridableSetting } from './fields'
 import type { DataType } from './fieldFormat'
@@ -84,8 +89,8 @@ export type NewFieldInput = {
   aiDescription: string
 }
 
-/** Adds a field for this organization. Its key is made from its name and never changes. */
-export async function createField(client: Queryable, orgId: string, input: NewFieldInput): Promise<Result<{ id: string; key: string }>> {
+/** Adds a field for one organization, or a standard field (owner null). Its key is made from its name and never changes. */
+export async function createField(client: Queryable, orgId: string | null, input: NewFieldInput): Promise<Result<{ id: string; key: string }>> {
   const name = input.name.trim()
   if (!name) return { ok: false, error: 'Enter a name for the field.' }
   if (name.length > 100) return { ok: false, error: 'The name is too long.' }
@@ -118,8 +123,11 @@ export async function createField(client: Queryable, orgId: string, input: NewFi
     groupName = section.rows[0].name
   }
 
-  // Keys are unique within a record type, across standard fields and this organization's.
-  const existing = await client.query('select key from field_definitions where (org_id is null or org_id = $1) and applies_to = $2', [orgId, appliesTo])
+  // Keys are unique within a record type, across standard fields and this
+  // organization's. A new standard field must not clash with any organization's.
+  const existing = orgId
+    ? await client.query('select key from field_definitions where (org_id is null or org_id = $1) and applies_to = $2', [orgId, appliesTo])
+    : await client.query('select key from field_definitions where applies_to = $1', [appliesTo])
   const key = firstFree(camelKey(name, 'field'), new Set(existing.rows.map((row) => String(row.key))))
 
   const order = await client.query(
@@ -340,10 +348,12 @@ export async function retireField(client: Queryable, orgId: string, fieldId: str
 // Layout: screens, sections and lists
 // ---------------------------------------------------------------------------
 
-async function freeLayoutKey(client: Queryable, orgId: string, table: 'screens' | 'sections' | 'field_lists', name: string, appliesTo: RecordType | null): Promise<string> {
+async function freeLayoutKey(client: Queryable, orgId: string | null, table: 'screens' | 'sections' | 'field_lists', name: string, appliesTo: RecordType | null): Promise<string> {
+  // For a standard screen, section or list (no owner), check every organization's keys.
+  const scope = orgId ? '(org_id is null or org_id = $1)' : '($1::text is null)'
   const { rows } = appliesTo
-    ? await client.query(`select key from ${table} where (org_id is null or org_id = $1) and applies_to = $2`, [orgId, appliesTo])
-    : await client.query(`select key from ${table} where org_id is null or org_id = $1`, [orgId])
+    ? await client.query(`select key from ${table} where ${scope} and applies_to = $2`, [orgId, appliesTo])
+    : await client.query(`select key from ${table} where ${scope}`, [orgId])
   return firstFree(camelKey(name, table === 'screens' ? 'screen' : table === 'sections' ? 'section' : 'list'), new Set(rows.map((row) => String(row.key))))
 }
 
@@ -355,7 +365,7 @@ function layoutName(raw: string): Result<{ name: string }> {
 }
 
 /** Adds a screen (a tab on the asset page) after the existing ones. */
-export async function createScreen(client: Queryable, orgId: string, rawName: string): Promise<Result<{ id: string }>> {
+export async function createScreen(client: Queryable, orgId: string | null, rawName: string): Promise<Result<{ id: string }>> {
   const checked = layoutName(rawName)
   if (!checked.ok) return checked
   const key = await freeLayoutKey(client, orgId, 'screens', checked.name, null)
@@ -368,7 +378,7 @@ export async function createScreen(client: Queryable, orgId: string, rawName: st
 
 async function insertSection(
   client: Queryable,
-  orgId: string,
+  orgId: string | null,
   input: { name: string; screenId: string; appliesTo: RecordType; displayStyle: 'form' | 'tiles' | 'list' },
 ): Promise<Result<{ id: string }>> {
   const screen = await client.query('select 1 as found from screens where id = $1 and (org_id is null or org_id = $2)', [input.screenId, orgId])
@@ -388,7 +398,7 @@ async function insertSection(
 /** Adds a section of fields to a screen, shown as a form or as tiles. */
 export async function createSection(
   client: Queryable,
-  orgId: string,
+  orgId: string | null,
   input: { name: string; screenId: string; appliesTo: string; displayStyle: string },
 ): Promise<Result<{ id: string }>> {
   const checked = layoutName(input.name)
@@ -404,7 +414,7 @@ export async function createSection(
  */
 export async function createList(
   client: Queryable,
-  orgId: string,
+  orgId: string | null,
   input: { name: string; screenId: string; appliesTo: string },
 ): Promise<Result<{ id: string }>> {
   const checked = layoutName(input.name)
@@ -419,6 +429,83 @@ export async function createList(
     [orgId, key, checked.name, appliesTo, section.id],
   )
   return { ok: true, id: rows[0].id }
+}
+
+// ---------------------------------------------------------------------------
+// The master library: Stratios standard fields, changed for every organization
+// ---------------------------------------------------------------------------
+
+/**
+ * Changes a Stratios standard field itself. The change is live for every
+ * organization at once, except for any setting an organization has modified.
+ */
+export async function saveStandardField(client: Queryable, fieldId: string, input: FieldSettingsInput): Promise<Result> {
+  const field = (await listFields(client, null)).find((candidate) => candidate.id === fieldId)
+  if (!field) return { ok: false, error: 'That standard field could not be found.' }
+  const cleaned = await cleanSettings(client, field.calculated ? { ...input, sourcePriority: ['manual'] } : input)
+  if (!cleaned.ok) return cleaned
+  const { settings } = cleaned
+  if (field.calculated) settings.source_priority = field.sourcePriority
+  if (field.coreColumn === 'name' && settings.name.length === 0) return { ok: false, error: 'The field needs a name.' }
+
+  const numeric = field.dataType === 'number' || field.dataType === 'money'
+  const unit = numeric ? (input.unit ?? '').trim().slice(0, 30) || null : field.unit
+  let options = field.options
+  if (field.dataType === 'picklist') {
+    options = cleanList(input.options ?? [], 100)
+    if (options.length === 0) return { ok: false, error: 'Enter at least one option for the pick list.' }
+  }
+  await client.query(
+    `update field_definitions
+     set name = $2, ai_description = $3, other_names = $4::text[], extraction_hints = $5, source_priority = $6::text[],
+         when_empty = $7, when_different = $8, manual_override = $9, unit = $10, options = $11::jsonb
+     where id = $1 and org_id is null`,
+    [
+      fieldId, settings.name, settings.ai_description, settings.other_names, settings.extraction_hints, settings.source_priority,
+      settings.when_empty, settings.when_different, settings.manual_override, unit, options ? JSON.stringify(options) : null,
+    ],
+  )
+  return { ok: true }
+}
+
+/** Moves a standard field to another standard section (or to none) for every organization that hasn't placed it itself. */
+export async function placeStandardField(client: Queryable, fieldId: string, sectionId: string | null): Promise<Result> {
+  const field = (await listFields(client, null)).find((candidate) => candidate.id === fieldId)
+  if (!field) return { ok: false, error: 'That standard field could not be found.' }
+  if (field.listId) return { ok: false, error: 'A list column stays with its list.' }
+  if (sectionId) {
+    const section = await client.query(
+      `select name from sections where id = $1 and org_id is null and applies_to = $2 and display_style <> 'list'`,
+      [sectionId, field.appliesTo],
+    )
+    if (section.rows.length === 0) return { ok: false, error: 'That standard section could not be found.' }
+    const already = await client.query('select 1 as found from section_fields where org_id is null and field_id = $1 and section_id = $2', [fieldId, sectionId])
+    if (already.rows.length > 0) return { ok: true }
+    await client.query('delete from section_fields where org_id is null and field_id = $1', [fieldId])
+    const order = await client.query('select coalesce(max(position), 0) + 10 as next from section_fields where org_id is null and section_id = $1', [sectionId])
+    await client.query('insert into section_fields (org_id, section_id, field_id, position) values (null, $1, $2, $3)', [sectionId, fieldId, Number(order.rows[0].next)])
+    await client.query('update field_definitions set group_name = $2 where id = $1 and org_id is null', [fieldId, section.rows[0].name])
+  } else {
+    await client.query('delete from section_fields where org_id is null and field_id = $1', [fieldId])
+    await client.query(`update field_definitions set group_name = 'Other Fields' where id = $1 and org_id is null`, [fieldId])
+  }
+  return { ok: true }
+}
+
+/** Retires a standard field: hidden for every organization, with values and history kept. */
+export async function retireStandardField(client: Queryable, fieldId: string): Promise<Result> {
+  const { rows } = await client.query(
+    'update field_definitions set retired_at = now() where id = $1 and org_id is null and retired_at is null and core_column is null returning id::text as id',
+    [fieldId],
+  )
+  if (rows.length === 0) return { ok: false, error: 'That standard field cannot be retired.' }
+  return { ok: true }
+}
+
+/** For each standard field, how many organizations have modified at least one of its settings. */
+export async function countCustomizations(client: Queryable): Promise<Map<string, number>> {
+  const { rows } = await client.query('select field_id::text as field_id, count(distinct org_id)::int as orgs from field_settings group by field_id')
+  return new Map(rows.map((row) => [String(row.field_id), Number(row.orgs)]))
 }
 
 export type { FieldDefinition }

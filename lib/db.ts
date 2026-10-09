@@ -45,6 +45,19 @@ export async function withOrg<T>(orgId: string, fn: (client: PoolClient) => Prom
 }
 
 /**
+ * Like withOrg, but also lets the transaction change Stratios standard rows
+ * (the ones with no organization) and read every organization's field
+ * customizations. Only call this after confirming the signed-in person is an
+ * administrator of the Stratios organization (see lib/stratios.ts).
+ */
+export async function withStratiosAdmin<T>(orgId: string, fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  return withOrg(orgId, async (client) => {
+    await client.query("select set_config('app.stratios_admin', 'on', true)")
+    return fn(client)
+  })
+}
+
+/**
  * True when a query failed because a table or column doesn't exist yet,
  * which means the newest file in db/migrations hasn't been run.
  */

@@ -63,8 +63,10 @@ export type OverridableSetting = keyof typeof OVERRIDABLE
 /**
  * Every field this organization can use: the Stratios standard fields with
  * the organization's own changes applied, plus fields it added itself.
+ * Pass null for the organization to get the Stratios standard fields alone,
+ * exactly as Stratios defines them (used by the Master Library).
  */
-export async function listFields(client: Queryable, orgId: string): Promise<FieldDefinition[]> {
+export async function listFields(client: Queryable, orgId: string | null): Promise<FieldDefinition[]> {
   const definitions = await client.query(
     `select id::text as id, org_id, key, name, applies_to, data_type, unit, options, tracking, rollup, calculated, formula,
             core_column, group_name, sort_order, ai_description, to_json(other_names) as other_names, extraction_hints,

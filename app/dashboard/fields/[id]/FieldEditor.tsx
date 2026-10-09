@@ -2,7 +2,11 @@
 
 import { useState, useTransition, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { removeField, resetSettings, saveSettings } from '../actions'
+import { removeField, resetSettings, saveSettings, type ActionResult } from '../actions'
+import type { FieldSettingsInput } from '@/lib/fieldAdmin'
+
+type SaveAction = (input: { fieldId: string; settings: FieldSettingsInput; sectionId: string | null; moveSection: boolean }) => Promise<ActionResult>
+type RemoveAction = (input: { fieldId: string }) => Promise<ActionResult>
 
 export type EditableField = {
   id: string
@@ -51,7 +55,22 @@ export function FieldEditor({
   currentSectionId,
   sources,
   modifications,
+  saveAction = saveSettings,
+  removeAction = removeField,
+  backHref = '/dashboard/fields',
+  noSectionLabel,
+  removeLabel = 'Remove Field',
+  removeNote = 'Removing hides the field everywhere. Values already entered are kept in the database.',
+  canRemove = true,
 }: {
+  /** The Master Library passes its own save and remove, which change the standard for every organization. */
+  saveAction?: SaveAction
+  removeAction?: RemoveAction
+  backHref?: string
+  noSectionLabel?: string
+  removeLabel?: string
+  removeNote?: string
+  canRemove?: boolean
   field: EditableField
   sections: { id: string; label: string }[]
   currentSectionId: string | null
@@ -95,7 +114,7 @@ export function FieldEditor({
 
   const save = () =>
     run(() =>
-      saveSettings({
+      saveAction({
         fieldId: field.id,
         settings: {
           name,
@@ -161,7 +180,7 @@ export function FieldEditor({
           <div className="field">
             <label htmlFor="fe-section">Shown In</label>
             <select id="fe-section" value={sectionId} onChange={(e) => setSectionId(e.target.value)}>
-              <option value="">{field.standard ? 'Its Standard Section' : 'Other Fields (No Section)'}</option>
+              <option value="">{noSectionLabel ?? (field.standard ? 'Its Standard Section' : 'Other Fields (No Section)')}</option>
               {sections.map((section) => (
                 <option key={section.id} value={section.id}>{section.label}</option>
               ))}
@@ -266,23 +285,23 @@ export function FieldEditor({
         {field.standard && field.modifiedSettings.length > 0 ? (
           <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => reset(null)}>Reset All to Standard</button>
         ) : null}
-        {field.standard ? null : confirmRemove ? (
+        {field.standard || !canRemove ? null : confirmRemove ? (
           <>
             <button
               type="button"
               className="btn btn-ghost btn-small danger"
               disabled={busy}
-              onClick={() => run(() => removeField({ fieldId: field.id }), () => router.push('/dashboard/fields'))}
+              onClick={() => run(() => removeAction({ fieldId: field.id }), () => router.push(backHref))}
             >
               Confirm Remove
             </button>
             <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setConfirmRemove(false)}>Cancel</button>
           </>
         ) : (
-          <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setConfirmRemove(true)}>Remove Field</button>
+          <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setConfirmRemove(true)}>{removeLabel}</button>
         )}
       </div>
-      {confirmRemove ? <p className="note">Removing hides the field everywhere. Values already entered are kept in the database.</p> : null}
+      {confirmRemove ? <p className="note">{removeNote}</p> : null}
       {message ? <p className={message.error ? 'form-error' : 'form-ok'} role={message.error ? 'alert' : 'status'}>{message.text}</p> : null}
     </form>
   )
