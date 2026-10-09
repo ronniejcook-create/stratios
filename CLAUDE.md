@@ -479,6 +479,21 @@ work and how data is isolated; this file covers how we work and where things sta
       and after 015 on the scratch database, organization isolation, and the real form and list
       in Chromium with a stand-in lookup. Whether Vercel can reach the Census service was not
       checked from here.
+  - **Field blocks and the field pop-up** (October 9, later; Ronnie found label, value, Edit and
+    History on one line unreadable). `FieldGroup.tsx` now shows each field as a block: the name
+    on top in bold, the value underneath in smaller muted text (he sent a screenshot of the
+    document review page's field cell as the look to match). Clicking anywhere on a block opens
+    a pop-up (`Modal`) with tabs **Edit** ("Value" when the field is view-only or calculated),
+    **History** and **Skill Details** (type, key, Description and the field's Agent
+    Instructions rendered with `toHtml`; administrators get a link to the field in Fields
+    Library), and buttons **Copy to Agent** (what clicking the label used to do), **Save**,
+    **Reset** (back to the saved value) and **Close**. Save keeps the pop-up open and says
+    "Saved."; Enter saves. KPI tiles (Financials) use the same block with a larger value. Lists
+    (Commentary, Dates) are unchanged, and still add references by clicking a row's number.
+    "Skill Details" was taken to mean the field's own description and instructions, and he was
+    told; the organization's skills library is not shown there. `FieldView` gained
+    `description` and `agentInstructions`. Checked by clicking through the real component in
+    Chromium with stand-in data; not inside the app.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

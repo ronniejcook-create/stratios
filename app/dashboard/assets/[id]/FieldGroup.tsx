@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAgentReferences } from '@/components/AgentContext'
+import { Modal } from '@/components/DataGrid'
 import { editText, formatPeriod, formatValue, isEmptyValue, type DataType, type StoredValue } from '@/lib/fieldFormat'
+import { toHtml } from '@/lib/richText'
 import { loadHistory, saveField, type HistoryRow } from './actions'
 
 export type FieldView = {
@@ -22,6 +25,10 @@ export type FieldView = {
   sourceName: string | null
   /** False when the person's roles only let them see this field. */
   canEdit: boolean
+  /** What the field means, in plain words. */
+  description: string | null
+  /** The field's instructions for agents (Markdown): how to find, read and write this value. */
+  agentInstructions: string | null
 }
 
 export type Target = {
@@ -43,48 +50,95 @@ function when(iso: string): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+const TYPE_NAMES: Record<string, string> = { text: 'Text', number: 'Number', money: 'Money', percent: 'Percent', date: 'Date', boolean: 'Yes / No', picklist: 'Pick List' }
+
 /**
- * A group of fields on one record, each with its value, an edit form and its
- * history. Shown as a form (label and value on a line) or as tiles.
+ * A group of fields on one record. Each field is a small block with its name
+ * on top and its value underneath; clicking either opens the field's pop-up,
+ * where the value is edited and its history and skill details are shown.
+ * `tiles` is the same block with a larger value, for key figures.
  */
-export function FieldGroup({ target, fields, style = 'form' }: { target: Target; fields: FieldView[]; style?: 'form' | 'tiles' }) {
+export function FieldGroup({
+  target,
+  fields,
+  style = 'form',
+  canManageFields = false,
+}: {
+  target: Target
+  fields: FieldView[]
+  style?: 'form' | 'tiles'
+  /** Administrators get a link from a field's skill details to where they are edited. */
+  canManageFields?: boolean
+}) {
+  const [openId, setOpenId] = useState<string | null>(null)
   if (fields.length === 0) return <p className="note">No fields in this section yet.</p>
+  const open = fields.find((field) => field.id === openId)
   return (
-    <div className={`field-list${style === 'tiles' ? ' tiles' : ''}`}>
-      {fields.map((field) => (
-        <FieldRow key={field.id} target={target} field={field} />
-      ))}
-    </div>
+    <>
+      <div className={`field-list${style === 'tiles' ? ' tiles' : ''}`}>
+        {fields.map((field) => {
+          const shown = formatValue(field, field.value)
+          return (
+            <button key={field.id} type="button" className="field-card" onClick={() => setOpenId(field.id)} title={`Open ${field.name}`}>
+              <span className="field-card-label">{field.name}</span>
+              <span className="field-card-value">
+                {field.calculated ? (
+                  <span className="field-unset">Calculated later</span>
+                ) : shown ? (
+                  <>
+                    <span>{shown}</span>
+                    {field.monthly && field.period ? <span className="field-meta">{formatPeriod(field.period)}</span> : null}
+                  </>
+                ) : (
+                  <span className="field-unset">Not set</span>
+                )}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <Modal open={open !== undefined} title={open?.name ?? ''} onClose={() => setOpenId(null)}>
+        {open ? <FieldDetails key={open.id} target={target} field={open} canManageFields={canManageFields} onClose={() => setOpenId(null)} /> : null}
+      </Modal>
+    </>
   )
 }
 
-function FieldRow({ target, field }: { target: Target; field: FieldView }) {
+type Tab = 'value' | 'history' | 'skill'
+
+/** The inside of a field's pop-up: Edit, History and Skill Details tabs, with Copy to Agent, Save, Reset and Close. */
+function FieldDetails({ target, field, canManageFields, onClose }: { target: Target; field: FieldView; canManageFields: boolean; onClose: () => void }) {
   const router = useRouter()
   const { addReference } = useAgentReferences()
-  const [editing, setEditing] = useState(false)
-  const [raw, setRaw] = useState('')
-  const [month, setMonth] = useState('')
+  const editable = field.canEdit && !field.calculated
+  const startRaw = editText(field, field.value)
+  const startMonth = field.period ? field.period.slice(0, 7) : thisMonth()
+  const [tab, setTab] = useState<Tab>('value')
+  const [raw, setRaw] = useState(startRaw)
+  const [month, setMonth] = useState(startMonth)
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
   const [saving, startSaving] = useTransition()
   const [history, setHistory] = useState<HistoryRow[] | null>(null)
-  const [historyOpen, setHistoryOpen] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [loadingHistory, startLoadingHistory] = useTransition()
 
+  // After a save the page sends the new value down; the boxes follow it, so Reset goes back to what is saved now.
+  useEffect(() => {
+    setRaw(startRaw)
+    setMonth(startMonth)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startRaw, startMonth])
+
   const shown = formatValue(field, field.value)
   const inputId = `field-${target.recordId}-${field.id}`
-
-  const startEdit = () => {
-    setRaw(editText(field, field.value))
-    setMonth(field.period ? field.period.slice(0, 7) : thisMonth())
-    setNote('')
-    setError(null)
-    setEditing(true)
-  }
+  const numeric = field.dataType === 'number' || field.dataType === 'money' || field.dataType === 'percent'
+  const changed = raw !== startRaw || note !== '' || (field.monthly && month !== startMonth)
 
   const save = () => {
     setError(null)
+    setMessage(null)
     startSaving(async () => {
       const result = await saveField({
         assetId: target.assetId,
@@ -99,20 +153,24 @@ function FieldRow({ target, field }: { target: Target; field: FieldView }) {
         setError(result.error)
         return
       }
-      setEditing(false)
-      setHistory(null) // reload next time it is opened
-      setHistoryOpen(false)
+      setNote('')
+      setHistory(null) // read again the next time the History tab is opened
+      setMessage('Saved.')
       router.refresh()
     })
   }
 
-  const toggleHistory = () => {
-    if (historyOpen) {
-      setHistoryOpen(false)
-      return
-    }
-    setHistoryOpen(true)
-    if (history) return
+  const reset = () => {
+    setRaw(startRaw)
+    setMonth(startMonth)
+    setNote('')
+    setError(null)
+    setMessage(null)
+  }
+
+  const showHistory = () => {
+    setTab('history')
+    if (history || loadingHistory) return
     setHistoryError(null)
     startLoadingHistory(async () => {
       const result = await loadHistory({ recordType: target.recordType, recordId: target.recordId, fieldId: field.id })
@@ -121,128 +179,171 @@ function FieldRow({ target, field }: { target: Target; field: FieldView }) {
     })
   }
 
-  const numeric = field.dataType === 'number' || field.dataType === 'money' || field.dataType === 'percent'
-
-  // Clicking the field's name points the agent at exactly this value.
-  const reference = () =>
+  // Points the agent at exactly this value, the same as the reference chips in the agent column.
+  const copyToAgent = () => {
     addReference({
       reference: `${target.recordRef}.${field.key}${field.monthly && field.period ? `@${field.period.slice(0, 7)}` : ''}`,
       label: `${target.recordName} · ${field.name}`,
       detail: field.calculated ? undefined : shown ? `${shown}${field.monthly && field.period ? ` (${formatPeriod(field.period)})` : ''}` : 'Not set',
     })
+    setError(null)
+    setMessage('Added to the agent column. Close this to ask the analyst about it.')
+  }
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'value', label: editable ? 'Edit' : 'Value' },
+    { key: 'history', label: 'History' },
+    { key: 'skill', label: 'Skill Details' },
+  ]
 
   return (
-    <div className={`field-row${editing || historyOpen ? ' open' : ''}`}>
-      <div className="field-line">
-        <button type="button" className="field-label" title="Reference this field in the agent panel" onClick={reference}>
-          {field.name}
-        </button>
-        <div className="field-value">
-          {field.calculated ? (
-            <span className="field-unset" title={field.formula ?? undefined}>Calculated later</span>
-          ) : shown ? (
-            <>
-              <span>{shown}</span>
-              {field.monthly && field.period ? <span className="field-meta">{formatPeriod(field.period)}</span> : null}
-            </>
-          ) : (
-            <span className="field-unset">Not set</span>
-          )}
-        </div>
-        <div className="field-actions">
-          {field.calculated ? null : (
-            <>
-              {editing || !field.canEdit ? null : <button type="button" className="link-button" onClick={startEdit}>Edit</button>}
-              <button type="button" className="link-button" aria-expanded={historyOpen} onClick={toggleHistory}>History</button>
-            </>
-          )}
-        </div>
+    <form
+      className="field-modal"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (editable && tab === 'value' && changed && !saving) save()
+      }}
+    >
+      <p className="doc-sub">{target.recordName}</p>
+      <div className="screen-tabs field-tabs" role="tablist" aria-label={`${field.name} details`}>
+        {tabs.map((entry) => (
+          <button
+            key={entry.key}
+            type="button"
+            role="tab"
+            id={`${inputId}-tab-${entry.key}`}
+            aria-selected={tab === entry.key}
+            aria-controls={`${inputId}-panel-${entry.key}`}
+            className={`screen-tab${tab === entry.key ? ' active' : ''}`}
+            onClick={() => (entry.key === 'history' ? showHistory() : setTab(entry.key))}
+          >
+            {entry.label}
+          </button>
+        ))}
       </div>
 
-      {field.calculated && field.formula ? <p className="field-hint">{field.formula}</p> : null}
+      <div className="field-modal-body" role="tabpanel" id={`${inputId}-panel-${tab}`} aria-labelledby={`${inputId}-tab-${tab}`}>
+        {tab === 'value' ? (
+          editable ? (
+            <>
+              <div className="field">
+                <label htmlFor={inputId}>{field.name}{field.unit && numeric ? ` (${field.unit})` : field.dataType === 'percent' ? ' (%)' : ''}</label>
+                {field.dataType === 'picklist' && field.options ? (
+                  <select id={inputId} value={raw} onChange={(e) => setRaw(e.target.value)} autoFocus>
+                    <option value="">Not set</option>
+                    {/* Keep a value from before the list existed selectable. */}
+                    {raw && !field.options.includes(raw) ? <option value={raw}>{raw}</option> : null}
+                    {field.options.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                ) : field.dataType === 'boolean' ? (
+                  <select id={inputId} value={raw} onChange={(e) => setRaw(e.target.value)} autoFocus>
+                    <option value="">Not set</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                ) : (
+                  <input
+                    id={inputId}
+                    type={field.dataType === 'date' ? 'date' : 'text'}
+                    inputMode={numeric ? 'decimal' : undefined}
+                    value={raw}
+                    onChange={(e) => setRaw(e.target.value)}
+                    maxLength={2000}
+                    autoFocus
+                  />
+                )}
+              </div>
+              {field.monthly ? (
+                <div className="field">
+                  <label htmlFor={`${inputId}-month`}>Month</label>
+                  <input id={`${inputId}-month`} type="month" value={month} onChange={(e) => setMonth(e.target.value)} required />
+                </div>
+              ) : null}
+              <div className="field">
+                <label htmlFor={`${inputId}-note`}>Note (Optional)</label>
+                <input id={`${inputId}-note`} type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} placeholder="Why it changed" />
+              </div>
+              {field.sourceName && shown ? <p className="doc-sub">The current value is from {field.sourceName}.</p> : null}
+            </>
+          ) : (
+            <>
+              <p className="field-modal-value">
+                {field.calculated ? 'Calculated later' : shown || 'Not set'}
+                {!field.calculated && shown && field.monthly && field.period ? <span className="field-meta"> {formatPeriod(field.period)}</span> : null}
+              </p>
+              <p className="note">
+                {field.calculated ? field.formula ?? 'This value will be worked out from other fields.' : 'Your role can view this field but not change it.'}
+              </p>
+            </>
+          )
+        ) : null}
 
-      {editing ? (
-        <form
-          className="field-edit"
-          onSubmit={(event) => {
-            event.preventDefault()
-            save()
-          }}
-        >
-          <div className="field">
-            <label htmlFor={inputId}>{field.name}{field.unit && numeric ? ` (${field.unit})` : field.dataType === 'percent' ? ' (%)' : ''}</label>
-            {field.dataType === 'picklist' && field.options ? (
-              <select id={inputId} value={raw} onChange={(e) => setRaw(e.target.value)} autoFocus>
-                <option value="">Not set</option>
-                {/* Keep a value from before the list existed selectable. */}
-                {raw && !field.options.includes(raw) ? <option value={raw}>{raw}</option> : null}
-                {field.options.map((option) => (
-                  <option key={option} value={option}>{option}</option>
+        {tab === 'history' ? (
+          <div className="field-history">
+            {loadingHistory ? (
+              <p className="note">Loading history…</p>
+            ) : historyError ? (
+              <p className="form-error" role="alert">{historyError}</p>
+            ) : history && history.length > 0 ? (
+              <ul>
+                {history.map((entry, index) => (
+                  <li key={index}>
+                    <span className="history-change">
+                      {isEmptyValue(entry.oldValue) ? 'Set to ' : `${formatValue(field, entry.oldValue)} → `}
+                      {isEmptyValue(entry.newValue) ? 'cleared' : formatValue(field, entry.newValue)}
+                      {entry.period ? ` for ${formatPeriod(entry.period)}` : ''}
+                    </span>
+                    <span className="field-meta">
+                      {when(entry.changedAt)} · {entry.changedByName} · {entry.sourceName}
+                    </span>
+                    {entry.note ? <span className="history-note">{entry.note}</span> : null}
+                  </li>
                 ))}
-              </select>
-            ) : field.dataType === 'boolean' ? (
-              <select id={inputId} value={raw} onChange={(e) => setRaw(e.target.value)} autoFocus>
-                <option value="">Not set</option>
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
-              </select>
+              </ul>
             ) : (
-              <input
-                id={inputId}
-                type={field.dataType === 'date' ? 'date' : 'text'}
-                inputMode={numeric ? 'decimal' : undefined}
-                value={raw}
-                onChange={(e) => setRaw(e.target.value)}
-                maxLength={2000}
-                autoFocus
-              />
+              <p className="note">No changes recorded yet.{field.sourceName && shown ? ` The current value is from ${field.sourceName}.` : ''}</p>
             )}
           </div>
-          {field.monthly ? (
-            <div className="field field-narrow">
-              <label htmlFor={`${inputId}-month`}>Month</label>
-              <input id={`${inputId}-month`} type="month" value={month} onChange={(e) => setMonth(e.target.value)} required />
-            </div>
-          ) : null}
-          <div className="field">
-            <label htmlFor={`${inputId}-note`}>Note (Optional)</label>
-            <input id={`${inputId}-note`} type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} placeholder="Why it changed" />
-          </div>
-          <div className="field-edit-buttons">
-            <button type="submit" className="btn btn-primary btn-small" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-            <button type="button" className="btn btn-ghost btn-small" disabled={saving} onClick={() => setEditing(false)}>Cancel</button>
-          </div>
-          {error ? <p className="form-error" role="alert">{error}</p> : null}
-        </form>
-      ) : null}
+        ) : null}
 
-      {historyOpen ? (
-        <div className="field-history">
-          {loadingHistory ? (
-            <p className="note">Loading history…</p>
-          ) : historyError ? (
-            <p className="form-error" role="alert">{historyError}</p>
-          ) : history && history.length > 0 ? (
-            <ul>
-              {history.map((entry, index) => (
-                <li key={index}>
-                  <span className="history-change">
-                    {isEmptyValue(entry.oldValue) ? 'Set to ' : `${formatValue(field, entry.oldValue)} → `}
-                    {isEmptyValue(entry.newValue) ? 'cleared' : formatValue(field, entry.newValue)}
-                    {entry.period ? ` for ${formatPeriod(entry.period)}` : ''}
-                  </span>
-                  <span className="field-meta">
-                    {when(entry.changedAt)} · {entry.changedByName} · {entry.sourceName}
-                  </span>
-                  {entry.note ? <span className="history-note">{entry.note}</span> : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="note">No changes recorded yet.{field.sourceName && shown ? ` Current value is from ${field.sourceName}.` : ''}</p>
-          )}
-        </div>
-      ) : null}
-    </div>
+        {tab === 'skill' ? (
+          <div className="field-skill">
+            <dl className="field-facts">
+              <div><dt>Type</dt><dd>{TYPE_NAMES[field.dataType] ?? field.dataType}{field.unit ? ` (${field.unit})` : ''}{field.monthly ? ', a value per month' : ''}{field.calculated ? ', calculated' : ''}</dd></div>
+              <div><dt>Key</dt><dd><code className="key">{field.key}</code></dd></div>
+            </dl>
+            <h3>Description</h3>
+            {field.description ? <p>{field.description}</p> : <p className="note">No description has been written for this field.</p>}
+            <h3>Agent Instructions</h3>
+            {field.agentInstructions ? (
+              // toHtml escapes everything it is given, so the instructions can only ever show as formatted text.
+              <div className="markdown field-instructions" dangerouslySetInnerHTML={{ __html: toHtml(field.agentInstructions) }} />
+            ) : (
+              <p className="note">No instructions have been written. Agents go by the field&apos;s name and description.</p>
+            )}
+            {canManageFields ? (
+              <p className="doc-sub"><Link href={`/dashboard/fields/${field.id}`}>Edit This Field in Fields Library</Link></p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {message ? <p className="form-ok" role="status">{message}</p> : null}
+
+      <div className="field-modal-actions">
+        <button type="button" className="btn btn-ghost btn-small" onClick={copyToAgent} title="Add this field to the agent column so the analyst knows which value you mean">Copy to Agent</button>
+        <span className="field-modal-spacer" />
+        {editable ? (
+          <>
+            <button type="submit" className="btn btn-primary btn-small" disabled={saving || !changed || tab !== 'value'}>{saving ? 'Saving…' : 'Save'}</button>
+            <button type="button" className="btn btn-ghost btn-small" disabled={saving || !changed} onClick={reset}>Reset</button>
+          </>
+        ) : null}
+        <button type="button" className="btn btn-ghost btn-small" disabled={saving} onClick={onClose}>Close</button>
+      </div>
+    </form>
   )
 }

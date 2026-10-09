@@ -58,6 +58,7 @@ export default async function AssetPage({
 }) {
   const { orgId, userId, orgRole } = await auth()
   if (!orgId || !userId) return null // the layout redirects before this renders
+  const isAdmin = orgRole === 'org:admin'
   const { id } = await params
   const { screen: screenKey } = await searchParams
   if (!isDatabaseConfigured()) notFound()
@@ -217,6 +218,8 @@ export default async function AssetPage({
       period: stored?.period ?? null,
       sourceName: stored ? sourceNames.get(stored.sourceType) ?? null : null,
       canEdit,
+      description: field.aiDescription,
+      agentInstructions: field.agentInstructions,
     }
   }
 
@@ -283,7 +286,7 @@ export default async function AssetPage({
     const views = visibleViews(sectionFields, record, section.id)
     // An empty section is only worth showing to someone who can fill it.
     if (views.length === 0 && !access.admin) return null
-    return <FieldGroup target={targetOf(record)} fields={views} style={section.displayStyle === 'tiles' ? 'tiles' : 'form'} />
+    return <FieldGroup target={targetOf(record)} fields={views} style={section.displayStyle === 'tiles' ? 'tiles' : 'form'} canManageFields={isAdmin} />
   }
 
   const assetRecord: RecordContext = { type: 'asset', id: tree.id, name: tree.name, ref: `asset:${tree.key}`, core: { name: tree.name } }
@@ -317,7 +320,7 @@ export default async function AssetPage({
         {assetUnplaced.length > 0 ? (
           <section className="panel">
             <h2>Other Fields</h2>
-            <FieldGroup target={targetOf(assetRecord)} fields={assetUnplaced} />
+            <FieldGroup target={targetOf(assetRecord)} fields={assetUnplaced} canManageFields={isAdmin} />
           </section>
         ) : null}
 
@@ -357,7 +360,7 @@ export default async function AssetPage({
                   {propertyUnplaced.length > 0 ? (
                     <div className="record-group">
                       <h3>Other Fields</h3>
-                      <FieldGroup target={targetOf(propertyRecord)} fields={propertyUnplaced} />
+                      <FieldGroup target={targetOf(propertyRecord)} fields={propertyUnplaced} canManageFields={isAdmin} />
                     </div>
                   ) : null}
 
@@ -396,7 +399,7 @@ export default async function AssetPage({
                             {buildingUnplaced.length > 0 ? (
                               <div className="record-group">
                                 <h4>Other Fields</h4>
-                                <FieldGroup target={targetOf(buildingRecord)} fields={buildingUnplaced} />
+                                <FieldGroup target={targetOf(buildingRecord)} fields={buildingUnplaced} canManageFields={isAdmin} />
                               </div>
                             ) : null}
 

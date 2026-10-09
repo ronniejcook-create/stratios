@@ -892,3 +892,39 @@ td.muted { color: var(--dim); }
 .map-ring-label span { display: block; padding: 0 4px; border-radius: 999px; background: #1f2937; color: #ffffff; font-size: 11px; line-height: 20px; text-align: center; white-space: nowrap; }
 .leaflet-tooltip.map-tip { background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); font: inherit; font-size: 12px; line-height: 1.45; }
 .leaflet-tooltip.map-tip::before { display: none; }
+
+/* Fields on an asset: the name on top and the value underneath; the whole block opens the field's pop-up. */
+.field-list { margin-top: 8px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 4px 20px; }
+.field-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; padding: 7px 8px; margin: 0 -8px;
+  background: none; border: 0; border-radius: 6px; font: inherit; text-align: left; color: inherit; cursor: pointer;
+}
+.field-card:hover { background: var(--bg); }
+.subrecord .field-card:hover { background: var(--panel); }
+.field-card-label { font-size: 14px; font-weight: 600; color: var(--heading); line-height: 1.35; }
+.field-card-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; max-width: 100%; font-size: 13px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.field-card:hover .field-card-label { color: var(--link); }
+.field-list.tiles { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.field-list.tiles .field-card { margin: 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.subrecord .field-list.tiles .field-card { background: var(--panel); }
+.field-list.tiles .field-card:hover { border-color: var(--line-strong); }
+.field-list.tiles .field-card-label { font-size: 13px; font-weight: 500; color: var(--muted); }
+.field-list.tiles .field-card-value { font-size: 20px; font-weight: 600; line-height: 1.3; color: var(--heading); }
+.field-list.tiles .field-unset { font-size: 14px; }
+@media (max-width: 600px) { .field-list { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); } }
+
+.field-modal { display: flex; flex-direction: column; }
+.field-modal .field-tabs { margin-top: 10px; }
+.field-modal-body { min-height: 190px; padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.field-modal-body .field { flex: none; }
+.field-modal-value { font-size: 20px; font-weight: 600; color: var(--heading); }
+.field-modal .field-history { padding: 0; max-height: 46vh; overflow-y: auto; }
+.field-skill { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; font-size: 14px; }
+.field-skill h3 { margin-top: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.field-facts { margin: 0; display: grid; gap: 4px; font-size: 13px; }
+.field-facts div { display: flex; gap: 10px; }
+.field-facts dt { flex: 0 0 48px; color: var(--muted); }
+.field-facts dd { margin: 0; color: var(--text); }
+.markdown.field-instructions { min-height: 0; padding: 10px 14px; }
+.field-modal-actions { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.field-modal-spacer { flex: 1; }
