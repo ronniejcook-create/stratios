@@ -677,13 +677,23 @@ work and how data is isolated; this file covers how we work and where things sta
       the document counts them in its 67,602 leased SF. Now: total, leased (with percent) and
       vacant square feet in the tiles are the document's figures whenever it states them, and
       Not for Lease is the remainder; tenants and rent are still added up from the rows.
-      `reconcileStatuses` in `lib/rentRolls.ts` turns "other" rows that have lease dates into
-      leased when that makes the leased rows equal the document's leased total exactly (run
-      when a rent roll is read, and again when the tab loads, so his existing snapshot shows
-      right without reloading it). The prompt also tells the agent that dated rows without
-      rent are leased and to check its rows against the document's totals. A remaining
-      difference shows as a quiet note, no longer in red. Tenants (25 on his) counts names on
-      leased rows, so it now includes those amenity-type rows; the document states no count.
+      A remaining difference between the rows and the document's total shows as a quiet note.
+      Tenants counts the names on leased rows; the document states no count.
+    - **The rent roll rules live in the skill** (October 9, `db/migrations/020_rent_roll_skill.sql`;
+      Ronnie: "this should all be listed in the load rent roll skill so it can be modified").
+      The standard **Reading a Rent Roll** skill now holds: how rows are copied; Leased, Vacant
+      or Not for Lease (a row with lease dates but no rent, such as a management office or
+      amenity space, is Leased unless the document's totals say otherwise; Not for Lease only
+      for space the document sets apart, such as static); how month-year dates are read; the
+      as of date; and the check of the rows against the document's totals. Its Use When also
+      covers a memorandum that contains a rent roll table. The prompt keeps only the answer
+      format and a short set of defaults used when no skill covers rent rolls, and code no
+      longer changes how a row is marked (a short-lived `reconcileStatuses` was removed the
+      same hour, so the skill is the one place the rule lives). 020 rewrites the standard
+      skill only while it lacks these parts; an organization's edited copy is not touched.
+      What a skill cannot change: the answer format, the tiles showing the document's totals,
+      and how Tenants is counted. His first snapshot was read before this, so its amenity-type
+      rows still say Not for Lease until the rent roll is loaded again.
     - KPIs from a rent roll still come from the reading itself (stage 5: as shown, or
       calculated by the Reading a Rent Roll skill). Nothing recalculates from the stored rows
       yet, and two snapshots can't be compared side by side.

@@ -10,7 +10,7 @@ import { listScreens, type Screen, type Section } from '@/lib/layout'
 import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from '@/lib/lists'
 import type { MapPin } from '@/components/PropertyMap'
 import { typeAheadEnabled } from '@/lib/googlePlaces'
-import { listRentRollRows, listRentRolls, reconcileStatuses, type RentRollRow } from '@/lib/rentRolls'
+import { listRentRollRows, listRentRolls, type RentRollRow } from '@/lib/rentRolls'
 import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
 import { AddAddressForm, AddChildForm, AddressList } from './AddForms'
@@ -135,8 +135,7 @@ export default async function AssetPage({
         rowCount: rentRoll.rowCount,
         stated: rentRoll.stated,
       }))
-      // Also applied when a rent roll is read; done here too so snapshots saved before that rule show the same way.
-      rentRollRows = found.chosen ? reconcileStatuses(found.rows, found.chosen.stated) : found.rows
+      rentRollRows = found.rows
       rentRollSelected = found.chosen?.id ?? null
     } catch (error) {
       console.error('Listing rent rolls failed', error)

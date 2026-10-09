@@ -228,7 +228,7 @@ export function RentRollPanel({
       </p>
       {checks.map((check) => (
         <p key={check.name} className="note" role="status">
-          The document&apos;s {check.name} total of {whole(check.shown!)} square feet is shown. The rows marked that way add up to {whole(check.added)}, so one or more rows may be marked differently from how the document counts them.
+          The document&apos;s {check.name} total of {whole(check.shown!)} square feet is shown. The rows marked that way add up to {whole(check.added)}, so one or more rows are marked differently from how the document counts them. How rows are marked is set by the Reading a Rent Roll skill in the Skills Library.
         </p>
       ))}
 
