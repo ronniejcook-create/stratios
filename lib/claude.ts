@@ -26,7 +26,31 @@ function describeApiError(status: number, body: string): string {
   return `${hint} (HTTP ${status}${detail ? `, ${detail}` : ''})`.slice(0, 400)
 }
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  /** The HTTP status Claude answered with, when the request got that far. */
+  status?: number
+  constructor(message: string, status?: number) {
+    super(message)
+    this.status = status
+  }
+}
+
+/**
+ * Whether Claude turned a request down because of the answer format itself
+ * (it limits how large and how nested a required format may be), rather than
+ * because of what was asked.
+ */
+function formatRefused(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 400 && /schema|grammar|output_config|output format|too complex|compil/i.test(error.message)
+}
+
+/** The JSON object in a reply that may have a code fence or a stray sentence around it. */
+function looseJson(text: string): Record<string, unknown> {
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start < 0 || end <= start) throw new SyntaxError('No JSON object in the answer')
+  return JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>
+}
 
 type Answer = Record<string, unknown>
 
@@ -40,6 +64,28 @@ export async function askClaudeWith(
   content: string | object[],
   schema: object,
   options: { maxTokens?: number; timeoutMs?: number } = {},
+): Promise<Answer> {
+  const started = Date.now()
+  try {
+    return await askOnce(apiKey, content, schema, options, true)
+  } catch (error) {
+    if (!formatRefused(error)) throw error
+    // Claude would not take the answer format as a requirement (too large for it). Ask again with the format
+    // described in the question instead; the answer is checked by the caller either way.
+    console.error('Claude refused the required answer format; asking again with the format in the question.', (error as Error).message)
+    const described = `Answer with one JSON object and nothing else: no explanation and no code fence. It must match this JSON Schema exactly, with every required property present:\n${JSON.stringify(schema)}`
+    const again = typeof content === 'string' ? `${content}\n\n${described}` : [...content, { type: 'text', text: described }]
+    const left = options.timeoutMs === undefined ? undefined : Math.max(5000, options.timeoutMs - (Date.now() - started))
+    return askOnce(apiKey, again, schema, { ...options, timeoutMs: left }, false)
+  }
+}
+
+async function askOnce(
+  apiKey: string,
+  content: string | object[],
+  schema: object,
+  options: { maxTokens?: number; timeoutMs?: number },
+  required: boolean,
 ): Promise<Answer> {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -55,20 +101,20 @@ export async function askClaudeWith(
       model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
       max_tokens: options.maxTokens ?? 512,
       messages: [{ role: 'user', content }],
-      output_config: { format: { type: 'json_schema', schema } },
+      ...(required ? { output_config: { format: { type: 'json_schema', schema } } } : {}),
     }),
   })
   if (!response.ok) {
     const error = describeApiError(response.status, await response.text().catch(() => ''))
     console.error('Claude request failed:', error)
-    throw new ApiError(error)
+    throw new ApiError(error, response.status)
   }
   const data = (await response.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string }
   if (data.stop_reason === 'max_tokens') throw new ApiError('Claude\'s answer was cut off because it was too long.')
   if (data.stop_reason === 'refusal') throw new ApiError('Claude declined to answer this request.')
   const text = data.content?.find((block) => block.type === 'text')?.text
   if (!text) throw new ApiError(`Claude returned no answer (stop reason: ${data.stop_reason ?? 'unknown'}).`)
-  return JSON.parse(text) as Answer
+  return required ? (JSON.parse(text) as Answer) : looseJson(text)
 }
 
 /** Sends one prompt to Claude and returns its JSON answer, shaped by `schema`. */

@@ -735,6 +735,20 @@ work and how data is isolated; this file covers how we work and where things sta
       Floor" row. Checked in Chromium with rows taken from his rent roll's text (floors from
       suite numbers); not opened inside the app. A snapshot loaded before 021 has no floors,
       so its stack plan says to load the rent roll again. There is no way to set a floor by hand.
+    - **The answer format has a size limit at Claude's end** (October 9). Right after the
+      stack plan shipped, every reading failed; the analyst relayed it as "the reader's setup
+      is too large". Cause: the required answer format (the JSON schema sent as
+      `output_config`) had grown by three properties (floor, floor shown, role) past what
+      Claude accepts. It had 72 properties and nested parts for an existing asset; 69 worked
+      an hour earlier. Fixes: the rent roll row lost `note`, `page` and the nested steps list
+      (steps are now one text cell, `date|rent per SF|annual rent; ...`, parsed in
+      `interpretRentRoll`), and a worked-out floor is written `~5` instead of a second
+      property, which brings it to 65 (69 when creating an asset). And `askClaudeWith` in
+      `lib/claude.ts` now retries once when Claude answers 400 about the format itself: the
+      same question with the schema described in the text instead of required, and the JSON
+      picked out of the reply. **Before adding anything to the answer format, count it**
+      (properties plus nested objects and lists) and keep it under about 69; fold a new
+      detail into an existing text cell where possible.
     - KPIs from a rent roll still come from the reading itself (stage 5: as shown, or
       calculated by the Reading a Rent Roll skill). Nothing recalculates from the stored rows
       yet, and two snapshots can't be compared side by side.

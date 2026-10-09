@@ -194,8 +194,7 @@ const SCHEMA = {
             type: 'object',
             properties: {
               suite: { type: 'string' },
-              floor: { type: 'string', description: 'The floor the suite is on, as a whole number (1 for the ground floor, negative for a basement); an empty string when not known' },
-              floor_shown: { type: 'boolean', description: 'true when the document itself shows the floor; false when you worked it out, for example from the suite number' },
+              floor: { type: 'string', description: 'The floor the suite is on, as a whole number (1 for the ground floor, negative for a basement). Put ~ in front when you worked it out rather than read it in the document, for example ~5. An empty string when not known' },
               tenant: { type: 'string', description: 'The tenant as written; for vacant space, the label the document uses' },
               status: { type: 'string', enum: ['leased', 'vacant', 'other'] },
               sf: { type: 'string', description: 'Square feet, digits only' },
@@ -205,24 +204,9 @@ const SCHEMA = {
               annual_rent: { type: 'string', description: 'Current annual base rent; empty if not shown' },
               monthly_rent: { type: 'string', description: 'Current monthly base rent; empty if not shown' },
               recovery: { type: 'string', description: 'The expense recovery or reimbursement type as written; empty if not shown' },
-              note: { type: 'string', description: 'Anything else the row says that matters, in a few words; usually empty' },
-              page: { type: 'integer' },
-              steps: {
-                type: 'array',
-                description: 'Future rent changes shown for this lease, in date order',
-                items: {
-                  type: 'object',
-                  properties: {
-                    date: { type: 'string', description: 'YYYY-MM-DD' },
-                    rent_psf: { type: 'string' },
-                    annual_rent: { type: 'string' },
-                  },
-                  required: ['date', 'rent_psf', 'annual_rent'],
-                  additionalProperties: false,
-                },
-              },
+              steps: { type: 'string', description: 'The future rent changes shown for this lease, in date order, separated by semicolons, each written as date|rent per square foot|annual rent, for example "2027-07-01|24.50|33737; 2028-07-01|25.00|34425". Leave a part empty when the document does not show it. An empty string when there are none' },
             },
-            required: ['suite', 'floor', 'floor_shown', 'tenant', 'status', 'sf', 'start', 'end', 'rent_psf', 'annual_rent', 'monthly_rent', 'recovery', 'note', 'page', 'steps'],
+            required: ['suite', 'floor', 'tenant', 'status', 'sf', 'start', 'end', 'rent_psf', 'annual_rent', 'monthly_rent', 'recovery', 'steps'],
             additionalProperties: false,
           },
         },
@@ -390,13 +374,15 @@ function day(value: unknown): string | null {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === written ? written : null
 }
 
-/** A row's floor: a whole number from 3 basements down to 200 floors up, and whether the agent worked it out. */
+/** A row's floor: a whole number from 9 basements down to 200 floors up, and whether the agent worked it out. */
 function floorOf(line: Record<string, unknown>): { floor: number | null; floorInferred: boolean } {
-  const written = String(line.floor ?? '').trim()
-  if (!/^-?\d{1,3}$/.test(written)) return { floor: null, floorInferred: false }
-  const floor = Number(written)
+  // "~5" is a floor the agent worked out; "5" is one the document shows.
+  const written = String(line.floor ?? '').replace(/\s+/g, '')
+  const match = /^(~?)(-?\d{1,3})$/.exec(written)
+  if (!match) return { floor: null, floorInferred: false }
+  const floor = Number(match[2])
   if (floor === 0 || floor < -9 || floor > 200) return { floor: null, floorInferred: false }
-  return { floor, floorInferred: line.floor_shown !== true }
+  return { floor, floorInferred: match[1] === '~' }
 }
 
 /**
@@ -418,10 +404,12 @@ function interpretRentRoll(raw: unknown, records: RecordEntry[]): DocumentRentRo
     const squareFeet = amount(line?.sf)
     if (!suite && !tenant && squareFeet === null) continue
     const status = (['leased', 'vacant', 'other'] as RentRollStatus[]).find((choice) => choice === text(line.status, 10).toLowerCase()) ?? (tenant ? 'leased' : 'vacant')
+    // Rent steps arrive as one line of text, "date|rent per SF|annual rent; ...", to keep the answer format small.
     const steps: RentStep[] = []
-    for (const step of Array.isArray(line.steps) ? (line.steps as Record<string, unknown>[]) : []) {
+    for (const written of String(line.steps ?? '').split(';')) {
       if (steps.length >= MAX_RENT_STEPS) break
-      const entry = { date: day(step?.date), rentPerSf: amount(step?.rent_psf), annualRent: amount(step?.annual_rent) }
+      const [date, rentPerSf, annualRent] = written.split('|')
+      const entry = { date: day(date), rentPerSf: amount(rentPerSf), annualRent: amount(annualRent) }
       if (entry.date || entry.rentPerSf !== null || entry.annualRent !== null) steps.push(entry)
     }
     rows.push({
@@ -435,9 +423,9 @@ function interpretRentRoll(raw: unknown, records: RecordEntry[]): DocumentRentRo
       annualRent: amount(line.annual_rent),
       monthlyRent: amount(line.monthly_rent),
       recoveryType: text(line.recovery, 100) || null,
-      note: text(line.note, 300) || null,
+      note: null,
       steps,
-      page: pageOf(line.page),
+      page: null,
       ...floorOf(line),
     })
   }
