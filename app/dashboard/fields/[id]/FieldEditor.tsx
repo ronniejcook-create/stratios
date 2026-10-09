@@ -3,7 +3,7 @@
 import { useState, useTransition, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { GenerateButton } from '@/components/GenerateButton'
-import { Markdown } from '@/components/Markdown'
+import { RichTextEditor } from '@/components/RichTextEditor'
 import { generateDescription, removeField, resetSettings, saveSettings, type ActionResult } from '../actions'
 import type { FieldSettingsInput } from '@/lib/fieldAdmin'
 
@@ -252,14 +252,14 @@ export function FieldEditor({
       </div>
       <div className="field">
         <div className="label-row">
-          <label htmlFor="fe-instructions">Agent Instructions</label>
+          <label id="fe-instructions-label" htmlFor="fe-instructions">Agent Instructions</label>
           <div className="view-toggle" role="group" aria-label="How to show the agent instructions">
             <button type="button" aria-pressed={!reading} onClick={() => setReading(false)}>Markdown</button>
             <button type="button" aria-pressed={reading} onClick={() => setReading(true)}>Reading View</button>
           </div>
         </div>
         {reading ? (
-          <Markdown source={agentInstructions} empty="No instructions yet. Switch to Markdown to write them." />
+          <RichTextEditor value={agentInstructions} onChange={setAgentInstructions} labelledBy="fe-instructions-label" placeholder="Write the instructions here. Use the buttons above for bold, italic, lists and headings." />
         ) : (
           <textarea
             id="fe-instructions"
@@ -275,7 +275,7 @@ export function FieldEditor({
         {modified('agent_instructions', undefined, false)}
         <p className="note">
           Everything an agent needs to know about this field, written like a skill: other names, where to find it, which source to prefer, how to work it out and how to word it.
-          Use # for headings, - for bullets and **bold** for emphasis. Saved now; agents start reading it when documents and agents are connected.
+          Write in Reading View with the formatting buttons, or in Markdown (# for headings, - for bullets, **bold**); both edit the same text. Saved now; agents start reading it when documents and agents are connected.
         </p>
       </div>
 
@@ -303,7 +303,7 @@ export function FieldEditor({
               {modified('when_different', asChoice(WHEN_DIFFERENT))}
             </div>
             <div className="field">
-              <label htmlFor="fe-override">A Value Picked by Hand</label>
+              <label htmlFor="fe-override">When a Value is Manually Entered</label>
               <select id="fe-override" value={manualOverride} onChange={(e) => setManualOverride(e.target.value)}>
                 {MANUAL_OVERRIDE.map((choice) => (
                   <option key={choice.value} value={choice.value}>{choice.label}</option>

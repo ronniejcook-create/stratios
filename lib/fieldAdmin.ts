@@ -195,7 +195,7 @@ function cleanSettings(input: FieldSettingsInput): Result<{ settings: CleanSetti
   if (input.whenDifferent !== 'ask' && input.whenDifferent !== 'replace' && input.whenDifferent !== 'never') {
     return { ok: false, error: 'Choose what happens when a different value arrives.' }
   }
-  if (input.manualOverride !== 'stays' && input.manualOverride !== 'replaceable') return { ok: false, error: 'Choose how a hand-picked value behaves.' }
+  if (input.manualOverride !== 'stays' && input.manualOverride !== 'replaceable') return { ok: false, error: 'Choose what happens when a value is manually entered.' }
   return {
     ok: true,
     settings: {

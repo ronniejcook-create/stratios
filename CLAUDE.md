@@ -143,13 +143,18 @@ work and how data is isolated; this file covers how we work and where things sta
       Nothing is saved until the admin saves. All Claude calls now go through `lib/claude.ts`.
     - Other Names, Extraction Hints and Source Priority were replaced, at Ronnie's request, by one
       big Markdown **Agent Instructions** box per field (`agent_instructions`, up to 20,000
-      characters) that agents will read like a skill. It has a Markdown / Reading View toggle
-      (`components/Markdown.tsx`, our own small reader; no raw HTML). The old columns are kept but
+      characters) that agents will read like a skill. It has a Markdown / Reading View toggle;
+      Reading View is editable with Bold, Italic, bullet, numbered list and Heading buttons
+      (`components/RichTextEditor.tsx`; `lib/richText.ts` converts Markdown to HTML and the
+      edited elements back, escaping all text; pasted multi-line text is read as Markdown). It was
+      tested in Chromium with Playwright against a compiled copy of `lib/richText.ts`, not inside
+      the app. The old columns are kept but
       no longer shown or saved; migration 007 wrote their contents into each field's instructions
       once. It is one overridable setting, so an organization that edits a standard field's
       instructions stops receiving Stratios updates to that whole block. He was told the trade-off:
       source priority in text means an agent, not the app, decides which source wins. The three
-      rules (when empty, when different, hand-picked value) are still controls.
+      rules (when empty, when different, hand-picked value) are still controls; the third is
+      labeled "When a Value is Manually Entered" (his wording, including the lowercase "is").
     - The editor shows **Type**. It can be changed only on a field the organization added and only
       while no values exist (`fieldHasValues`); standard fields and the Master Library show it locked.
     - `listFields` reads `agent_instructions` through `to_jsonb(...)` so pages still load on a
