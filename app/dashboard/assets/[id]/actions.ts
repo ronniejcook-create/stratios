@@ -9,6 +9,7 @@ import { removeListRow, saveListRow } from '@/lib/lists'
 import { loadAccess, sectionOfField } from '@/lib/permissions'
 import { listDocuments, readDocumentFile } from '@/lib/documents'
 import { extractPhotos } from '@/lib/photoExtraction'
+import { joinSpreads } from '@/lib/photoJoin'
 import { isPhotoCategory, removePhoto, savePhotosFromDocument, setMainPhoto, updatePhoto } from '@/lib/photos'
 import { insertAddress, insertChild, isRecordType, isUuid, type AddressOwner, type Queryable } from '@/lib/records'
 
@@ -346,7 +347,7 @@ export async function pullPhotosFromDocuments(input: { assetId: string }): Promi
     if (files === null) return { ok: false, error: NO_PERMISSION }
     let added = 0
     for (const { documentId, file } of files) {
-      const photos = await extractPhotos(file)
+      const photos = await joinSpreads(await extractPhotos(file))
       if (photos.length === 0) continue
       added += await withOrg(orgId, (client) => savePhotosFromDocument(client, orgId, userId, { assetId: input.assetId, documentId, photos, notes: [], mainPage: null }))
     }

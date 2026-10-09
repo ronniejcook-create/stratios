@@ -14,6 +14,7 @@ import { listFields } from './fields'
 import { listScreens } from './layout'
 import { loadAccess } from './permissions'
 import { extractPhotos } from './photoExtraction'
+import { joinSpreads } from './photoJoin'
 import { planPagesOf, saveDocumentPhotoNotes, savePhotosFromDocument, type PlanPage } from './photos'
 import { getAssetTree } from './records'
 import { loadSkillsForAgent } from './skills'
@@ -52,7 +53,7 @@ async function addPhotos(caller: Caller, assetId: string, documentId: string, fi
   // Kept on the document so plan pages can be added later too. On its own, because the column may not exist yet (migration 014).
   await withOrg(caller.orgId, (client) => saveDocumentPhotoNotes(client, caller.orgId, documentId, reading.photos)).catch((error) => console.error('Saving photo notes failed', error))
   try {
-    const photos = await extractPhotos(file)
+    const photos = await joinSpreads(await extractPhotos(file))
     if (photos.length === 0) return 0
     return await withOrg(caller.orgId, (client) =>
       savePhotosFromDocument(client, caller.orgId, caller.userId, { assetId, documentId, photos, notes: reading.photos, mainPage: reading.mainPhotoPage }),

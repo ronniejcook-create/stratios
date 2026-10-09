@@ -6,7 +6,16 @@
 
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef } from 'pdf-lib'
 
-export type ExtractedPhoto = { page: number; width: number; height: number; data: Buffer }
+export type ExtractedPhoto = {
+  page: number
+  width: number
+  height: number
+  data: Buffer
+  /** For a photograph joined back together from two facing pages (lib/photoJoin.ts): both pages. */
+  pages?: number[]
+  /** For a joined photograph: the fingerprints of the two halves it replaces. */
+  replaces?: string[]
+}
 
 export const PHOTO_LIMITS = {
   /** Smaller than this is a logo, icon or thumbnail, not a photo worth keeping. */

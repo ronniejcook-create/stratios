@@ -231,7 +231,7 @@ export function PhotosPanel({
     >
       <h2>Photos</h2>
       <p className="note">
-        Photos are pulled from a document when the agent reads it, and can be added by hand. The main photo stands for the asset in the Assets list.
+        Photos are pulled from a document when the agent reads it, and can be added by hand. A photo that runs across two facing pages is joined into one. The main photo stands for the asset in the Assets list.
       </p>
 
       <div className="doc-upload">
@@ -251,7 +251,7 @@ export function PhotosPanel({
             />
             <button type="button" className="btn btn-primary btn-small" disabled={uploading !== null} onClick={() => input.current?.click()}>Add Photos</button>
             {documentCount > 0 ? (
-              <button type="button" className="btn btn-ghost btn-small" disabled={busy || uploading !== null} onClick={pull} title="Copies the photographs out of the documents already on this asset">
+              <button type="button" className="btn btn-ghost btn-small" disabled={busy || uploading !== null} onClick={pull} title="Copies the photographs out of the documents already on this asset, and joins any two-page photos that are still in halves">
                 {busy ? 'Working…' : 'Get Photos from Documents'}
               </button>
             ) : null}

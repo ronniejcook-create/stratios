@@ -336,8 +336,7 @@ work and how data is isolated; this file covers how we work and where things sta
       pictures instead (below); a flattened brochure yields little by this route.
     - Labels: the reading's answer format gained `photos` (page, category, caption) and
       `main_photo_page` (`lib/extraction.ts`); pictures are matched to the agent's notes by page.
-      Categories: exterior, interior, aerial, area, plan, other. Two-page spreads arrive as two
-      halves (the agent is told to say so in the caption); they are not joined, and
+      Categories: exterior, interior, aerial, area, plan, other. Two-page spreads are joined (below);
       near-duplicates are kept. Exact duplicates are skipped by fingerprint (`sha256`).
     - When: `addPhotos` in `lib/documentReading.ts` runs after a reading is saved, for both the
       chat agent and the Documents tab, in its own step; a failure there (or 013 not run) never
@@ -369,9 +368,24 @@ work and how data is isolated; this file covers how we work and where things sta
         covers flattened memorandums and documents read before notes were kept. Reading from
         the Documents tab does not add plan pages by itself; the button shows them as waiting.
       - Needs `access.canAddRecords` (it opens the document file).
+    - **Two-page photos are joined** (October 9, later; no migration; Ronnie asked for it).
+      `lib/photoJoin.ts` (`joinSpreads`) runs between extraction and saving, in `addPhotos` and
+      in Get Photos from Documents. It compares the right edge of the biggest picture on one
+      page with the left edge of the biggest on the next: equal heights, edge difference of 10
+      or less, and edges that are not blank. On his memorandum the 9 real pairs scored under 6
+      and unrelated neighbors over 27 (29 photos became 20). The joined JPEG sits on the left
+      page. Uses **sharp** (added to `package.json`; Next already had it in the lock file),
+      loaded with a dynamic import inside a try: if it is missing or fails on the host the
+      photos simply stay in halves, with a line in the server log. `savePhotosFromDocument`
+      swaps out halves saved by an earlier reading (matched by fingerprint, `replaces`) and
+      carries over their caption, label and main-photo place. There is no manual Join button
+      and no way to split a wrong join other than removing the photo.
     - Permissions: everyone in the organization sees photos; adding, editing and removing need
       `access.canAddRecords`, like documents. Deleting an asset deletes its photos (cascade);
       removing a document keeps the photos that came from it.
+    - Checked for joining: his memorandum joined correctly (looked at all 9), the same result
+      twice, and saving and half-replacement on the scratch database. sharp could not be run on
+      Vercel from here, so whether joining works there shows on his first try.
     - Checked for page pictures: 014 twice, notes and page-picture storage on the scratch
       database, and the real `lib/pagePictures.ts` in Chromium against a stand-in server with
       his memorandum (pages 18, 19 and 28 drawn and sent). Not run inside the app.

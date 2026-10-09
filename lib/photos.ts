@@ -131,14 +131,20 @@ export async function savePhotosFromDocument(
   for (const note of input.notes) notesByPage.set(note.page, [...(notesByPage.get(note.page) ?? []), note])
   const used = new Map<number, number>()
 
-  const added: { id: string; page: number; category: PhotoCategory }[] = []
+  const added: { id: string; pages: number[]; category: PhotoCategory }[] = []
   for (const photo of input.photos) {
     if (added.length >= room) break
-    const notes = notesByPage.get(photo.page) ?? []
-    const position = used.get(photo.page) ?? 0
-    used.set(photo.page, position + 1)
-    const note = notes[Math.min(position, notes.length - 1)]
-    const id = await insertPhoto(client, orgId, userId, input.assetId, {
+    // A photo joined from two facing pages uses up a note on each page and takes the first one it finds.
+    const pages = photo.pages ?? [photo.page]
+    let note: PhotoNote | undefined
+    for (const page of pages) {
+      const notes = notesByPage.get(page) ?? []
+      const position = used.get(page) ?? 0
+      used.set(page, position + 1)
+      note ??= notes[Math.min(position, notes.length - 1)]
+    }
+    const joined = photo.replaces !== undefined
+    const fields = {
       data: photo.data,
       contentType: 'image/jpeg',
       width: photo.width,
@@ -147,17 +153,53 @@ export async function savePhotosFromDocument(
       page: photo.page,
       fileName: null,
       category: note?.category ?? 'other',
-      caption: note?.caption ?? null,
+      caption: wholeCaption(note?.caption ?? null, joined),
       sortOrder: photo.page,
-    })
-    if (id) added.push({ id, page: photo.page, category: note?.category ?? 'other' })
+    }
+    let id = await insertPhoto(client, orgId, userId, input.assetId, fields)
+    if (id) added.push({ id, pages, category: fields.category })
+    if (joined) {
+      // Swap out halves saved by an earlier reading: the joined photo inherits their caption, label and main-photo place.
+      id ??= (await client.query('select id::text as id from asset_photos where org_id = $1 and asset_id = $2 and sha256 = $3', [orgId, input.assetId, fingerprint(photo.data)])).rows[0]?.id ?? null
+      if (id) await replaceHalves(client, orgId, input.assetId, id, photo.replaces ?? [])
+    }
   }
 
   if (added.length > 0 && !(await hasMain(client, orgId, input.assetId))) {
-    const pick = added.find((photo) => photo.page === input.mainPage) ?? added.find((photo) => photo.category === 'exterior') ?? added[0]
+    const pick = added.find((photo) => input.mainPage !== null && photo.pages.includes(input.mainPage)) ?? added.find((photo) => photo.category === 'exterior') ?? added[0]
     await client.query('update asset_photos set is_main = true where org_id = $1 and id = $2', [orgId, pick.id])
   }
   return added.length
+}
+
+/** A caption written for one half says so; the joined photo is whole again. */
+function wholeCaption(caption: string | null, joined: boolean): string | null {
+  if (!caption || !joined) return caption
+  return caption.replace(/\s*\(?(?:left |right )?half of a two-page photo(?:graph)?\)?\.?\s*$/i, '').trim() || null
+}
+
+/**
+ * Removes the two halves a joined photo replaces, if an earlier reading saved
+ * them. What a person did to the halves carries over: a caption or label the
+ * joined photo lacks, and being the main photo.
+ */
+async function replaceHalves(client: Queryable, orgId: string, assetId: string, joinedId: string, halves: string[]): Promise<void> {
+  if (halves.length === 0) return
+  const { rows } = await client.query(
+    `delete from asset_photos where org_id = $1 and asset_id = $2 and sha256 = any($3::text[]) and id <> $4
+     returning caption, category, is_main, page`,
+    [orgId, assetId, halves, joinedId],
+  )
+  if (rows.length === 0) return
+  const ordered = [...rows].sort((a, b) => Number(a.page ?? 0) - Number(b.page ?? 0))
+  const caption = wholeCaption(ordered.map((row) => row.caption as string | null).find(Boolean) ?? null, true)
+  const category = ordered.map((row) => row.category as PhotoCategory).find((value) => value !== 'other') ?? null
+  await client.query(
+    `update asset_photos set caption = coalesce(caption, $3), category = case when category = 'other' and $4::text is not null then $4 else category end
+     where org_id = $1 and id = $2`,
+    [orgId, joinedId, caption, category],
+  )
+  if (rows.some((row) => row.is_main)) await client.query('update asset_photos set is_main = true where org_id = $1 and id = $2', [orgId, joinedId])
 }
 
 /** A page of a document worth keeping as a picture (a floor plan, site plan or map), as the agent noted it. */
