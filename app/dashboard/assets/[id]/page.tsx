@@ -480,7 +480,7 @@ export default async function AssetPage({
                 ) : (
                   <>
                     <p className="note">
-                      {mapPins.length === 1 ? 'One address is pinned.' : `${mapPins.length} addresses are pinned.`} Click a pin for its address. Use the + and − buttons to zoom.
+                      {mapPins.length === 1 ? 'One address is pinned.' : `${mapPins.length} addresses are pinned.`} Click a pin for its address. Scroll or use the + and − buttons to zoom.
                       {unpinned > 0 ? ` ${unpinned === 1 ? '1 address has' : `${unpinned} addresses have`} no map location yet${access.canAddRecords ? '; use Find Location beside it' : ''}.` : ''}
                     </p>
                     <PropertyMap pins={mapPins} />

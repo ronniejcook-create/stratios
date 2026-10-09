@@ -436,8 +436,9 @@ work and how data is isolated; this file covers how we work and where things sta
       Google Maps". Drawn with **Leaflet 1.9.4** served as plain files from `public/leaflet/`
       (downloaded from the official GitHub release; loaded by a script tag, not in package.json)
       and **OpenStreetMap** street tiles, which need no key. Because tabs render hidden, the map
-      is framed when its box first gets a real size (ResizeObserver). Scroll-wheel zoom is off
-      so the page still scrolls. He was told: OpenStreetMap's free tiles are fine for testing
+      is framed when its box first gets a real size (ResizeObserver). At his request the scroll
+      wheel zooms the map (so the page doesn't scroll while the pointer is over it) and the map
+      fills the height left on the screen below it (`fill` in the component, minimum 320 px). He was told: OpenStreetMap's free tiles are fine for testing
       but not meant for heavy commercial traffic, so pick a paid tile source or Google before
       real customers; there is no portfolio-wide map of all assets yet.
     - Addresses on units are not listed with these actions or pinned (units show their address

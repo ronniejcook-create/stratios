@@ -26,6 +26,9 @@ const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 const CREDIT = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors'
 /** Close enough to see the building and its block. */
 const ONE_PIN_ZOOM = 16
+const MIN_HEIGHT = 320
+/** Room left under the map for the panel's edge and the page's bottom margin. */
+const BOTTOM_GAP = 40
 
 let loading: Promise<Leaflet> | null = null
 
@@ -78,7 +81,8 @@ function popup(pin: MapPin): HTMLElement {
 /**
  * A street map with a pin for each place. One pin is shown close up; several
  * are all fitted in view. The map sits in a tab that starts hidden, so it is
- * only sized and centered once its box has a real size.
+ * only sized and centered once its box has a real size. It fills the height
+ * left on the screen, and the scroll wheel zooms it.
  */
 export function PropertyMap({ pins }: { pins: MapPin[] }) {
   const box = useRef<HTMLDivElement>(null)
@@ -92,17 +96,27 @@ export function PropertyMap({ pins }: { pins: MapPin[] }) {
     let map: LeafletMap | null = null
     let observer: ResizeObserver | null = null
     let cancelled = false
+    let onResize: (() => void) | null = null
 
     loadLeaflet()
       .then((leaflet) => {
         if (cancelled) return
-        map = leaflet.map(element, { scrollWheelZoom: false })
+        map = leaflet.map(element, { scrollWheelZoom: true })
         leaflet.tileLayer(TILES, { maxZoom: 19, attribution: CREDIT }).addTo(map)
         const icon = leaflet.divIcon({ className: 'map-pin', html: '<span></span>', iconSize: [26, 36], iconAnchor: [13, 36], popupAnchor: [0, -32] })
         const markers = pins.map((pin) => leaflet.marker([pin.latitude, pin.longitude], { icon, title: pin.title, alt: `Pin for ${pin.title}` }).addTo(map!).bindPopup(popup(pin)))
 
+        // The map takes the height left on the screen below where it starts, so there is no empty band under it.
+        const fill = () => {
+          if (element.clientWidth === 0) return
+          const top = element.getBoundingClientRect().top
+          // Measured from the top of the page as loaded; if the page has been scrolled, keep the height it has.
+          if (top < 0) return
+          element.style.height = `${Math.max(MIN_HEIGHT, Math.round(window.innerHeight - top - BOTTOM_GAP))}px`
+        }
         const frame = () => {
           if (!map) return
+          fill()
           map.invalidateSize()
           if (pins.length === 1) map.setView([pins[0].latitude, pins[0].longitude], ONE_PIN_ZOOM)
           else map.fitBounds(pins.map((pin) => [pin.latitude, pin.longitude] as [number, number]), { padding: [40, 40], maxZoom: ONE_PIN_ZOOM })
@@ -122,6 +136,11 @@ export function PropertyMap({ pins }: { pins: MapPin[] }) {
           if (pins.length === 1) markers[0].openPopup()
         })
         observer.observe(element)
+        onResize = () => {
+          fill()
+          map?.invalidateSize()
+        }
+        window.addEventListener('resize', onResize)
       })
       .catch((error) => {
         console.error('The map could not be shown', error)
@@ -131,6 +150,7 @@ export function PropertyMap({ pins }: { pins: MapPin[] }) {
     return () => {
       cancelled = true
       observer?.disconnect()
+      if (onResize) window.removeEventListener('resize', onResize)
       map?.remove()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
