@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AiIcon } from '@/components/AiIcon'
-import { readUploadedDocument, uploadDocument } from '@/lib/documentClient'
+import { CANNOT_UPLOAD, canUpload as isUploadable, DOCUMENT_ACCEPT, readUploadedDocument, uploadDocument } from '@/lib/documentClient'
 
 export type DocumentRow = {
   id: string
@@ -52,8 +52,8 @@ export function DocumentsPanel({ assetId, documents, canUpload, maxMb }: { asset
       setError(`That file is too large. The limit is ${maxMb} MB.`)
       return
     }
-    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
-      setError('Only PDF files can be uploaded for now.')
+    if (!isUploadable(file)) {
+      setError(CANNOT_UPLOAD)
       return
     }
     setProgress({ stage: 'uploading', name: file.name, done: 0 })
@@ -73,7 +73,7 @@ export function DocumentsPanel({ assetId, documents, canUpload, maxMb }: { asset
     <section className="panel">
       <h2>Documents</h2>
       <p className="note">
-        Upload an Offering Memorandum, appraisal, loan document or other PDF. The agent reads it against your fields, fills in what your rules allow, and gives you a review list of
+        Upload an Offering Memorandum, appraisal, rent roll, loan document or other PDF or Excel file. The agent reads it against your fields, fills in what your rules allow, and gives you a review list of
         everything it found.
       </p>
 
@@ -82,9 +82,9 @@ export function DocumentsPanel({ assetId, documents, canUpload, maxMb }: { asset
           <input
             ref={input}
             type="file"
-            accept="application/pdf,.pdf"
+            accept={DOCUMENT_ACCEPT}
             className="sr-only"
-            aria-label="Choose a PDF to upload"
+            aria-label="Choose a PDF or Excel file to upload"
             disabled={busy}
             onChange={(event) => {
               const file = event.target.files?.[0]
@@ -93,7 +93,7 @@ export function DocumentsPanel({ assetId, documents, canUpload, maxMb }: { asset
             }}
           />
           <button type="button" className="btn btn-primary btn-small" disabled={busy} onClick={() => input.current?.click()}>Upload Document</button>
-          <span className="note">PDF, up to {maxMb} MB and 100 pages.</span>
+          <span className="note">PDF (up to 100 pages) or Excel (.xlsx), up to {maxMb} MB.</span>
         </div>
       ) : (
         <p className="note">Your role can view documents&apos; findings but not add documents.</p>

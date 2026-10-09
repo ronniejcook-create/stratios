@@ -85,6 +85,7 @@ function describeReading(session: Session, result: ReadOutcome): string {
   if (result.planPages.length > 0) session.pages.push({ assetId: result.assetId, documentId: result.documentId, pages: result.planPages })
   session.links.push({ label: `Open ${result.assetName}`, href: `/dashboard/assets/${result.assetId}` })
   session.links.push({ label: 'Review What Was Found', href: `/dashboard/assets/${result.assetId}/documents/${result.documentId}` })
+  if (result.rentRollRows > 0) session.links.push({ label: 'Open Rent Roll', href: `/dashboard/assets/${result.assetId}?screen=_rentroll` })
   return JSON.stringify({
     ok: true,
     asset_created: result.created,
@@ -101,6 +102,7 @@ function describeReading(session: Session, result: ReadOutcome): string {
     of_all_those_values_how_many_the_agent_calculated_rather_than_found_stated: result.calculated,
     new_fields_proposed: result.proposals,
     comments_and_critical_dates_added_to_lists: result.listRows,
+    rent_roll_rows_saved_as_a_dated_snapshot: result.rentRollRows,
     street_addresses_set_from_the_document: result.addresses,
     photos_added_to_the_asset: result.photos,
     plan_and_map_pages_being_added_as_pictures: result.planPages.length,

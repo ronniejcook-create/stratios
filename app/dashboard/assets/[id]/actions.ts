@@ -13,6 +13,7 @@ import { joinSpreads } from '@/lib/photoJoin'
 import { isPhotoCategory, removePhoto, savePhotosFromDocument, setMainPhoto, updatePhoto } from '@/lib/photos'
 import { LOCATION_SOURCE, lookUpAddress, type AddressMatch, type FoundAddress } from '@/lib/geocode'
 import { addressOfSuggestion, suggestAddresses, type Suggestion } from '@/lib/googlePlaces'
+import { deleteRentRoll, getRentRoll, setRentRollDate } from '@/lib/rentRolls'
 import { deleteAddress, formatAddress, getAddress, insertAddress, insertChild, isRecordType, isUuid, setAddressLocation, type AddressOwner, type Queryable } from '@/lib/records'
 
 const NO_PERMISSION = "You don't have permission to change this."
@@ -471,4 +472,40 @@ export async function locateAddress(input: { addressId: string }): Promise<SaveF
 export async function removeAddress(input: { addressId: string }): Promise<SaveFieldResult> {
   const removed = await changeAddress(input.addressId, (client, org) => deleteAddress(client, org, input.addressId))
   return removed.ok ? { ok: true } : removed
+}
+
+/** Runs a change to one rent roll for someone allowed to add records, then refreshes its asset's page. */
+async function changeRentRoll(rentRollId: string, work: (client: Queryable, orgId: string) => Promise<boolean>): Promise<SaveFieldResult> {
+  const { userId, orgId, orgRole } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (!isUuid(rentRollId)) return { ok: false, error: 'That rent roll could not be found.' }
+  try {
+    const result = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      if (!access.canAddRecords) return { ok: false as const, error: NO_PERMISSION }
+      const rentRoll = await getRentRoll(client, orgId, rentRollId)
+      if (!rentRoll || !(await work(client, orgId))) return { ok: false as const, error: 'That rent roll could not be found.' }
+      return { ok: true as const, assetId: rentRoll.assetId }
+    })
+    if (!result.ok) return result
+    revalidatePath(`/dashboard/assets/${result.assetId}`)
+    return { ok: true }
+  } catch (error) {
+    console.error('Changing a rent roll failed', error)
+    return { ok: false, error: 'That could not be saved. Try again.' }
+  }
+}
+
+/** Sets the date a rent roll is as of, for example when the document did not state one. */
+export async function changeRentRollDate(input: { rentRollId: string; date: string }): Promise<SaveFieldResult> {
+  const date = String(input.date ?? '')
+  const parsed = new Date(`${date}T00:00:00Z`)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) return { ok: false, error: 'Choose a date.' }
+  if (parsed.getUTCFullYear() < 1950 || parsed.getUTCFullYear() > 2100) return { ok: false, error: 'That date is out of range.' }
+  return changeRentRoll(input.rentRollId, (client, orgId) => setRentRollDate(client, orgId, input.rentRollId, date))
+}
+
+/** Removes one rent roll snapshot and its rows. */
+export async function removeRentRoll(input: { rentRollId: string }): Promise<SaveFieldResult> {
+  return changeRentRoll(input.rentRollId, (client, orgId) => deleteRentRoll(client, orgId, input.rentRollId))
 }

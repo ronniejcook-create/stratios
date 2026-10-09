@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { askAgent, uploadDocument, type AgentLink, type AgentPages } from '@/lib/documentClient'
+import { askAgent, CANNOT_UPLOAD, canUpload, DOCUMENT_ACCEPT, uploadDocument, type AgentLink, type AgentPages } from '@/lib/documentClient'
 import { addDocumentPages } from '@/lib/pagePictures'
 import { toHtml } from '@/lib/richText'
 import { useAgentReferences } from './AgentContext'
@@ -48,8 +48,8 @@ export function AgentPanel() {
     for (const file of files) {
       const key = nextKey.current++
       const refuse = (error: string) => setPending((current) => [...current, { key, name: file.name, progress: 0, id: null, error }])
-      if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
-        refuse('Only PDF files can be read for now.')
+      if (!canUpload(file)) {
+        refuse(CANNOT_UPLOAD)
         continue
       }
       if (file.size > MAX_MB * 1024 * 1024) {
@@ -133,7 +133,7 @@ export function AgentPanel() {
         {messages.length === 0 ? (
           <div className="agent-empty">
             <p className="agent-empty-title">Ask, or Drop a Document</p>
-            <p>Ask about your assets, or drop a PDF here and tell the analyst what to do with it, such as creating an asset from an Offering Memorandum.</p>
+            <p>Ask about your assets, or drop a PDF or Excel file here and tell the analyst what to do with it, such as creating an asset from an Offering Memorandum or loading a rent roll.</p>
             <ul>
               {SUGGESTIONS.map((suggestion) => (
                 <li key={suggestion}>
@@ -232,23 +232,23 @@ export function AgentPanel() {
             }
           }}
           maxLength={8000}
-          placeholder={hasAttachment ? 'Say what to do with it…' : 'Message the analyst, or drop a PDF…'}
+          placeholder={hasAttachment ? 'Say what to do with it…' : 'Message the analyst, or drop a PDF or Excel file…'}
           aria-label="Message the analyst"
         />
         <div className="agent-composer-row">
           <input
             ref={fileInput}
             type="file"
-            accept="application/pdf,.pdf"
+            accept={DOCUMENT_ACCEPT}
             multiple
             className="sr-only"
-            aria-label="Attach a PDF"
+            aria-label="Attach a PDF or Excel file"
             onChange={(event) => {
               addFiles(Array.from(event.target.files ?? []))
               event.target.value = ''
             }}
           />
-          <button type="button" className="icon-button" title="Attach a PDF" aria-label="Attach a PDF" onClick={() => fileInput.current?.click()}>
+          <button type="button" className="icon-button" title="Attach a PDF or Excel File" aria-label="Attach a PDF or Excel file" onClick={() => fileInput.current?.click()}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M21 11.5l-8.6 8.6a5.5 5.5 0 01-7.8-7.8l8.6-8.6a3.7 3.7 0 015.2 5.2l-8.5 8.5a1.8 1.8 0 01-2.6-2.6l7.8-7.8" />
             </svg>
@@ -260,7 +260,7 @@ export function AgentPanel() {
           </button>
         </div>
       </form>
-      {dragging ? <div className="agent-drop" aria-hidden="true">Drop the PDF to attach it</div> : null}
+      {dragging ? <div className="agent-drop" aria-hidden="true">Drop the file to attach it</div> : null}
     </div>
   )
 }

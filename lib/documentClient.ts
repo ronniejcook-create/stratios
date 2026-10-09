@@ -65,3 +65,12 @@ export async function readUploadedDocument(id: string): Promise<{ ok: true } | {
   const result = await call(`/api/documents/${id}/read`, { method: 'POST' })
   return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'The document could not be read.' }
 }
+
+/** The file picker's filter: PDFs and Excel workbooks. */
+export const DOCUMENT_ACCEPT = 'application/pdf,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,.xlsm'
+
+/** Whether a chosen file is one that can be uploaded: a PDF or an Excel workbook (.xlsx). The server checks again. */
+export function canUpload(file: { name: string; type: string }): boolean {
+  return /\.(pdf|xlsx|xlsm)$/i.test(file.name) || file.type === 'application/pdf' || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+}
+export const CANNOT_UPLOAD = 'Only PDF files and Excel workbooks (.xlsx) can be read. Save an older .xls file as .xlsx first.'

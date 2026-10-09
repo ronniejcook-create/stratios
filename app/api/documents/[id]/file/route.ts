@@ -1,6 +1,6 @@
 import { withOrg } from '@/lib/db'
 import { fail, getCaller, NOT_SIGNED_IN } from '@/lib/documentRequests'
-import { getDocument, readDocumentFile } from '@/lib/documents'
+import { getDocument, readDocumentFile, WORKBOOK_TYPE } from '@/lib/documents'
 import { loadAccess } from '@/lib/permissions'
 import { isUuid } from '@/lib/records'
 
@@ -49,9 +49,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const asciiName = document.name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '')
   return new Response(stream, {
     headers: {
-      'content-type': 'application/pdf',
+      'content-type': document.kind === 'xlsx' ? WORKBOOK_TYPE : 'application/pdf',
       'content-length': String(file.length),
-      'content-disposition': `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(document.name)}`,
+      'content-disposition': `${document.kind === 'xlsx' ? 'attachment' : 'inline'}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(document.name)}`,
       'cache-control': 'private, no-store',
       'x-content-type-options': 'nosniff',
     },

@@ -224,7 +224,7 @@ export async function addDocumentRows(
   if (already.rows.length > 0) return 0
 
   const today = new Date().toISOString().slice(0, 10)
-  const author = document.name.replace(/\.pdf$/i, '').slice(0, 200)
+  const author = document.name.replace(/\.(pdf|xlsx|xlsm)$/i, '').slice(0, 200)
   const known = new Map<string, boolean>()
   let added = 0
   for (const row of rows) {

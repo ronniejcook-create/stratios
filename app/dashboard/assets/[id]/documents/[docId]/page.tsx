@@ -10,6 +10,7 @@ import { listScreens } from '@/lib/layout'
 import { listDocumentRows, listLists } from '@/lib/lists'
 import { loadAccess } from '@/lib/permissions'
 import { getAssetTree, isUuid, RECORD_LABELS } from '@/lib/records'
+import { rentRollOfDocument } from '@/lib/rentRolls'
 import { DecisionButtons, EntryRemoveButton, ProposalButtons, ReadButton, RemoveButton, ReviewNotices, ReviewSection } from './ReviewControls'
 
 export const dynamic = 'force-dynamic'
@@ -55,6 +56,7 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
         access: await loadAccess(client, orgId, userId, isAdmin),
         lists: await listLists(client, orgId),
         listRows: await listDocumentRows(client, orgId, docId),
+        rentRoll: await rentRollOfDocument(client, orgId, docId),
       }
     })
   } catch (error) {
@@ -70,7 +72,7 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
     )
   }
   if (!loaded) notFound()
-  const { document, tree, findings, proposals, fields, sections, sources, access, lists, listRows } = loaded
+  const { document, tree, findings, proposals, fields, sections, sources, access, lists, listRows, rentRoll } = loaded
 
   const fieldById = new Map(fields.map((field) => [field.id, field]))
   const sourceName = (key: string | null) => (key ? sources.find((source) => source.key === key)?.name ?? key : '')
@@ -110,7 +112,9 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
   })
 
   const pageLink = (page: number | null) =>
-    page === null ? null : canOpenFile ? (
+    page === null ? null : document.kind === 'xlsx' ? (
+      <span>Sheet {page}</span>
+    ) : canOpenFile ? (
       <a href={`${fileHref}#page=${page}`} target="_blank" rel="noreferrer">p. {page}</a>
     ) : (
       <span>p. {page}</span>
@@ -183,6 +187,12 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
               {entries.length > 0 ? ` It also added ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} to lists, shown under Added to Lists below.` : ''}
               {hiddenCount > 0 ? ` ${hiddenCount} more ${hiddenCount === 1 ? 'is for a field' : 'are for fields'} your role cannot see.` : ''}
             </p>
+            {rentRoll && canOpenFile ? (
+              <p className="note">
+                Its rent roll was saved as a snapshot of {rentRoll.rowCount} {rentRoll.rowCount === 1 ? 'row' : 'rows'}.{' '}
+                <Link href={`/dashboard/assets/${tree.id}?screen=_rentroll&rentRoll=${rentRoll.id}`}>Open Rent Roll</Link>
+              </p>
+            ) : null}
           </>
         ) : document.status === 'reading' && !document.stalled ? (
           <p className="note">The agent is reading this document. Reload this page in a minute or two.</p>

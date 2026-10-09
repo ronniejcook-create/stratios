@@ -9,7 +9,7 @@ import { createAssetWithDefaults } from './assets'
 import { withOrg } from './db'
 import { describeFailure, NO_PERMISSION, type Caller } from './documentRequests'
 import { applyReading, attachDocument, failReading, getDocument, readDocumentFile, startReading, type Outcome } from './documents'
-import { extractableFields, extractableLists, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField, type DocumentAddress, type Reading } from './extraction'
+import { extractableFields, extractableLists, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField, type DocumentAddress, type DocumentRentRoll, type Reading } from './extraction'
 import { listFields } from './fields'
 import { LOCATION_SOURCE, lookUpAddress } from './geocode'
 import { listScreens } from './layout'
@@ -19,6 +19,7 @@ import { extractPhotos } from './photoExtraction'
 import { joinSpreads } from './photoJoin'
 import { planPagesOf, saveDocumentPhotoNotes, savePhotosFromDocument, type PlanPage } from './photos'
 import { getAssetTree, insertAddress, type Queryable } from './records'
+import { saveRentRoll } from './rentRolls'
 import { loadSkillsForAgent } from './skills'
 
 export type ReadSuccess = {
@@ -38,6 +39,8 @@ export type ReadSuccess = {
   listRows: number
   /** Values the agent worked out from the document's figures, rather than found stated in it. */
   calculated: number
+  /** Rows of the rent roll saved as a dated snapshot; 0 when the document has no rent roll. */
+  rentRollRows: number
   /** Street addresses set on properties and buildings from the document. */
   addresses: number
   /** Photos copied out of the document onto the asset. */
@@ -57,7 +60,8 @@ const busyMessage = (status: string) =>
  * own step, and a failure here (including the photos table not existing yet)
  * never fails the reading. Returns how many photos were added.
  */
-async function addPhotos(caller: Caller, assetId: string, documentId: string, file: Buffer, reading: Reading): Promise<number> {
+async function addPhotos(caller: Caller, assetId: string, documentId: string, file: Buffer, reading: Reading, kind: string = 'pdf'): Promise<number> {
+  if (kind !== 'pdf') return 0 // a workbook has no photographs to copy out
   // Kept on the document so plan pages can be added later too. On its own, because the column may not exist yet (migration 014).
   await withOrg(caller.orgId, (client) => saveDocumentPhotoNotes(client, caller.orgId, documentId, reading.photos)).catch((error) => console.error('Saving photo notes failed', error))
   try {
@@ -91,6 +95,41 @@ async function addListRows(client: Queryable, caller: Caller, document: { id: st
   } catch (error) {
     console.error('Adding list entries from a document failed; continuing without them', error)
     await client.query('rollback to savepoint list_rows').catch(() => {})
+    return 0
+  }
+}
+
+/**
+ * Saves the document's rent roll as a dated snapshot of its property. An
+ * extra, like the list entries: behind a savepoint, so a failure here (or
+ * migration 019 not run yet) never fails the reading. Returns the rows saved.
+ */
+async function addRentRoll(client: Queryable, caller: Caller, assetId: string, document: { id: string; name: string }, rentRoll: DocumentRentRoll | null): Promise<number> {
+  if (!rentRoll || rentRoll.rows.length === 0) return 0
+  try {
+    await client.query('savepoint rent_roll')
+  } catch {
+    return 0
+  }
+  try {
+    const owned = await client.query('select 1 as found from properties where id = $1 and org_id = $2 and asset_id = $3', [rentRoll.recordId, caller.orgId, assetId])
+    if (owned.rows.length === 0) {
+      await client.query('release savepoint rent_roll')
+      return 0
+    }
+    await saveRentRoll(client, caller.orgId, caller.userId, {
+      assetId,
+      propertyId: rentRoll.recordId,
+      document,
+      asOfDate: rentRoll.asOfDate,
+      stated: rentRoll.stated,
+      rows: rentRoll.rows,
+    })
+    await client.query('release savepoint rent_roll')
+    return rentRoll.rows.length
+  } catch (error) {
+    console.error('Saving a rent roll from a document failed; continuing without it', error)
+    await client.query('rollback to savepoint rent_roll').catch(() => {})
     return 0
   }
 }
@@ -193,16 +232,17 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
   const { document, tree } = prepared
   if (!prepared.file) return giveUp(caller, documentId, 'The file for this document is missing. Upload it again.', 500)
 
-  const result = await readDocument({ file: prepared.file, documentName: document.name, records: recordsOf(tree), fields: prepared.fields, lists: prepared.lists, skills: prepared.skills, timeoutMs })
+  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records: recordsOf(tree), fields: prepared.fields, lists: prepared.lists, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
 
   try {
-    const { counts, listRows } = await withOrg(orgId, async (client) => {
+    const { counts, listRows, rentRollRows } = await withOrg(orgId, async (client) => {
       const applied = await applyReading(client, orgId, userId, { id: documentId, name: document.name }, result.reading)
-      return { counts: applied, listRows: await addListRows(client, caller, { id: documentId, name: document.name }, result.reading.rows) }
+      const entries = await addListRows(client, caller, { id: documentId, name: document.name }, result.reading.rows)
+      return { counts: applied, listRows: entries, rentRollRows: await addRentRoll(client, caller, tree.id, { id: documentId, name: document.name }, result.reading.rentRoll) }
     })
     const addresses = await addAddresses(caller, tree.id, result.reading.addresses)
-    const photos = await addPhotos(caller, tree.id, documentId, prepared.file, result.reading)
+    const photos = await addPhotos(caller, tree.id, documentId, prepared.file, result.reading, document.kind)
     return {
       ok: true,
       assetId: tree.id,
@@ -217,6 +257,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       skipped: result.reading.skipped,
       listRows,
       calculated: result.reading.candidates.filter((candidate) => candidate.basis === 'calculated').length,
+      rentRollRows,
       addresses,
       photos,
       planPages: planPagesOf(result.reading.photos),
@@ -258,10 +299,10 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
   const { document } = prepared
   if (!prepared.file) return giveUp(caller, documentId, 'The file for this document is missing. Upload it again.', 500)
 
-  const result = await readDocument({ file: prepared.file, documentName: document.name, records: newAssetRecords(), fields: prepared.fields, lists: prepared.lists, newAsset: true, skills: prepared.skills, timeoutMs })
+  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records: newAssetRecords(), fields: prepared.fields, lists: prepared.lists, newAsset: true, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
   const described = result.newAsset
-  const name = (described?.name || document.name.replace(/\.pdf$/i, '')).slice(0, 200)
+  const name = (described?.name || document.name.replace(/\.(pdf|xlsx|xlsm)$/i, '')).slice(0, 200)
 
   try {
     const created = await withOrg(orgId, async (client) => {
@@ -279,9 +320,11 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         proposals: result.reading.proposals.map((proposal) => ({ ...proposal, recordId: real[proposal.recordId] ?? proposal.recordId })),
         rows: result.reading.rows.map((row) => ({ ...row, recordId: real[row.recordId] ?? row.recordId })),
         addresses: result.reading.addresses.map((address) => ({ ...address, recordId: real[address.recordId] ?? address.recordId })),
+        rentRoll: result.reading.rentRoll ? { ...result.reading.rentRoll, recordId: real[result.reading.rentRoll.recordId] ?? result.reading.rentRoll.recordId } : null,
       }
       const counts = await applyReading(client, orgId, userId, { id: documentId, name: document.name }, reading)
       const listRows = await addListRows(client, caller, { id: documentId, name: document.name }, reading.rows)
+      const rentRollRows = await addRentRoll(client, caller, assetId, { id: documentId, name: document.name }, reading.rentRoll)
       return {
         ok: true as const,
         assetId,
@@ -296,6 +339,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         skipped: reading.skipped,
         listRows,
         calculated: reading.candidates.filter((candidate) => candidate.basis === 'calculated').length,
+        rentRollRows,
         addresses: 0,
         found: reading.addresses,
         photos: 0,
@@ -304,7 +348,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
     })
     const { found, ...success } = created
     const addresses = await addAddresses(caller, created.assetId, found)
-    return { ...success, addresses, photos: await addPhotos(caller, created.assetId, documentId, prepared.file, result.reading) }
+    return { ...success, addresses, photos: await addPhotos(caller, created.assetId, documentId, prepared.file, result.reading, document.kind) }
   } catch (error) {
     console.error('Creating an asset from a document failed', error)
     return giveUp(caller, documentId, describeFailure(error, 'The asset could not be created from this document. Try again.'), 500)

@@ -640,6 +640,54 @@ work and how data is isolated; this file covers how we work and where things sta
       the scratch database with a scripted answer. Not run against the real Claude API, so
       the agent's arithmetic on a real rent roll is untested; the review page chip was not
       opened in a browser.
+  - **Stage 6, first part: rent rolls, and Excel files** (October 9, late;
+    `db/migrations/019_rent_rolls.sql`). Ronnie's decisions: focus on rent rolls; they come as
+    PDF and Excel; each one loaded is a **dated snapshot** (a later one never changes an
+    earlier one). Built against his Knoll Trail Crossing rent roll (an Argus export: suite,
+    tenant, leased SF, lease start and end as month-year, base rent per SF, annual and monthly
+    rent, rent escalations, recovery type; vacant rows marked "*Available" and "(STATIC)";
+    totals of leased, available, static and total SF; **no as of date anywhere**).
+    - Tables: `rent_rolls` (asset, property, document, `as_of_date`, `as_of_stated`, the
+      document's own totals) and `rent_roll_rows` (suite, tenant, status leased / vacant /
+      other, square feet, lease dates, rent per SF, annual and monthly rent, recovery type,
+      note, `steps` as JSON, page). Deleting the asset deletes them (cascade); removing the
+      document keeps the snapshot. `lib/rentRolls.ts` holds all reads and writes and
+      `summarize` (plain sums, browser-safe). The floors and units tables are not used.
+    - Reading: the answer format gained `rent_roll` (property, as of date, the document's
+      totals, rows with steps; up to 250 rows, 12 steps a row). The agent copies the table as
+      shown and never works out a cell; month-year dates become the first day (start, step) or
+      last day (end). `interpretRentRoll` drops empty lines and leaves a bad cell empty. A
+      memorandum that contains a rent roll table gets a snapshot too. `addRentRoll` in
+      `lib/documentReading.ts` saves it in the same step as the reading, behind a savepoint
+      (so it is skipped quietly before 019 is run). No date in the document: the day it is
+      loaded is used and the snapshot is marked as assumed. Reading the same document again
+      replaces its snapshot. The answer limit is now 28,000 tokens.
+    - Screen: a **Rent Roll** tab on the asset (key `_rentroll`, before Map;
+      `RentRollPanel.tsx`): snapshot picker (`?rentRoll=<id>`, latest date first), Change Date,
+      Remove Rent Roll, tiles added up from the rows (total, leased with percent, vacant, not
+      for lease, tenants, annual base rent), a warning when the document's own total differs
+      from the rows, and the rows in `DataGrid`. The review page links to the snapshot, and the
+      analyst's reply has an Open Rent Roll button. The tab is shown only to people with
+      `access.canAddRecords`, like a document's file, because rents and tenants are not
+      covered by field permissions. Rows can't be edited or added by hand yet.
+    - KPIs from a rent roll still come from the reading itself (stage 5: as shown, or
+      calculated by the Reading a Rent Roll skill). Nothing recalculates from the stored rows
+      yet, and two snapshots can't be compared side by side.
+    - **Excel**: `.xlsx` and `.xlsm` can be uploaded anywhere a PDF can (`documentKind`,
+      `DocumentRecord.kind`; the file must start like a zip). `lib/spreadsheet.ts` reads the
+      workbook with Node's zlib, no library added: every sheet as text, rows as tab-separated
+      cells, dates and percentages as a person sees them, values not formulas (a file saved by
+      a tool that never calculated its formulas shows those cells empty). The agent gets that
+      text instead of a PDF; "page" means sheet number. Old `.xls` is refused with a message to
+      save as .xlsx. No photos are taken from a workbook. Limits: 300,000 characters, 5,000
+      rows a sheet, 20 sheets.
+    - Checked: 019 twice as a role without BYPASSRLS; the workbook reader on a workbook made
+      with openpyxl; upload checks, the reading with a scripted answer through
+      `readIntoAsset`, snapshots, dates, replacement, isolation and deletion on the scratch
+      database; the real panel clicked through in Chromium with stand-in rows. **Not run
+      against the real Claude API**: whether the agent copies all of his 60-odd rows correctly
+      and in time, and whether the larger answer format is accepted, shows on his first try.
+      A real Excel file from Excel itself was not tried.
   - Not built yet (later stages): stored formulas
     (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

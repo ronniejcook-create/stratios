@@ -10,11 +10,13 @@ import { listScreens, type Screen, type Section } from '@/lib/layout'
 import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from '@/lib/lists'
 import type { MapPin } from '@/components/PropertyMap'
 import { typeAheadEnabled } from '@/lib/googlePlaces'
+import { listRentRollRows, listRentRolls, type RentRollRow } from '@/lib/rentRolls'
 import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
 import { AddAddressForm, AddChildForm, AddressList } from './AddForms'
 import { AssetMap } from './AssetMap'
 import { listPhotos, listPlanPages, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo, type PlanPage } from '@/lib/photos'
+import { RentRollPanel, type RentRollChoice } from './RentRollPanel'
 import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
 import { PhotosPanel, type PhotoRow } from './PhotosPanel'
 import { FieldGroup, type FieldView, type Target } from './FieldGroup'
@@ -54,13 +56,13 @@ export default async function AssetPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ screen?: string }>
+  searchParams: Promise<{ screen?: string; rentRoll?: string }>
 }) {
   const { orgId, userId, orgRole } = await auth()
   if (!orgId || !userId) return null // the layout redirects before this renders
   const isAdmin = orgRole === 'org:admin'
   const { id } = await params
-  const { screen: screenKey } = await searchParams
+  const { screen: screenKey, rentRoll: rentRollParam } = await searchParams
   if (!isDatabaseConfigured()) notFound()
 
   let loaded: Loaded | null = null
@@ -107,6 +109,39 @@ export default async function AssetPage({
       contents = await withOrg(orgId, (client) => getAssetContents(client, orgId, tree.id))
     } catch (error) {
       console.error('Counting the asset contents failed', error)
+    }
+  }
+
+  // Rent rolls, on their own as well. Like a document's file, a rent roll shows rents and tenants whatever a
+  // role's field rules say, so only people who may add documents (administrators and roles that can edit) see it.
+  let rentRollChoices: RentRollChoice[] = []
+  let rentRollRows: RentRollRow[] = []
+  let rentRollSelected: string | null = null
+  let rentRollError: string | null = null
+  if (access.canAddRecords) {
+    try {
+      const found = await withOrg(orgId, async (client) => {
+        const all = await listRentRolls(client, orgId, tree.id)
+        const chosen = all.find((rentRoll) => rentRoll.id === rentRollParam) ?? all[0] ?? null
+        return { all, chosen, rows: chosen ? await listRentRollRows(client, orgId, chosen.id) : [] }
+      })
+      rentRollChoices = found.all.map((rentRoll) => ({
+        id: rentRoll.id,
+        asOfDate: rentRoll.asOfDate,
+        asOfStated: rentRoll.asOfStated,
+        propertyName: tree.properties.find((property) => property.id === rentRoll.propertyId)?.name ?? '',
+        documentId: rentRoll.documentId,
+        documentName: rentRoll.documentName,
+        rowCount: rentRoll.rowCount,
+        stated: rentRoll.stated,
+      }))
+      rentRollRows = found.rows
+      rentRollSelected = found.chosen?.id ?? null
+    } catch (error) {
+      console.error('Listing rent rolls failed', error)
+      rentRollError = isMissingSchema(error)
+        ? 'Rent rolls need a database update: run db/migrations/019_rent_rolls.sql, then reload this page.'
+        : 'The rent rolls could not be loaded. Try again.'
     }
   }
 
@@ -449,6 +484,30 @@ export default async function AssetPage({
       <ScreenTabs
         screens={[
           ...screens.map((screen, index) => ({ key: screen.key, name: screen.name, content: screenContent(screen, index === 0) })),
+          ...(access.canAddRecords
+            ? [
+                {
+                  key: '_rentroll',
+                  name: 'Rent Roll',
+                  content: rentRollError ? (
+                    <section className="panel notice">
+                      <h2>Rent Roll</h2>
+                      <p>{rentRollError}</p>
+                    </section>
+                  ) : (
+                    <RentRollPanel
+                      key={rentRollSelected ?? 'none'}
+                      assetId={tree.id}
+                      choices={rentRollChoices}
+                      selectedId={rentRollSelected}
+                      rows={rentRollRows}
+                      canEdit={access.canAddRecords}
+                      severalProperties={tree.properties.length > 1}
+                    />
+                  ),
+                },
+              ]
+            : []),
           {
             key: '_map',
             name: 'Map',

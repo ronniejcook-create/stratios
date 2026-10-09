@@ -18,6 +18,20 @@ export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
 /** The size of one upload piece: under the web host's limit of about 4.5 MB per request. */
 export const CHUNK_BYTES = 3 * 1024 * 1024
 export const DOCUMENT_TYPE = 'application/pdf'
+/** Kept in step with XLSX_TYPE in lib/spreadsheet.ts, which is not imported here so this file stays usable in the browser. */
+export const WORKBOOK_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+/** The kinds of file that can be uploaded: a PDF, or an Excel workbook (.xlsx). */
+export type DocumentKind = 'pdf' | 'xlsx'
+
+/** What kind of file this is, going by its name first and its type second. Null when it can't be uploaded. */
+export function documentKind(name: string, contentType: string): DocumentKind | null {
+  if (/\.pdf$/i.test(name)) return 'pdf'
+  if (/\.xls[xm]$/i.test(name)) return 'xlsx'
+  if (contentType === DOCUMENT_TYPE) return 'pdf'
+  if (contentType === WORKBOOK_TYPE) return 'xlsx'
+  return null
+}
+export const UNSUPPORTED_FILE = 'Only PDF files and Excel workbooks (.xlsx) can be uploaded. Save an older .xls file as .xlsx first.'
 
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string }
 
@@ -28,6 +42,7 @@ export type DocumentRecord = {
   /** Null while the document has been handed to the agent but not yet tied to an asset. */
   assetId: string | null
   name: string
+  kind: DocumentKind
   sizeBytes: number
   chunkCount: number
   status: DocumentStatus
@@ -41,7 +56,7 @@ export type DocumentRecord = {
   stalled: boolean
 }
 
-const DOCUMENT_COLUMNS = `id::text as id, asset_id::text as asset_id, name, size_bytes::float8 as size_bytes, chunk_count, status, error,
+const DOCUMENT_COLUMNS = `id::text as id, asset_id::text as asset_id, name, content_type, size_bytes::float8 as size_bytes, chunk_count, status, error,
   document_type, summary, uploaded_by,
   to_char(uploaded_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as uploaded_at,
   to_char(read_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as read_at,
@@ -53,6 +68,7 @@ function toDocument(row: any): DocumentRecord {
     id: row.id,
     assetId: row.asset_id ?? null,
     name: row.name,
+    kind: row.content_type === WORKBOOK_TYPE ? 'xlsx' : 'pdf',
     sizeBytes: Number(row.size_bytes),
     chunkCount: Number(row.chunk_count),
     status: row.status,
@@ -79,7 +95,8 @@ export async function createDocument(
 ): Promise<Result<{ id: string; chunkCount: number }>> {
   const name = input.name.replace(/[\\/]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
   if (!name) return { ok: false, error: 'The file needs a name.' }
-  if (input.contentType !== DOCUMENT_TYPE && !/\.pdf$/i.test(name)) return { ok: false, error: 'Only PDF files can be uploaded for now.' }
+  const kind = documentKind(name, input.contentType)
+  if (!kind) return { ok: false, error: UNSUPPORTED_FILE }
   if (!Number.isInteger(input.sizeBytes) || input.sizeBytes <= 0) return { ok: false, error: 'That file is empty.' }
   if (input.sizeBytes > MAX_DOCUMENT_BYTES) return { ok: false, error: `That file is too large. The limit is ${MAX_DOCUMENT_BYTES / 1024 / 1024} MB.` }
   if (input.assetId !== null && !(await recordExists(client, orgId, 'asset', input.assetId))) return { ok: false, error: 'That asset could not be found.' }
@@ -87,7 +104,7 @@ export async function createDocument(
   const { rows } = await client.query(
     `insert into documents (org_id, asset_id, name, content_type, size_bytes, chunk_count, uploaded_by)
      values ($1, $2, $3, $4, $5, $6, $7) returning id::text as id`,
-    [orgId, input.assetId, name, DOCUMENT_TYPE, input.sizeBytes, chunkCount, userId],
+    [orgId, input.assetId, name, kind === 'xlsx' ? WORKBOOK_TYPE : DOCUMENT_TYPE, input.sizeBytes, chunkCount, userId],
   )
   return { ok: true, id: rows[0].id, chunkCount }
 }
@@ -113,10 +130,10 @@ export async function saveChunk(client: Queryable, orgId: string, userId: string
   return { ok: true }
 }
 
-/** Finishes an upload once every piece has arrived and the file is a real PDF. */
+/** Finishes an upload once every piece has arrived and the file really is what its name says: a PDF, or a workbook. */
 export async function completeUpload(client: Queryable, orgId: string, userId: string, documentId: string): Promise<Result> {
   const { rows } = await client.query(
-    `select d.chunk_count, d.size_bytes::float8 as size_bytes,
+    `select d.chunk_count, d.size_bytes::float8 as size_bytes, d.content_type,
             (select count(*)::int from document_chunks c where c.document_id = d.id) as chunks,
             (select coalesce(sum(length(c.data)), 0)::float8 from document_chunks c where c.document_id = d.id) as bytes,
             (select encode(substring(c.data from 1 for 5), 'escape') from document_chunks c where c.document_id = d.id and c.chunk_index = 0) as head
@@ -129,9 +146,11 @@ export async function completeUpload(client: Queryable, orgId: string, userId: s
   if (Number(row.chunks) !== Number(row.chunk_count) || Number(row.bytes) !== Number(row.size_bytes)) {
     return { ok: false, error: 'The upload did not finish. Try uploading the file again.' }
   }
-  if (!String(row.head ?? '').startsWith('%PDF')) {
+  // A PDF starts with "%PDF"; an .xlsx workbook is a zip file, which starts with "PK".
+  const workbook = row.content_type === WORKBOOK_TYPE
+  if (!String(row.head ?? '').startsWith(workbook ? 'PK' : '%PDF')) {
     await client.query('delete from documents where id = $1 and org_id = $2', [documentId, orgId])
-    return { ok: false, error: 'That file is not a PDF.' }
+    return { ok: false, error: workbook ? 'That file is not an Excel workbook (.xlsx). An older .xls file needs to be saved as .xlsx first.' : 'That file is not a PDF.' }
   }
   await client.query(`update documents set status = 'uploaded' where id = $1 and org_id = $2`, [documentId, orgId])
   return { ok: true }
