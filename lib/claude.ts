@@ -75,3 +75,45 @@ export async function askClaudeWith(
 export async function askClaude(apiKey: string, prompt: string, schema: object): Promise<Answer> {
   return askClaudeWith(apiKey, prompt, schema)
 }
+
+export type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }
+export type ChatMessage = { role: 'user' | 'assistant'; content: string | ContentBlock[] }
+export type ToolDefinition = { name: string; description: string; input_schema: object }
+
+/**
+ * One step of a conversation in which Claude may ask to use tools. Returns
+ * what Claude said and any tools it wants run; the caller runs them and calls
+ * again with the results (see lib/agent.ts).
+ */
+export async function converse(
+  apiKey: string,
+  input: { system: string; messages: ChatMessage[]; tools: ToolDefinition[]; maxTokens?: number; timeoutMs?: number },
+): Promise<{ content: ContentBlock[]; stopReason: string }> {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    signal: AbortSignal.timeout(input.timeoutMs ?? 60000),
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      ...(process.env.ANTHROPIC_WORKSPACE_ID ? { 'anthropic-workspace-id': process.env.ANTHROPIC_WORKSPACE_ID.trim() } : {}),
+    },
+    body: JSON.stringify({
+      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
+      max_tokens: input.maxTokens ?? 2000,
+      system: input.system,
+      messages: input.messages,
+      tools: input.tools,
+    }),
+  })
+  if (!response.ok) {
+    const error = describeApiError(response.status, await response.text().catch(() => ''))
+    console.error('Claude request failed:', error)
+    throw new ApiError(error)
+  }
+  const data = (await response.json()) as { content?: ContentBlock[]; stop_reason?: string }
+  return { content: Array.isArray(data.content) ? data.content : [], stopReason: data.stop_reason ?? 'unknown' }
+}

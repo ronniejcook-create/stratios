@@ -9,8 +9,9 @@ export async function POST(request: Request) {
   const caller = await getCaller()
   if (!caller) return fail(NOT_SIGNED_IN, 401)
   const body = (await request.json().catch(() => null)) as { assetId?: unknown; name?: unknown; size?: unknown; type?: unknown } | null
-  const assetId = String(body?.assetId ?? '')
-  if (!body || !isUuid(assetId)) return fail('That asset could not be found.')
+  // No asset means the file is being handed to the agent, which ties it to an asset later.
+  const assetId = body?.assetId === null || body?.assetId === undefined ? null : String(body.assetId)
+  if (!body || (assetId !== null && !isUuid(assetId))) return fail('That asset could not be found.')
 
   try {
     const result = await withOrg(caller.orgId, async (client) => {

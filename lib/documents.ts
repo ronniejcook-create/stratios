@@ -25,7 +25,8 @@ export type DocumentStatus = 'uploading' | 'uploaded' | 'reading' | 'read' | 'fa
 
 export type DocumentRecord = {
   id: string
-  assetId: string
+  /** Null while the document has been handed to the agent but not yet tied to an asset. */
+  assetId: string | null
   name: string
   sizeBytes: number
   chunkCount: number
@@ -50,7 +51,7 @@ const DOCUMENT_COLUMNS = `id::text as id, asset_id::text as asset_id, name, size
 function toDocument(row: any): DocumentRecord {
   return {
     id: row.id,
-    assetId: row.asset_id,
+    assetId: row.asset_id ?? null,
     name: row.name,
     sizeBytes: Number(row.size_bytes),
     chunkCount: Number(row.chunk_count),
@@ -74,14 +75,14 @@ export async function createDocument(
   client: Queryable,
   orgId: string,
   userId: string,
-  input: { assetId: string; name: string; sizeBytes: number; contentType: string },
+  input: { assetId: string | null; name: string; sizeBytes: number; contentType: string },
 ): Promise<Result<{ id: string; chunkCount: number }>> {
   const name = input.name.replace(/[\\/]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
   if (!name) return { ok: false, error: 'The file needs a name.' }
   if (input.contentType !== DOCUMENT_TYPE && !/\.pdf$/i.test(name)) return { ok: false, error: 'Only PDF files can be uploaded for now.' }
   if (!Number.isInteger(input.sizeBytes) || input.sizeBytes <= 0) return { ok: false, error: 'That file is empty.' }
   if (input.sizeBytes > MAX_DOCUMENT_BYTES) return { ok: false, error: `That file is too large. The limit is ${MAX_DOCUMENT_BYTES / 1024 / 1024} MB.` }
-  if (!(await recordExists(client, orgId, 'asset', input.assetId))) return { ok: false, error: 'That asset could not be found.' }
+  if (input.assetId !== null && !(await recordExists(client, orgId, 'asset', input.assetId))) return { ok: false, error: 'That asset could not be found.' }
   const chunkCount = Math.ceil(input.sizeBytes / CHUNK_BYTES)
   const { rows } = await client.query(
     `insert into documents (org_id, asset_id, name, content_type, size_bytes, chunk_count, uploaded_by)
@@ -173,6 +174,15 @@ export async function listDocuments(client: Queryable, orgId: string, assetId: s
     }
     return { ...document, counts, undecided, proposals: Number(proposals.rows.find((row) => row.document_id === document.id)?.total ?? 0) }
   })
+}
+
+/** Ties a document that has no asset yet to one. Returns false if it already belongs to an asset. */
+export async function attachDocument(client: Queryable, orgId: string, documentId: string, assetId: string): Promise<boolean> {
+  const { rows } = await client.query(
+    'update documents set asset_id = $3 where id = $1 and org_id = $2 and asset_id is null returning id::text as id',
+    [documentId, orgId, assetId],
+  )
+  return rows.length > 0
 }
 
 /** The whole file, put back together from its pieces. */
@@ -503,7 +513,7 @@ export async function getOpenFinding(client: Queryable, orgId: string, findingId
   const { rows } = await client.query(
     `select f.document_id::text as document_id, d.name as document_name, d.asset_id::text as asset_id
      from document_findings f join documents d on d.id = f.document_id
-     where f.id = $1 and f.org_id = $2 and f.outcome = 'decision' and f.decision is null
+     where f.id = $1 and f.org_id = $2 and f.outcome = 'decision' and f.decision is null and d.asset_id is not null
      for update of f`,
     [findingId, orgId],
   )
@@ -547,7 +557,7 @@ export async function getOpenProposal(client: Queryable, orgId: string, proposal
   const { rows } = await client.query(
     `select p.document_id::text as document_id, d.name as document_name, d.asset_id::text as asset_id
      from field_proposals p join documents d on d.id = p.document_id
-     where p.id = $1 and p.org_id = $2 and p.status = 'proposed'
+     where p.id = $1 and p.org_id = $2 and p.status = 'proposed' and d.asset_id is not null
      for update of p`,
     [proposalId, orgId],
   )

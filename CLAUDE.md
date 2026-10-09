@@ -66,7 +66,7 @@ work and how data is isolated; this file covers how we work and where things sta
   saves a dark theme, and lands the person on Admin Settings.
 - Signed-in workspace (Framer-style): `components/AppShell.tsx` with left nav (`SideNav.tsx`:
   Portfolio, and Admin Settings for `org:admin` only) and a right AI Agents column
-  (`AgentPanel.tsx`, Portfolio Analyst marked "Coming soon"). Header reads
+  (`AgentPanel.tsx`, the Portfolio Analyst chat). Header reads
   "Stratios *for Org name*" with a drop-down only when the user belongs to more than one org.
 - Data design: agreed in the Claude Doc "Stratios Data Design" (two tabs: the design, and the
   starter fields). Read it before touching the data model. Stage 1 of its build order is built:
@@ -91,8 +91,8 @@ work and how data is isolated; this file covers how we work and where things sta
     in any section show under "Other Fields" on the first screen.
   - Click-to-reference: clicking a field's name or a list row's number adds its permanent address
     (`property:key.fieldKey@2026-03`, `asset:key.comments[2]`) to the agent column
-    (`components/AgentContext.tsx`, provided by `AppShell`, shown in `AgentPanel`). The analyst
-    itself is still not connected.
+    (`components/AgentContext.tsx`, provided by `AppShell`, shown in `AgentPanel`) and is sent to
+    the analyst with each message.
   - Field keys are unique within a record type, so list columns carry their list in the key
     (`commentDate`, `criticalDateType`).
   - Standard rows have org_id null. Migrations lift FORCE row-level security on the dictionary
@@ -203,6 +203,30 @@ work and how data is isolated; this file covers how we work and where things sta
     - Checked here: migrations on a scratch database, and upload, rules, decisions and proposed
       fields through `lib/documents.ts` with a psql stand-in client (all passed). The API routes,
       the screens and the Claude call itself could not be run here.
+  - **The agent column is a chat** (October 8, late; `db/migrations/009_agent_documents.sql`).
+    Ronnie wanted the agent used the way he chats with Claude: type a request, drag a file in.
+    The scripted end-to-end test passed; it has not been tried against the real Claude API.
+    - `components/AgentPanel.tsx`: message thread, composer (Enter sends, Shift+Enter new line),
+      paperclip and drag-and-drop for PDFs anywhere on the column. Dropped files upload at once
+      with **no asset** (`documents.asset_id` is now nullable) and go with the next message. The
+      conversation lives in browser memory only: it survives moving between pages but not a
+      reload, and nothing is stored. Replies are rendered with `toHtml` (escaped).
+    - `POST /api/agent` -> `lib/agent.ts` (`runAgent`): a Claude tool loop (`converse` in
+      `lib/claude.ts`, up to 6 steps, 285 s budget). Tools, all run as the signed-in person with
+      their permissions: `create_asset_from_document`, `read_document_into_asset`,
+      `create_asset`, `list_assets`, `get_asset` (drops fields the person can't see). The server
+      returns buttons (Open <asset>, Review What Was Found) beside the text; the model is told
+      not to write links or ids.
+    - `lib/documentReading.ts` holds the reading logic shared with the Documents tab:
+      `readIntoAsset` and `createAssetFromDocument` (one Claude call returns the asset's name,
+      property type and city plus all values against stand-in records, the asset is created with
+      `createAssetWithDefaults`, then the values go through the usual rules and review list).
+    - Browser helpers moved to `lib/documentClient.ts`. The page's asset id (from the URL) and the
+      clicked field references are sent as context with each message.
+    - Not built: saving conversations, streaming replies, asking questions about a document's
+      contents without filling fields, multi-property documents (only the main property is
+      created), and any tool beyond the five above. Files dropped but never sent stay in the
+      database with no asset (no clean-up yet).
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
@@ -232,8 +256,9 @@ visible (stage 4 is described below): the asset hierarchy and fields, screens/se
 Fields and Layout admin, roles and field permissions, and the Master Library. Migrations 003 to
 007 have been run on Supabase. He chose to spend time trying what is built before going further.
 
-Stage 4 (document upload and the extraction agent) was built late on October 8 and pushed. Ronnie
-needs to run `008_documents.sql` on Supabase and then try it with a real PDF; expect fixes, since
+Stage 4 (document upload and the extraction agent) and the chat in the agent column were built
+late on October 8 and pushed. Ronnie needs to run `008_documents.sql` and `009_agent_documents.sql`
+on Supabase and then try it with a real PDF, by dropping it on the agent column; expect fixes, since
 the upload routes, the screens and the Claude call were not run before delivery. Next after that:
 stage 5 AI skills that calculate and store KPIs (two open questions in the design document must be
 answered first), then stage 6 tenants, leases, rent roll, cash flow and feeds.
@@ -253,7 +278,7 @@ Things not yet verified or still owed:
 
 ## Ideas offered but not started
 
-- Wire up the Portfolio Analyst agent.
+- Give the Portfolio Analyst more tools (edit a value, portfolio-wide questions), saved conversations and streaming.
 - Move document files from Postgres to Supabase Storage if they grow.
 - A read-only member list for non-admins.
 - Before real customer data: a restricted database role without BYPASSRLS, production Clerk and

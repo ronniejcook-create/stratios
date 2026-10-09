@@ -113,7 +113,7 @@ export async function deleteDocument(input: { documentId: string }): Promise<Act
       return { ok: true as const, assetId: document.assetId }
     })
     if (!result.ok) return result
-    revalidatePath(`/dashboard/assets/${result.assetId}`)
+    if (result.assetId) revalidatePath(`/dashboard/assets/${result.assetId}`)
     return { ok: true }
   } catch (error) {
     console.error('deleteDocument failed', error)

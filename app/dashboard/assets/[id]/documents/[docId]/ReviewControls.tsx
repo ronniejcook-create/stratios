@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AiIcon } from '@/components/AiIcon'
 import { decideValue, deleteDocument, settleProposedField, type ActionResult } from '../actions'
-import { readUploadedDocument } from '../requests'
+import { readUploadedDocument } from '@/lib/documentClient'
 
 /** Runs one action, shows its error or message, and reloads the list when it works. */
 function useAction() {

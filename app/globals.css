@@ -311,7 +311,7 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 
 /* Signed-in workspace: top bar, navigation (left), page, AI agents (right) */
 .shell {
-  --nav-width: 240px; --agent-width: 320px;
+  --nav-width: 240px; --agent-width: 360px;
   height: 100vh; display: grid;
   grid-template-columns: var(--nav-width) minmax(0, 1fr) var(--agent-width);
   grid-template-rows: 52px minmax(0, 1fr);
@@ -363,32 +363,72 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 .side-link.active svg { color: var(--link); }
 .side-empty { padding: 0 8px; font-size: 14px; color: var(--muted); }
 
-/* AI agents panel */
-.agent-panel { height: 100%; display: flex; flex-direction: column; gap: 14px; padding: 12px; }
-.agent-tabs { display: flex; gap: 4px; }
-.agent-tab { padding: 6px 10px; border-radius: 6px; font-size: 14px; font-weight: 600; color: var(--muted); }
-.agent-tab.active { background: var(--panel); color: var(--heading); }
+/* AI agents panel: a chat with the analyst */
+.agent-panel { position: relative; height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; }
 .agent-picker {
-  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px;
+  flex: none; display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 6px; color: var(--heading); font-size: 15px; font-weight: 500;
 }
 .agent-picker .ai-icon { color: var(--link); }
-.agent-badge {
-  margin-left: auto; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 500;
-  background: var(--bg); color: var(--muted); border: 1px solid var(--line);
-}
+.agent-picker .agent-new { margin-left: auto; min-height: 0; font-size: 12px; }
+.agent-thread { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; scrollbar-width: none; }
+.agent-thread::-webkit-scrollbar { display: none; }
 .agent-empty {
-  flex: 1; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+  padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
   display: flex; flex-direction: column; gap: 10px; font-size: 14px; color: var(--muted);
 }
 .agent-empty-title { color: var(--heading); font-weight: 600; font-size: 15px; }
 .agent-empty ul { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-.agent-empty li { padding: 8px 10px; border-radius: 6px; background: var(--bg); color: var(--text); }
-.agent-composer {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 0 8px 0 14px;
-  border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--muted); font-size: 14px; opacity: 0.7;
+.agent-empty li button {
+  width: 100%; padding: 8px 10px; border: 0; border-radius: 6px; background: var(--bg); color: var(--text);
+  font: inherit; font-size: 14px; text-align: left; cursor: pointer;
 }
-.agent-send { width: 32px; height: 32px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg); }
+.agent-empty li button:hover { color: var(--heading); }
+.agent-message { max-width: 100%; padding: 9px 12px; border-radius: 10px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 6px; }
+.agent-user { align-self: flex-end; max-width: 92%; background: var(--line); color: var(--heading); white-space: pre-wrap; }
+.agent-assistant { align-self: stretch; background: var(--panel); border: 1px solid var(--line); color: var(--text); }
+.agent-failed { border-color: var(--danger); color: var(--danger); }
+.agent-text > :first-child { margin-top: 0; }
+.agent-text > :last-child { margin-bottom: 0; }
+.agent-text p, .agent-text ul, .agent-text ol { margin: 0 0 8px; }
+.agent-text ul, .agent-text ol { padding-left: 18px; }
+.agent-text strong { color: var(--heading); font-weight: 600; }
+.agent-text h3, .agent-text h4, .agent-text h5 { margin: 8px 0 4px; font-size: 14px; font-weight: 600; color: var(--heading); }
+.agent-text code { font-family: ui-monospace, monospace; font-size: 12px; }
+.agent-file { align-self: flex-start; max-width: 100%; padding: 2px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line-strong); font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.agent-links .btn { min-height: 30px; padding: 0 10px; font-size: 13px; text-decoration: none; }
+.agent-working { flex-direction: row; align-items: center; gap: 10px; color: var(--muted); }
+.agent-dots { display: inline-flex; gap: 4px; flex: none; }
+.agent-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--link); animation: agent-dot 1.2s ease-in-out infinite; }
+.agent-dots span:nth-child(2) { animation-delay: 0.15s; }
+.agent-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes agent-dot { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .agent-dots span { animation: none; opacity: 0.7; } }
+.agent-composer {
+  flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel);
+}
+.agent-composer:focus-within { border-color: var(--link); }
+.agent-composer textarea {
+  width: 100%; min-height: 44px; max-height: 180px; padding: 2px 4px; background: none; border: 0; outline: none; resize: none;
+  color: var(--heading); font: inherit; font-size: 14px; line-height: 1.45;
+}
+.agent-composer textarea::placeholder { color: var(--placeholder); }
+.agent-composer-row { display: flex; align-items: center; justify-content: space-between; }
+.agent-composer .icon-button { width: 32px; height: 32px; }
+.agent-send { width: 32px; height: 32px; border: 0; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+.agent-send[disabled] { background: var(--bg); color: var(--dim); cursor: default; }
+.agent-pending { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.agent-pending li { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 8px; border-radius: 6px; background: var(--bg); font-size: 12px; }
+.agent-pending-name { flex: 1; min-width: 0; color: var(--heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-pending-state { flex: none; color: var(--muted); }
+.agent-pending-error .agent-pending-state { color: var(--danger); white-space: normal; text-align: right; }
+.agent-pending .icon-button { width: 22px; height: 22px; flex: none; }
+.agent-drop {
+  position: absolute; inset: 6px; z-index: 5; display: flex; align-items: center; justify-content: center; padding: 16px; text-align: center;
+  border: 2px dashed var(--link); border-radius: 10px; background: color-mix(in srgb, var(--bg) 88%, transparent); color: var(--heading); font-size: 15px; font-weight: 500; pointer-events: none;
+}
 
 /* Smaller screens: the agent panel starts hidden, then the layout stacks. */
 @media (max-width: 1100px) {
@@ -580,7 +620,7 @@ button.field-label:hover { color: var(--link); text-decoration: underline; }
 .list-section .add-link { margin-top: 4px; }
 
 /* Fields the person has pointed the agent at */
-.agent-refs { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+.agent-refs { flex: none; max-height: 30%; overflow-y: auto; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
 .agent-refs-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--heading); }
 .agent-refs-head .link-button { min-height: 0; font-size: 12px; }
 .agent-refs ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
@@ -590,7 +630,6 @@ button.field-label:hover { color: var(--link); text-decoration: underline; }
 .agent-ref-detail { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
 .agent-ref-text code { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
 .agent-refs li .icon-button { width: 24px; height: 24px; }
-.agent-refs-note { font-size: 12px; color: var(--dim); }
 
 /* Fields and Layout (admin) */
 .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; }

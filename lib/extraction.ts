@@ -15,7 +15,19 @@ import type { AssetTree, RecordType } from './records'
 const MAX_FIELD_TEXT = 4000
 const MAX_PROPOSALS = 15
 
-type RecordEntry = { type: RecordType; id: string; ref: string; label: string }
+export type RecordEntry = { type: RecordType; id: string; ref: string; label: string }
+
+/** Stand-in ids for an asset that will be created from the document being read. */
+export const NEW_RECORDS = { asset: 'new-asset', property: 'new-property', building: 'new-building' } as const
+
+/** The records to describe when the document's asset does not exist yet. */
+export function newAssetRecords(): RecordEntry[] {
+  return [
+    { type: 'asset', id: NEW_RECORDS.asset, ref: 'asset:new', label: 'The asset this document describes (the investment as a whole)' },
+    { type: 'property', id: NEW_RECORDS.property, ref: 'property:new', label: 'Its property (the site)' },
+    { type: 'building', id: NEW_RECORDS.building, ref: 'property:new/building:new', label: 'Its main building' },
+  ]
+}
 
 /** The records a document about this asset can speak to, by their permanent address. */
 export function recordsOf(tree: AssetTree): RecordEntry[] {
@@ -104,11 +116,35 @@ const SCHEMA = {
   additionalProperties: false,
 }
 
-function buildPrompt(documentName: string, records: RecordEntry[], fields: FieldDefinition[]): string {
+const PROPERTY_TYPE_CHOICES = ['Office', 'Retail', 'Industrial', 'Multifamily', 'Mixed Use', 'Other']
+
+/** The same answer shape, plus the few facts needed to create the asset. */
+const NEW_ASSET_SCHEMA = {
+  ...SCHEMA,
+  properties: {
+    asset: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The name the document gives the property or investment, for example "Harbor Point" or "120 Main Street". An empty string if it gives none' },
+        property_type: { type: 'string', enum: PROPERTY_TYPE_CHOICES },
+        city: { type: 'string', description: 'The city the property is in; an empty string if not stated' },
+      },
+      required: ['name', 'property_type', 'city'],
+      additionalProperties: false,
+    },
+    ...SCHEMA.properties,
+  },
+  required: ['asset', ...SCHEMA.required],
+}
+
+function buildPrompt(documentName: string, records: RecordEntry[], fields: FieldDefinition[], newAsset: boolean): string {
   return `You are the Stratios extraction agent for commercial real estate. Read the attached document ("${documentName}") and find the values of the fields in the dictionary below.
 
 ## Records
-The document was uploaded to this asset. A value belongs to exactly one of these records. Copy the address exactly.
+${newAsset
+    ? `No asset exists for this document yet; one will be created from what you return. In "asset", give its name as the document titles it, its property type and its city. If the document covers several properties, describe the main one and say in the summary that the others were left out.
+A value belongs to exactly one of these records. Copy the address exactly.`
+    : 'The document was uploaded to this asset. A value belongs to exactly one of these records. Copy the address exactly.'}
 ${records.map((record) => `- ${record.ref}: ${record.label}`).join('\n')}
 
 Each field has a level (asset, property or building); give its value only for a record of that level. If the asset has several properties or buildings, assign a value to the one the document is talking about, and leave the value out when you cannot tell which.
@@ -215,17 +251,29 @@ export function interpretAnswer(answer: Record<string, unknown>, records: Record
   return { candidates, proposals, documentType: text(answer.document_type, 100) || null, summary: text(answer.summary, 2000) || null, skipped }
 }
 
-export type ReadResult = { ok: true; reading: Reading } | { ok: false; error: string }
+/** What the document says about an asset that does not exist yet. */
+export type NewAsset = { name: string; propertyType: string; city: string | null }
+
+export type ReadResult = { ok: true; reading: Reading; newAsset: NewAsset | null } | { ok: false; error: string }
 
 /**
  * Sends the document and the dictionary to Claude and returns what it found.
  * `fields` must already be limited to the fields the person reading the
- * document is allowed to change.
+ * document is allowed to change. With `newAsset`, the records are stand-ins
+ * (see newAssetRecords) and the answer also names the asset to create.
  */
-export async function readDocument(input: { file: Buffer; documentName: string; tree: AssetTree; fields: FieldDefinition[] }): Promise<ReadResult> {
+export async function readDocument(input: {
+  file: Buffer
+  documentName: string
+  records: RecordEntry[]
+  fields: FieldDefinition[]
+  newAsset?: boolean
+  timeoutMs?: number
+}): Promise<ReadResult> {
   const apiKey = claudeApiKey()
   if (!apiKey) return { ok: false, error: 'No Anthropic API key is set (ANTHROPIC_API_KEY).' }
-  const records = recordsOf(input.tree)
+  const { records } = input
+  const wantsAsset = input.newAsset === true
   const levels = new Set(records.map((record) => record.type))
   const fields = input.fields.filter((field) => levels.has(field.appliesTo))
   if (fields.length === 0) return { ok: false, error: 'There are no fields you can change on this asset, so there is nothing to fill in.' }
@@ -235,12 +283,15 @@ export async function readDocument(input: { file: Buffer; documentName: string; 
       apiKey,
       [
         { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: input.file.toString('base64') } },
-        { type: 'text', text: buildPrompt(input.documentName, records, fields) },
+        { type: 'text', text: buildPrompt(input.documentName, records, fields, wantsAsset) },
       ],
-      SCHEMA,
-      { maxTokens: 16000, timeoutMs: 270000 },
+      wantsAsset ? NEW_ASSET_SCHEMA : SCHEMA,
+      { maxTokens: 16000, timeoutMs: input.timeoutMs ?? 270000 },
     )
-    return { ok: true, reading: interpretAnswer(answer, records, fields) }
+    const described = (answer.asset ?? {}) as Record<string, unknown>
+    const type = PROPERTY_TYPE_CHOICES.find((choice) => choice.toLowerCase() === text(described.property_type, 40).toLowerCase()) ?? 'Other'
+    const newAsset = wantsAsset ? { name: text(described.name, 200), propertyType: type, city: text(described.city, 200) || null } : null
+    return { ok: true, reading: interpretAnswer(answer, records, fields), newAsset }
   } catch (error) {
     if (error instanceof ApiError) return { ok: false, error: error.message }
     console.error('Document reading failed', error)

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AiIcon } from '@/components/AiIcon'
-import { readUploadedDocument, uploadDocument } from './documents/requests'
+import { readUploadedDocument, uploadDocument } from '@/lib/documentClient'
 
 export type DocumentRow = {
   id: string
