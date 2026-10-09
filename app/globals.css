@@ -854,3 +854,4 @@ td.muted { color: var(--dim); }
 .address-suggestion-main { color: var(--heading); font-weight: 500; }
 .address-suggestion-rest { color: var(--muted); font-size: 13px; }
 .address-suggestions-credit { padding: 4px 8px 2px; text-align: right; font-size: 11px; color: var(--dim); }
+.address-add { margin-top: 10px; }

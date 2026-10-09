@@ -68,7 +68,7 @@ export function AddChildForm({
   )
 }
 
-const matchLine = (match: FoundAddress) => `${match.street}, ${match.city}, ${[match.state, match.postalCode].filter(Boolean).join(' ')}`
+const matchLine = (match: FoundAddress) => [match.street, match.suite, match.city, [match.state, match.postalCode].filter(Boolean).join(' ')].filter(Boolean).join(', ')
 
 /** A fresh label for one round of suggestions, which Google uses to bill the keystrokes and the pick as one. */
 const newSession = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `s-${Date.now()}-${Math.random().toString(36).slice(2)}`)
@@ -97,7 +97,6 @@ export function AddAddressForm({
   const [open, setOpen] = useState(false)
   const [byHand, setByHand] = useState(false)
   const [text, setText] = useState('')
-  const [suite, setSuite] = useState('')
   const [matches, setMatches] = useState<FoundAddress[] | null>(null)
   const [picked, setPicked] = useState(0)
   const [lookupError, setLookupError] = useState<string | null>(null)
@@ -112,7 +111,6 @@ export function AddAddressForm({
     setOpen(false)
     setByHand(false)
     setText('')
-    setSuite('')
     setMatches(null)
     setPicked(0)
     setLookupError(null)
@@ -155,7 +153,6 @@ export function AddAddressForm({
     latest.current += 1 // any suggestions still on their way are for text that has been dealt with
     setMatches(found)
     setPicked(0)
-    setSuite(found[0]?.suite ?? '')
     setSuggestions([])
     setActive(-1)
   }
@@ -343,6 +340,8 @@ export function AddAddressForm({
           <input type="hidden" name="city" value={match.city} />
           <input type="hidden" name="state" value={match.state} />
           <input type="hidden" name="postalCode" value={match.postalCode} />
+          {/* A suite is kept only when the picked suggestion itself has one; there is no box to type it. */}
+          {match.suite ? <input type="hidden" name="suite" value={match.suite} /> : null}
           {match.latitude !== null && match.longitude !== null ? (
             <>
               <input type="hidden" name="latitude" value={match.latitude} />
@@ -370,14 +369,8 @@ export function AddAddressForm({
           ) : (
             <p className="doc-sub">No map location was found for this address. You can still add it, and try Find Location on it later.</p>
           )}
-          <div className="inline-form">
-            <div className="field field-narrow">
-              <label htmlFor={`${id}-suite`}>Suite (Optional)</label>
-              <input id={`${id}-suite`} name="suite" type="text" maxLength={200} value={suite} onChange={(event) => setSuite(event.target.value)} />
-            </div>
-            <div className="field-edit-buttons">
-              <button type="submit" className="btn btn-primary btn-small" disabled={pending}>{pending ? 'Adding…' : 'Add This Address'}</button>
-            </div>
+          <div className="field-edit-buttons address-add">
+            <button type="submit" className="btn btn-primary btn-small" disabled={pending}>{pending ? 'Adding…' : 'Add This Address'}</button>
           </div>
           {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
         </form>

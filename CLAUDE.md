@@ -397,8 +397,9 @@ work and how data is isolated; this file covers how we work and where things sta
     adds `latitude`, `longitude`, `location_source` to `addresses`). Ronnie found the five
     address boxes a pain and wants properties on a map later.
     - "+ Add Address" is now one box: type the address, **Find Address**, and the match (or a
-      choice of up to five) is shown with its coordinates and a "Check on a Map" link; an optional
-      Suite box, then **Add This Address**. "Enter It by Hand" keeps the old five boxes.
+      choice of up to five) is shown with its coordinates and a "Check on a Map" link, then
+      **Add This Address**. Ronnie had the Suite box removed from this step (October 9); a suite
+      is saved only when the picked Google suggestion has one, or through Enter It by Hand. "Enter It by Hand" keeps the old five boxes.
     - Lookup: `lib/geocode.ts` calls the **U.S. Census Bureau geocoder** from the server (free,
       no account or key, results may be stored). Limits he was told: United States only, no
       suggestions while typing, no suites, and the point is worked out along the street's house
@@ -417,8 +418,8 @@ work and how data is isolated; this file covers how we work and where things sta
       mask. An address Census doesn't know (new buildings, anything outside the U.S.) is saved
       without a location. If a suggestions call fails the box quietly stops asking and Find
       Address still works. "Powered by Google" shows under the list. The Google place id is
-      not stored. He was given the Google Cloud steps; whether he has added the key is not
-      known, so check before assuming suggestions are on.
+      not stored. He added the key in Vercel and confirmed suggestions work on dev.stratios.app
+      (October 9). When Google refuses a request, its reason shows under the box.
     - Each saved address shows **Map** (opens Google Maps at the point) when it has coordinates,
       **Find Location** for one typed by hand (`locateAddress`: looks it up and saves the
       coordinates of the first match, leaving the text alone) and **Remove** (`removeAddress`;
