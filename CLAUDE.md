@@ -393,6 +393,31 @@ work and how data is isolated; this file covers how we work and where things sta
       choice, duplicates, upload, edit, remove and organization isolation through `lib/photos.ts`
       with his real memorandum (all passed). The screens were checked as a mock; the routes and
       the agent's photo notes were not run against the real app or Claude API.
+  - **Address lookup and map coordinates** (October 9; `db/migrations/015_address_coordinates.sql`
+    adds `latitude`, `longitude`, `location_source` to `addresses`). Ronnie found the five
+    address boxes a pain and wants properties on a map later.
+    - "+ Add Address" is now one box: type the address, **Find Address**, and the match (or a
+      choice of up to five) is shown with its coordinates and a "Check on a Map" link; an optional
+      Suite box, then **Add This Address**. "Enter It by Hand" keeps the old five boxes.
+    - Lookup: `lib/geocode.ts` calls the **U.S. Census Bureau geocoder** from the server (free,
+      no account or key, results may be stored). Limits he was told: United States only, no
+      suggestions while typing, no suites, and the point is worked out along the street's house
+      numbers, so it lands on the right block rather than exactly on the building. Google and
+      Mapbox were not used because they need an account and a key, and their terms limit
+      storing coordinates; swapping the service means changing only this file.
+    - Each saved address shows **Map** (opens Google Maps at the point) when it has coordinates,
+      **Find Location** for one typed by hand (`locateAddress`: looks it up and saves the
+      coordinates of the first match, leaving the text alone) and **Remove** (`removeAddress`;
+      addresses could not be removed before). All need `access.canAddRecords`.
+    - `insertAddress` saves coordinates only when the columns exist (`hasCoordinateColumns`), and
+      the asset page reads them through `to_jsonb`, so everything works before 015 is run, just
+      without locations. An asset created from a document still gets a city-only address.
+    - No map screen yet: this only captures the coordinates. Addresses on units are not listed
+      with these actions (units show their address as a tooltip, as before).
+    - Checked: the reading of a real Census answer for his Knoll Trail address, storage before
+      and after 015 on the scratch database, organization isolation, and the real form and list
+      in Chromium with a stand-in lookup. Whether Vercel can reach the Census service was not
+      checked from here.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

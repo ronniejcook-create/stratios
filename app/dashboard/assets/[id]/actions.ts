@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { PROPERTY_TYPES, deleteAsset } from '@/lib/assets'
-import { withOrg } from '@/lib/db'
+import { isMissingSchema, withOrg } from '@/lib/db'
 import { listHistory, saveManualValue, type HistoryEntry } from '@/lib/fields'
 import { removeListRow, saveListRow } from '@/lib/lists'
 import { loadAccess, sectionOfField } from '@/lib/permissions'
@@ -11,7 +11,8 @@ import { listDocuments, readDocumentFile } from '@/lib/documents'
 import { extractPhotos } from '@/lib/photoExtraction'
 import { joinSpreads } from '@/lib/photoJoin'
 import { isPhotoCategory, removePhoto, savePhotosFromDocument, setMainPhoto, updatePhoto } from '@/lib/photos'
-import { insertAddress, insertChild, isRecordType, isUuid, type AddressOwner, type Queryable } from '@/lib/records'
+import { LOCATION_SOURCE, lookUpAddress, type AddressMatch } from '@/lib/geocode'
+import { deleteAddress, formatAddress, getAddress, insertAddress, insertChild, isRecordType, isUuid, setAddressLocation, type AddressOwner, type Queryable } from '@/lib/records'
 
 const NO_PERMISSION = "You don't have permission to change this."
 
@@ -165,7 +166,25 @@ export async function addAddress(prev: AddState, formData: FormData): Promise<Ad
     const value = String(formData.get(name) ?? '').trim().slice(0, 200)
     return value || null
   }
-  const input = { street: part('street'), suite: part('suite'), city: part('city'), state: part('state'), postalCode: part('postalCode') }
+  // Present when the address was picked from the lookup; a typed address has none.
+  const coordinate = (name: string, limit: number) => {
+    const text = String(formData.get(name) ?? '').trim()
+    const value = Number(text)
+    return text !== '' && Number.isFinite(value) && Math.abs(value) <= limit ? value : null
+  }
+  const latitude = coordinate('latitude', 90)
+  const longitude = coordinate('longitude', 180)
+  const located = latitude !== null && longitude !== null
+  const input = {
+    street: part('street'),
+    suite: part('suite'),
+    city: part('city'),
+    state: part('state'),
+    postalCode: part('postalCode'),
+    latitude: located ? latitude : null,
+    longitude: located ? longitude : null,
+    locationSource: located ? LOCATION_SOURCE : null,
+  }
   if (!input.street && !input.city) return { error: 'Enter at least a street or a city.', done: prev.done }
 
   try {
@@ -358,4 +377,69 @@ export async function pullPhotosFromDocuments(input: { assetId: string }): Promi
     console.error('Pulling photos from documents failed', error)
     return { ok: false, error: 'The photos could not be pulled from the documents. Try again.' }
   }
+}
+
+export type FindAddressResult = { ok: true; matches: AddressMatch[] } | { ok: false; error: string }
+
+/** Looks up a typed address for the Add Address form. Nothing is saved. */
+export async function findAddress(input: { text: string }): Promise<FindAddressResult> {
+  const { userId, orgId } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  return lookUpAddress(String(input.text ?? ''))
+}
+
+/** Runs a change to one address for someone allowed to add records, then refreshes its asset's page. */
+async function changeAddress<T>(addressId: string, work: (client: Queryable, orgId: string, address: NonNullable<Awaited<ReturnType<typeof getAddress>>>) => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+  const { userId, orgId, orgRole } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (!isUuid(addressId)) return { ok: false, error: 'That address could not be found.' }
+  try {
+    const result = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      if (!access.canAddRecords) return { ok: false as const, error: NO_PERMISSION }
+      const address = await getAddress(client, orgId, addressId)
+      if (!address) return { ok: false as const, error: 'That address could not be found.' }
+      return { ok: true as const, value: await work(client, orgId, address), assetId: address.assetId }
+    })
+    if (!result.ok) return result
+    revalidatePath(`/dashboard/assets/${result.assetId}`)
+    revalidatePath('/dashboard')
+    return { ok: true, value: result.value }
+  } catch (error) {
+    console.error('Changing an address failed', error)
+    return { ok: false, error: isMissingSchema(error) ? 'Locations need a database update: run db/migrations/015_address_coordinates.sql.' : 'That could not be saved. Try again.' }
+  }
+}
+
+/**
+ * Finds where an address that was typed by hand is on the map and saves its
+ * latitude and longitude. The address text itself is left as it was.
+ */
+export async function locateAddress(input: { addressId: string }): Promise<SaveFieldResult> {
+  const { userId, orgId } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (!isUuid(input.addressId)) return { ok: false, error: 'That address could not be found.' }
+  // Read the address, look it up with no database transaction open, then save.
+  let text: string
+  try {
+    const address = await withOrg(orgId, (client) => getAddress(client, orgId, input.addressId))
+    if (!address) return { ok: false, error: 'That address could not be found.' }
+    if (!address.street) return { ok: false, error: 'This address has no street, so it can\'t be placed on a map. Remove it and add the full address.' }
+    text = formatAddress({ ...address, suite: null })
+  } catch (error) {
+    console.error('Reading an address failed', error)
+    return { ok: false, error: 'That address could not be read. Try again.' }
+  }
+  const found = await lookUpAddress(text)
+  if (!found.ok) return found
+  const match = found.matches[0]
+  if (!match) return { ok: false, error: 'The lookup did not find this address. Check the street, city and state, or remove it and add it again.' }
+  const saved = await changeAddress(input.addressId, (client, org) => setAddressLocation(client, org, input.addressId, match.latitude, match.longitude, LOCATION_SOURCE))
+  return saved.ok ? { ok: true } : saved
+}
+
+/** Removes an address, for example one picked by mistake. */
+export async function removeAddress(input: { addressId: string }): Promise<SaveFieldResult> {
+  const removed = await changeAddress(input.addressId, (client, org) => deleteAddress(client, org, input.addressId))
+  return removed.ok ? { ok: true } : removed
 }

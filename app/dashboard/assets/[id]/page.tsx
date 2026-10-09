@@ -10,7 +10,7 @@ import { listScreens, type Screen, type Section } from '@/lib/layout'
 import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from '@/lib/lists'
 import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
-import { AddAddressForm, AddChildForm } from './AddForms'
+import { AddAddressForm, AddChildForm, AddressList } from './AddForms'
 import { listPhotos, listPlanPages, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo, type PlanPage } from '@/lib/photos'
 import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
 import { PhotosPanel, type PhotoRow } from './PhotosPanel'
@@ -42,16 +42,9 @@ type RecordContext = {
   core: { name: string; property_type?: string | null }
 }
 
-function AddressList({ addresses }: { addresses: Address[] }) {
-  if (addresses.length === 0) return null
-  return (
-    <ul className="address-list">
-      {addresses.map((address) => (
-        <li key={address.id}>{formatAddress(address)}</li>
-      ))}
-    </ul>
-  )
-}
+/** Addresses as plain rows for the browser component that lists them. */
+const addressRows = (addresses: Address[]) =>
+  addresses.map((address) => ({ id: address.id, text: formatAddress(address), latitude: address.latitude, longitude: address.longitude, hasStreet: Boolean(address.street) }))
 
 export default async function AssetPage({
   params,
@@ -328,7 +321,7 @@ export default async function AssetPage({
                   </div>
                   {isFirstScreen ? (
                     <div className="record-addresses">
-                      <AddressList addresses={property.addresses} />
+                      <AddressList addresses={addressRows(property.addresses)} canEdit={access.canAddRecords} />
                       {access.canAddRecords ? <AddAddressForm ownerType="property" ownerId={property.id} assetId={tree.id} /> : null}
                     </div>
                   ) : null}
@@ -367,7 +360,7 @@ export default async function AssetPage({
                             </div>
                             {isFirstScreen ? (
                               <div className="record-addresses">
-                                <AddressList addresses={building.addresses} />
+                                <AddressList addresses={addressRows(building.addresses)} canEdit={access.canAddRecords} />
                                 {access.canAddRecords ? <AddAddressForm ownerType="building" ownerId={building.id} assetId={tree.id} /> : null}
                               </div>
                             ) : null}

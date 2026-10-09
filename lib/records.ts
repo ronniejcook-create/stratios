@@ -123,6 +123,9 @@ export type Address = {
   city: string | null
   state: string | null
   postalCode: string | null
+  /** Where it is on the map, when the address was found by lookup. */
+  latitude: number | null
+  longitude: number | null
 }
 
 export type UnitNode = { id: string; key: string; name: string; addresses: Address[] }
@@ -139,6 +142,8 @@ function toAddress(row: Record<string, unknown>): Address {
     city: (row.city as string | null) ?? null,
     state: (row.state as string | null) ?? null,
     postalCode: (row.postal_code as string | null) ?? null,
+    latitude: row.latitude === null || row.latitude === undefined ? null : Number(row.latitude),
+    longitude: row.longitude === null || row.longitude === undefined ? null : Number(row.longitude),
   }
 }
 
@@ -170,7 +175,10 @@ export async function getAssetTree(client: Queryable, orgId: string, assetId: st
   const unitIds = units.rows.map((row) => row.id as string)
   const addresses = await client.query(
     `select id::text as id, property_id::text as property_id, building_id::text as building_id, unit_id::text as unit_id,
-            street, suite, city, state, postal_code
+            street, suite, city, state, postal_code,
+            -- read this way so the page still loads before the coordinates columns exist (migration 015)
+            (to_jsonb(addresses) ->> 'latitude')::double precision as latitude,
+            (to_jsonb(addresses) ->> 'longitude')::double precision as longitude
      from addresses
      where org_id = $1 and (property_id = any($2::uuid[]) or building_id = any($3::uuid[]) or unit_id = any($4::uuid[]))
      order by created_at`,
@@ -259,6 +267,10 @@ export type AddressInput = {
   city: string | null
   state: string | null
   postalCode: string | null
+  /** Set together, when the address was found by lookup. */
+  latitude?: number | null
+  longitude?: number | null
+  locationSource?: string | null
 }
 
 export type AddressOwner = 'property' | 'building' | 'unit'
@@ -274,11 +286,56 @@ export async function insertAddress(
 ): Promise<boolean> {
   if (!(await recordExists(client, orgId, ownerType, ownerId))) return false
   const column = ownerType === 'property' ? 'property_id' : ownerType === 'building' ? 'building_id' : 'unit_id'
+  const located = typeof input.latitude === 'number' && typeof input.longitude === 'number'
+  if (located && (await hasCoordinateColumns(client))) {
+    await client.query(
+      `insert into addresses (org_id, ${column}, street, suite, city, state, postal_code, created_by, latitude, longitude, location_source)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [orgId, ownerId, input.street, input.suite, input.city, input.state, input.postalCode, userId, input.latitude, input.longitude, input.locationSource ?? null],
+    )
+    return true
+  }
+  // Without the coordinates columns (migration 015 not run yet) the address is still saved, just without its location.
   await client.query(
     `insert into addresses (org_id, ${column}, street, suite, city, state, postal_code, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [orgId, ownerId, input.street, input.suite, input.city, input.state, input.postalCode, userId],
   )
   return true
+}
+
+/** Whether the addresses table has its latitude and longitude columns yet (migration 015). */
+export async function hasCoordinateColumns(client: Queryable): Promise<boolean> {
+  const { rows } = await client.query(
+    `select 1 from information_schema.columns where table_schema = current_schema() and table_name = 'addresses' and column_name = 'latitude'`,
+  )
+  return rows.length > 0
+}
+
+/** One address of this organization, with the asset it sits under. Null when it isn't this organization's. */
+export async function getAddress(client: Queryable, orgId: string, addressId: string): Promise<(Address & { assetId: string }) | null> {
+  const { rows } = await client.query(
+    `select d.id::text as id, d.street, d.suite, d.city, d.state, d.postal_code,
+            (to_jsonb(d) ->> 'latitude')::double precision as latitude, (to_jsonb(d) ->> 'longitude')::double precision as longitude,
+            coalesce(p.asset_id, bp.asset_id, up.asset_id)::text as asset_id
+     from addresses d
+     left join properties p on p.id = d.property_id
+     left join buildings b on b.id = d.building_id left join properties bp on bp.id = b.property_id
+     left join units u on u.id = d.unit_id left join floors uf on uf.id = u.floor_id left join buildings ub on ub.id = uf.building_id left join properties up on up.id = ub.property_id
+     where d.org_id = $1 and d.id = $2`,
+    [orgId, addressId],
+  )
+  return rows[0] ? { ...toAddress(rows[0]), assetId: rows[0].asset_id as string } : null
+}
+
+/** Saves where an address is on the map. */
+export async function setAddressLocation(client: Queryable, orgId: string, addressId: string, latitude: number, longitude: number, source: string): Promise<void> {
+  await client.query('update addresses set latitude = $3, longitude = $4, location_source = $5 where org_id = $1 and id = $2', [orgId, addressId, latitude, longitude, source])
+}
+
+/** Removes an address. Returns false when it isn't this organization's. */
+export async function deleteAddress(client: Queryable, orgId: string, addressId: string): Promise<boolean> {
+  const { rows } = await client.query('delete from addresses where org_id = $1 and id = $2 returning id', [orgId, addressId])
+  return rows.length > 0
 }
 
 /** "100 Main St, Suite 200, Dallas, TX 75201" */
