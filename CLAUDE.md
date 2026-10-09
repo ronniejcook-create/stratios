@@ -314,6 +314,17 @@ work and how data is isolated; this file covers how we work and where things sta
     - Use `DataGrid` for other lists (Users, Skills, Layouts) if he asks for the same there.
     - The real components were clicked through in Chromium with Playwright using stand-in rows
       and forms, not inside the app.
+  - **Delete an asset** (October 9; no migration): administrators (`org:admin`) get a Delete Asset
+    button beside the asset's title (`DeleteAssetButton.tsx`). A pop-up lists what goes (counts
+    from `getAssetContents`) and asks "This cannot be undone. Are you sure?". `deleteAsset` in
+    `lib/assets.ts` removes field values, history, per-source values and list rows for every
+    record under the asset (they have no database link to their record, so they are deleted by
+    id first), then the asset; properties, buildings, floors, units, addresses and documents
+    with their files and review lists follow by cascade. It is a real, permanent delete in one
+    transaction: no recycle bin and no audit record beyond a server log line. Tested on the
+    scratch database (two assets plus another organization: only the chosen asset's rows go,
+    another organization can't delete it). The button and pop-up were checked as a mock only.
+    Any new table that stores rows by `record_id` must be added to `deleteAsset`.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

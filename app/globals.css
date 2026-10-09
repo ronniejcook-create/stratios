@@ -798,3 +798,11 @@ td.muted { color: var(--dim); }
 .modal-head .icon-button { font-size: 20px; }
 .modal-head .icon-button:hover { background: var(--bg); }
 .modal .modal-actions { justify-content: flex-end; }
+
+/* Page title with an action on the right, and the "are you sure" pop-up. */
+.title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.modal-text { margin-top: 12px; }
+.modal-list { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+.modal-warning { color: var(--danger); font-weight: 600; }
+.btn-danger { background: var(--danger); color: #2a0d07; border-color: var(--danger); }
+.btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 85%, var(--heading)); }

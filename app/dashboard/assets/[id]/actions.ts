@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { PROPERTY_TYPES } from '@/lib/assets'
+import { PROPERTY_TYPES, deleteAsset } from '@/lib/assets'
 import { withOrg } from '@/lib/db'
 import { listHistory, saveManualValue, type HistoryEntry } from '@/lib/fields'
 import { removeListRow, saveListRow } from '@/lib/lists'
@@ -254,6 +254,28 @@ export async function removeRow(input: { assetId: string; rowId: string }): Prom
     return { ok: false, error: 'That entry could not be removed. Try again.' }
   }
 
+  revalidatePath(`/dashboard/assets/${input.assetId}`)
+  return { ok: true }
+}
+
+/**
+ * Deletes an asset and everything under it, for good. Administrators only;
+ * the screen asks "are you sure" first, and this checks the role again.
+ */
+export async function deleteAssetForever(input: { assetId: string }): Promise<SaveFieldResult> {
+  const { userId, orgId, orgRole } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (orgRole !== 'org:admin') return { ok: false, error: 'Only administrators can delete an asset.' }
+  if (!isUuid(input.assetId)) return { ok: false, error: 'That asset could not be found.' }
+  try {
+    const name = await withOrg(orgId, (client) => deleteAsset(client, orgId, input.assetId))
+    if (name === null) return { ok: false, error: 'That asset could not be found. It may already have been deleted.' }
+    console.info(`Asset deleted: "${name}" (${input.assetId}) in ${orgId} by ${userId}`)
+  } catch (error) {
+    console.error('deleteAssetForever failed', error)
+    return { ok: false, error: 'The asset could not be deleted. Nothing was removed; try again.' }
+  }
+  revalidatePath('/dashboard')
   revalidatePath(`/dashboard/assets/${input.assetId}`)
   return { ok: true }
 }

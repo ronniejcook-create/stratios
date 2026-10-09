@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { auth, currentUser } from '@clerk/nextjs/server'
-import { PROPERTY_TYPES } from '@/lib/assets'
+import { PROPERTY_TYPES, getAssetContents, type AssetContents } from '@/lib/assets'
 import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
 import { listDocuments, MAX_DOCUMENT_BYTES, type DocumentSummary } from '@/lib/documents'
 import { EMPTY_VALUE } from '@/lib/fieldFormat'
@@ -14,6 +14,7 @@ import { AddAddressForm, AddChildForm } from './AddForms'
 import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
 import { FieldGroup, type FieldView, type Target } from './FieldGroup'
 import { ListSection } from './ListSection'
+import { DeleteAssetButton } from './DeleteAssetButton'
 import { ScreenTabs } from './ScreenTabs'
 
 export const dynamic = 'force-dynamic'
@@ -99,6 +100,16 @@ export default async function AssetPage({
   }
   if (!loaded) notFound()
   const { tree, fields, values, sourceNames, screens, lists, rows, access } = loaded
+
+  // What the asset holds, for the administrator's delete warning. The warning still works without the counts.
+  let contents: AssetContents | null = null
+  if (orgRole === 'org:admin') {
+    try {
+      contents = await withOrg(orgId, (client) => getAssetContents(client, orgId, tree.id))
+    } catch (error) {
+      console.error('Counting the asset contents failed', error)
+    }
+  }
 
   // Documents are loaded on their own, so the asset still opens if their tables aren't there yet.
   let documents: DocumentSummary[] = []
@@ -395,7 +406,10 @@ export default async function AssetPage({
         <span aria-hidden="true"> / </span>
         <span>{tree.name}</span>
       </p>
-      <h1>{tree.name}</h1>
+      <div className="title-row">
+        <h1>{tree.name}</h1>
+        {orgRole === 'org:admin' ? <DeleteAssetButton assetId={tree.id} name={tree.name} contents={contents} /> : null}
+      </div>
       <p className="lede">
         {propertyCount === 1 ? '1 property' : `${propertyCount} properties`}
         <span className="record-key" title="The permanent key used by agents and formulas">asset:{tree.key}</span>
