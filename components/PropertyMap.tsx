@@ -12,6 +12,8 @@ export type MapPin = { id: string; title: string; subtitle: string; address: str
 export type MapArea = { id: string; outline: [number, number][][]; color: string | null; label: string; edge?: string }
 /** A colored dot on the map for a place that is not one of the pins, with what hovering it says. */
 export type MapPoint = { id: string; position: [number, number]; color: string; label: string }
+/** A line drawn on the map, such as a rail line: one or more runs of [latitude, longitude], its color, and what hovering it says. */
+export type MapLine = { id: string; path: [number, number][][]; color: string; label: string }
 /** A square around a point, so many miles each way, that the map should take in. */
 export type MapReach = { center: [number, number]; miles: number }
 /** Circles drawn around a point, each so many miles out. */
@@ -39,6 +41,7 @@ type Leaflet = {
   polygon(outline: [number, number][][], options: Record<string, unknown>): LeafletLayer
   circle(center: [number, number], options: Record<string, unknown>): LeafletLayer
   circleMarker(center: [number, number], options: Record<string, unknown>): LeafletLayer
+  polyline(path: [number, number][][], options: Record<string, unknown>): LeafletLayer
 }
 
 /** Street-map pictures come from OpenStreetMap, which asks for this credit on the map. */
@@ -108,12 +111,12 @@ const safe = (text: string) => text.replace(/[&<>"']/g, (character) => `&#${char
  * only sized and centered once its box has a real size. It fills the height
  * left on the screen, and the scroll wheel zooms it.
  *
- * `areas`, `rings` and `points` lay information over the map (shaded
- * neighborhoods, distance circles, dots for nearby places). They are drawn under the pins and can change without the
+ * `areas`, `rings`, `lines` and `points` lay information over the map (shaded
+ * neighborhoods, distance circles, rail lines, dots for nearby places). They are drawn under the pins and can change without the
  * map starting over; when rings appear the view widens to take them in, and
  * failing rings it moves to take in `reach`.
  */
-export function PropertyMap({ pins, areas, rings, reach, points }: { pins: MapPin[]; areas?: MapArea[]; rings?: MapRings | null; reach?: MapReach | null; points?: MapPoint[] }) {
+export function PropertyMap({ pins, areas, rings, reach, points, lines }: { pins: MapPin[]; areas?: MapArea[]; rings?: MapRings | null; reach?: MapReach | null; points?: MapPoint[]; lines?: MapLine[] }) {
   const box = useRef<HTMLDivElement>(null)
   const [problem, setProblem] = useState<string | null>(null)
   // The live map and Leaflet itself, once ready, for the overlay to draw on.
@@ -198,7 +201,7 @@ export function PropertyMap({ pins, areas, rings, reach, points }: { pins: MapPi
     const { leaflet, map } = ready
     const group = leaflet.layerGroup().addTo(map)
     // The pin's pop-up would sit on top of what is being shown, so it steps aside; clicking the pin brings it back.
-    if ((areas && areas.length > 0) || rings || (points && points.length > 0)) map.closePopup()
+    if ((areas && areas.length > 0) || rings || (points && points.length > 0) || (lines && lines.length > 0)) map.closePopup()
     for (const area of areas ?? []) {
       leaflet
         .polygon(area.outline, {
@@ -209,7 +212,12 @@ export function PropertyMap({ pins, areas, rings, reach, points }: { pins: MapPi
         .bindTooltip(safe(area.label).replace(/\n/g, '<br>'), { sticky: true, direction: 'top', className: 'map-tip' })
         .addTo(group)
     }
-    // Dots go on last, so they stay clickable above the shading.
+    for (const line of lines ?? []) {
+      // A dark casing under the colored line keeps a pale color readable on the street map.
+      leaflet.polyline(line.path, { color: '#111827', weight: 6, opacity: 0.55, interactive: false }).addTo(group)
+      leaflet.polyline(line.path, { color: line.color, weight: 3.5, opacity: 1 }).bindTooltip(safe(line.label).replace(/\n/g, '<br>'), { sticky: true, direction: 'top', className: 'map-tip' }).addTo(group)
+    }
+    // Dots go on last, so they stay clickable above the shading and the lines.
     for (const point of points ?? []) {
       leaflet
         .circleMarker(point.position, { radius: 6, color: '#111827', weight: 1.5, opacity: 0.9, fillColor: point.color, fillOpacity: 1 })
@@ -237,7 +245,7 @@ export function PropertyMap({ pins, areas, rings, reach, points }: { pins: MapPi
       group.remove()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, areas, ringKey, reachKey, points])
+  }, [ready, areas, ringKey, reachKey, points, lines])
 
   if (problem) return <p className="form-error" role="alert">{problem}</p>
   return <div ref={box} className="property-map" role="region" aria-label="Map of this asset's addresses" />

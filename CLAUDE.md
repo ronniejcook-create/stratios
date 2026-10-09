@@ -544,7 +544,7 @@ work and how data is isolated; this file covers how we work and where things sta
     - **One layer at a time, chosen by tabs** (October 9, late; Ronnie's request; replaces the
       three Show / Hide buttons described above). Above the map is a row of pill tabs
       (`.map-tabs` in `AssetMap.tsx`): **None** (first, the plain map, and the start),
-      **Demographics**, **Flood Zones**, **Schools**. Picking a tab loads that layer for the
+      **Demographics**, **Flood Zones**, **Schools** (and since, **Transit**). Picking a tab loads that layer for the
       address and shows only it; the side panel holds that layer's details and is gone on
       None, so the map is full width. Layers already loaded are kept, so switching back is
       instant. **Show 1, 3 and 5 Mile Rings** is its own tick box beside the tabs, off to
@@ -553,6 +553,36 @@ work and how data is isolated; this file covers how we work and where things sta
       The map moves to take in the layer (5 miles for demographics, 1 for flood, 3 for
       schools); with the rings on it takes in the rings. Clicked through in Chromium with
       stand-in answers; not opened inside the app.
+    - **Transit on the map** (October 9, late; no migration; a fifth tab, **Transit**, after
+      Schools). `GET /api/transit?addressId=` -> `lib/transit.ts`, which asks the **National
+      Transit Map** (U.S. Department of Transportation, Bureau of Transportation Statistics;
+      `services.arcgis.com/xOi1kZaI0eWDREZv/.../NTAD_National_Transit_Map_Stops` and
+      `..._Routes`; free, no key): every stop within half a mile, rail stations within 3
+      miles, the routes passing within about half a mile, and the rail lines within 3 miles.
+      Answers are kept a month.
+      - **Route questions use a box, not a circle, and rail shapes take two steps.** In
+        Manhattan a circle question on routes, or asking for every rail shape at once, ran
+        past 20 seconds (each line is stored as dozens of shapes). A box answers in about a
+        second, and the code first lists the rail shapes without their geometry, keeps the
+        longest per line (`pickLineShapes`, 60 lines at most), then fetches just those
+        (`lineShapesUrl`). The service sends 2,000 rows at most; when it cuts an answer short
+        the panel says some routes or lines are left out (`partial`).
+      - Kinds, by the service's codes (`kindOf`): Rail, Subway or Metro, Light Rail or
+        Streetcar, Ferry, Bus, Other; a stop serving several is shown as the heaviest. Station
+        entrances are dropped and a station listed once per platform is one stop.
+      - The panel: a Transit Nearby box (nearest rail station and bus stop with distances,
+        stops within half a mile, routes nearby), a color key whose tick boxes show and hide a
+        kind, stations within 3 miles, and the routes nearby with their number, name, kind and
+        agency. Stops are dots and rail lines are lines (`lines` on `PropertyMap`), in graph
+        colors 1 to 6 by kind. The map takes in half a mile, widened to bring the nearest rail
+        station into view.
+      - He was told: agencies take part by choice so a small system may be missing, Amtrak
+        and intercity buses are not in it, and it shows where service runs, not how often.
+      - Checked: the real service through the browser on his computer for Knoll Trail (Knoll
+        Trail Station on DART's Silver Line is next door; 25 stops within half a mile) and for
+        midtown Manhattan (all answers within about a second), and the real panel and map in
+        Chromium with a part of the Knoll Trail answers. As with the other layers, **whether
+        Vercel's servers can reach the service is not known**.
     - Addresses on units are not listed with these actions or pinned (units show their address
       as a tooltip, as before).
     - Checked for the map: the real component in Chromium with the real Leaflet files and
