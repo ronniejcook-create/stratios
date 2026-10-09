@@ -956,6 +956,42 @@ work and how data is isolated; this file covers how we work and where things sta
       against the real Claude API**: whether the agent copies all of his 60-odd rows correctly
       and in time, and whether the larger answer format is accepted, shows on his first try.
       A real Excel file from Excel itself was not tried.
+  - **The analyst can look around a property and set a value** (October 9, evening; no
+    migration). Ronnie asked the analyst for the closest school and it said it could not look
+    that up, that the rent roll gave no address, and that it could only fill fields from
+    documents. Three changes in `lib/agent.ts` (eight tools now, with `read_skill`; `MAX_STEPS` 8):
+    - `look_up_surroundings` (asset, topics, optional property or building name): runs the Map
+      tab's own lookups for the asset's address and returns short summaries, no outlines
+      (`lib/surroundings.ts`: `summarizeSchools`, `summarizeTransit`, `summarizeFlood`,
+      `summarizeHazards`, `summarizeJobs`, `summarizeDemographics`, and `lookUpSurroundings`,
+      which asks the chosen topics at once, 25 seconds each, a failed source reported per
+      topic). It uses the first property address with coordinates (a property's before its
+      buildings'); with no address, or one without a location, it tells the person to add one
+      or press Find Location. Anyone in the organization may ask, like the Map tab. Nothing is
+      stored. The summaries carry only what the panels show; the figures left out of the
+      layers on purpose are still left out.
+    - `get_asset` now lists each property's and building's address and whether it has a map
+      location.
+    - `set_field_value` (asset, field name or key, value, optional record name, month, clear):
+      `setValueForAgent` in `lib/agentValues.ts`. Same check as `saveField` on the asset page
+      (`loadAccess` + `sectionOfField`, edit needed; a hidden field reads as "no such field"),
+      then `saveManualValue`, so it is Manual Entry under the person's name with the history
+      note "Entered through the Portfolio Analyst". It refuses rather than guesses: when the
+      field could belong to several records it lists them and asks for `record_name`; a pick
+      list value must be an option; dates are YYYY-MM-DD; a monthly field needs the month; an
+      empty value needs `clear`. Calculated fields, list entries, floors and units can't be set.
+    - `lib/analystInstructions.ts`: the introduction names the two tools, and two fixed rules
+      were added (change a value only when asked in the conversation; say which address a
+      lookup was for, its source and its caveats). "Do not write links, ids or addresses" became
+      "web links or ids", since the analyst must now be able to state a street address. If he
+      has saved his own Analyst Instructions and they say the analyst can only fill fields
+      from documents, that text needs editing on the Analyst Instructions screen.
+    - Checked on the scratch database: 26 cases through `setValueForAgent` (types, months, pick
+      lists, two buildings, a view-only member, a hidden field, another organization, history)
+      and `runAgent` end to end with a scripted Claude and a stand-in `pg` (addresses in
+      `get_asset`, the lookup's refusals, a failed source, a value set and read back). The
+      summaries were run on made-up answers only. **Not run against the real Claude API or
+      with the real services answering**, so his first question is the real test.
   - Not built yet (later stages): stored formulas
     (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
@@ -978,29 +1014,28 @@ work and how data is isolated; this file covers how we work and where things sta
   Settings storage: `lib/orgSettings.ts` (`organization_settings` table; falls back to Clerk
   metadata without a database).
 
-## Where we left off (end of October 9, 2026)
+## Where we left off (October 9, 2026, evening)
 
-Everything described above is committed, pushed to `main`, built by Vercel and copied to his
-folder. The last commit of the day is "Jobs and commuting on the asset map". Nothing is half
-done.
+Everything described above is committed, pushed to `main` and copied to his folder. The last
+piece of work is "The analyst can look around a property and set a value". Nothing is half
+done. **Agreed next step:** save what the map layers find as fields on the property (flood
+zone, school district, nearest rail station, hazard ratings, jobs nearby), filled in when an
+address is added, with a Refresh button; he was asked to confirm "automatically" and has not
+answered that part yet.
 
 **The day's last stretch was the Map tab.** It now has a row of tabs, one layer at a time: None,
 Demographics, Schools, Jobs and Commuting, Transit, Flood Zones, Natural Hazards, plus a separate
 "Show 1, 3 and 5 Mile Rings" tick box. Each layer is described under "Address lookup and map
 coordinates" above. None of the five new layers needed a migration or a new key.
 
-**What Ronnie has not yet told us, so ask or expect it first thing:**
+**Confirmed by Ronnie (October 9, evening):** all five new map layers load on
+dev.stratios.app, so Vercel's servers can reach every federal service; the commuting table shows
+figures; and readings work again after the answer-format fix (he deleted and reloaded the Knoll
+Trail rent roll). Every migration through 021 is on Supabase. Notes above that say "whether
+Vercel can reach ... is not known" are answered by this.
 
-- Whether the new layers load on dev.stratios.app. Flood Zones, Schools, Transit, Natural
-  Hazards and Jobs each ask a federal map service from Vercel's servers, and that could not be
-  tested from the cloud workspace. Each was checked against the real service only through the
-  browser on his computer. If one says "could not be reached", move its questions to the
-  browser: the reading code in each `lib/` file is browser-safe above its last function.
-- Whether the commuting table (inside Jobs and Commuting) works. It uses the Census key and has
-  never run against the real service.
-- Whether readings work again after the answer-format fix. He confirmed migration 021 is run
-  (October 9), so every migration through 021 is on Supabase; a rent roll loaded before 021
-  must be loaded again to get floors and the stack plan.
+**Not yet tried by him:** asking the analyst about a property's surroundings, and asking it to
+set a value.
 
 **How the federal services were checked:** the cloud workspace can't reach them, so questions
 were run in the built-in browser on his computer (he allowed hazards.fema.gov, nces.ed.gov and

@@ -69,7 +69,7 @@ export default async function AnalystInstructionsPage() {
         </ul>
         <p className="note">
           Instructions shape how the analyst behaves; they can&apos;t give it new abilities. What it can do is set by its tools (create an asset, read a document, list assets, look up
-          an asset), and it always works with the permissions of the person chatting.
+          an asset, look up what is around its address, set a field&apos;s value), and it always works with the permissions of the person chatting.
         </p>
       </section>
     </>

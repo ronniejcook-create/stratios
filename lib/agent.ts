@@ -4,6 +4,7 @@
 // as the signed-in person, inside their organization and with their
 // permissions, so the agent can never see or change more than they can.
 
+import { setValueForAgent } from './agentValues'
 import { buildAnalystPrompt, DEFAULT_ANALYST_INSTRUCTIONS, getAnalystInstructions } from './analystInstructions'
 import { createAssetWithDefaults, PROPERTY_TYPES } from './assets'
 import { ApiError, claudeApiKey, converse, type ChatMessage, type ContentBlock, type ToolDefinition } from './claude'
@@ -15,8 +16,9 @@ import { formatPeriod, formatValue } from './fieldFormat'
 import { listFields, listSourceTypes, listValues } from './fields'
 import { listScreens } from './layout'
 import { loadAccess } from './permissions'
-import { getAssetTree, isUuid, listAssets, RECORD_LABELS } from './records'
+import { formatAddress, getAssetTree, isUuid, listAssets, RECORD_LABELS, type Address } from './records'
 import { loadSkillsForAgent, skillIndex, type Skill } from './skills'
+import { isSurroundingTopic, lookUpSurroundings, SURROUNDING_TOPICS } from './surroundings'
 
 export type AgentTurn = { role: 'user' | 'assistant'; text: string; attachments?: { id: string; name: string }[] }
 export type AgentLink = { label: string; href: string }
@@ -25,7 +27,7 @@ export type AgentPages = { assetId: string; documentId: string; pages: { page: n
 export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[] } | { ok: false; error: string }
 
 const MAX_TURNS = 40
-const MAX_STEPS = 6
+const MAX_STEPS = 8
 /** Leaves room inside the web host's five-minute limit for the conversation steps around a document reading. */
 const TIME_BUDGET_MS = 285000
 
@@ -64,8 +66,41 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'get_asset',
-    description: 'Returns one asset\'s properties and buildings and the current value of every field the person is allowed to see. Use to answer questions about an asset.',
+    description: 'Returns one asset\'s properties and buildings, the street address of each and whether it has a map location, and the current value of every field the person is allowed to see. Use to answer questions about an asset.',
     input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
+  },
+  {
+    name: 'look_up_surroundings',
+    description:
+      'Looks up what is around an asset\'s address from public sources, the same ones as the asset\'s Map tab: nearby schools and the school district, transit stops and routes, the FEMA flood zone, natural hazard ratings, jobs and commuting, and Census demographics within 1, 3 and 5 miles. Use for questions such as the closest school, the nearest rail station, whether a property is in a flood zone, or how many people live nearby. Ask only for the topics the question needs. Nothing is saved on the asset. The asset needs an address with a map location.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        asset_id: { type: 'string' },
+        topics: { type: 'array', items: { type: 'string', enum: [...SURROUNDING_TOPICS] }, description: 'One or more topics' },
+        record_name: { type: 'string', description: 'The property or building to look around, when the asset has several addresses. Leave out to use the first property with a map location.' },
+      },
+      required: ['asset_id', 'topics'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'set_field_value',
+    description:
+      'Sets or changes the value of one field on an asset, its property or a building, exactly as if the person typed it on the asset page. Use only when the person asks in this conversation for a value to be entered or changed, and only with the value they gave or one a tool returned. It is saved under their name as Manual Entry and recorded in the field\'s history. Calculated fields and list entries (comments, critical dates) cannot be set this way.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        asset_id: { type: 'string' },
+        field: { type: 'string', description: 'The field\'s name exactly as get_asset lists it' },
+        value: { type: 'string', description: 'The value as a person would type it: 52000 for a number or money, 5.25 for a percent, 2026-03-31 for a date, Yes or No, or the text. Empty only together with clear.' },
+        record_name: { type: 'string', description: 'The name of the property or building, needed only when the asset has more than one the field could belong to' },
+        month: { type: 'string', description: 'YYYY-MM, only for a field kept month by month' },
+        clear: { type: 'boolean', description: 'True to empty the field when the person asks for that' },
+      },
+      required: ['asset_id', 'field', 'value'],
+      additionalProperties: false,
+    },
   },
 ]
 
@@ -78,6 +113,12 @@ const READ_SKILL: ToolDefinition = {
 }
 
 const asText = (value: unknown, max: number) => String(value ?? '').trim().slice(0, max)
+const plain = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '')
+
+/** How an address is shown to the analyst: the text, and whether the map lookups can use it. */
+function describeAddress(address: Address) {
+  return { address: formatAddress(address), has_map_location: address.latitude !== null && address.longitude !== null }
+}
 
 function describeReading(session: Session, result: ReadOutcome): string {
   if (!result.ok) return JSON.stringify({ ok: false, error: result.error })
@@ -173,11 +214,11 @@ async function runTool(session: Session, name: string, input: Record<string, unk
         const sections = sectionByField(await listScreens(client, orgId))
         // Hidden fields are dropped here, so the agent never learns their values.
         const fields = (await listFields(client, orgId)).filter((field) => !field.listId && access.fieldLevel(field.id, sections.get(field.id) ?? null) !== 'hidden')
-        const records = [
-          { type: 'asset' as const, id: tree.id, name: tree.name },
+        const records: { type: 'asset' | 'property' | 'building'; id: string; name: string; addresses: Address[] }[] = [
+          { type: 'asset', id: tree.id, name: tree.name, addresses: [] },
           ...tree.properties.flatMap((property) => [
-            { type: 'property' as const, id: property.id, name: property.name },
-            ...property.buildings.map((building) => ({ type: 'building' as const, id: building.id, name: `${property.name} / ${building.name}` })),
+            { type: 'property' as const, id: property.id, name: property.name, addresses: property.addresses },
+            ...property.buildings.map((building) => ({ type: 'building' as const, id: building.id, name: `${property.name} / ${building.name}`, addresses: building.addresses })),
           ]),
         ]
         const values = await listValues(client, orgId, records.map((record) => record.id))
@@ -188,6 +229,8 @@ async function runTool(session: Session, name: string, input: Record<string, unk
       const fieldById = new Map(found.fields.map((field) => [field.id, field]))
       const lines = found.records.map((record) => ({
         record: `${RECORD_LABELS[record.type]}: ${record.name}`,
+        ...(record.type === 'property' ? { addresses: record.addresses.length > 0 ? record.addresses.map(describeAddress) : 'No address has been added' } : {}),
+        ...(record.type === 'building' && record.addresses.length > 0 ? { addresses: record.addresses.map(describeAddress) } : {}),
         values: found.values
           .filter((value) => value.recordId === record.id && fieldById.has(value.fieldId))
           .slice(0, 300)
@@ -201,6 +244,63 @@ async function runTool(session: Session, name: string, input: Record<string, unk
       }))
       session.links.push({ label: `Open ${found.tree.name}`, href: `/dashboard/assets/${found.tree.id}` })
       return { content: JSON.stringify({ ok: true, asset: found.tree.name, records: lines }).slice(0, 60000), isError: false }
+    }
+    if (name === 'look_up_surroundings') {
+      const assetId = asText(input.asset_id, 60)
+      if (!isUuid(assetId)) return fail('That asset could not be found. Use list_assets to get its id.')
+      const topics = (Array.isArray(input.topics) ? input.topics : [input.topics]).filter(isSurroundingTopic)
+      if (topics.length === 0) return fail(`Choose one or more topics: ${SURROUNDING_TOPICS.join(', ')}.`)
+      const tree = await withOrg(orgId, (client) => getAssetTree(client, orgId, assetId))
+      if (!tree) return fail('That asset could not be found.')
+      // A property's own address comes before its buildings'.
+      const places = tree.properties.flatMap((property) => [
+        ...property.addresses.map((address) => ({ label: `${RECORD_LABELS.property}: ${property.name}`, names: [plain(property.name)], address })),
+        ...property.buildings.flatMap((building) => building.addresses.map((address) => ({ label: `${RECORD_LABELS.building}: ${property.name} / ${building.name}`, names: [plain(building.name), plain(`${property.name} / ${building.name}`)], address }))),
+      ])
+      const wanted = plain(asText(input.record_name, 200))
+      const candidates = wanted ? places.filter((place) => place.names.includes(wanted)) : places
+      if (places.length === 0) return fail('This asset has no address yet. The person can add one on the asset\'s page with Add Address; then this can be looked up.')
+      if (candidates.length === 0) return fail(`No address belongs to a property or building with that name. The addresses are on: ${[...new Set(places.map((place) => place.label))].join('; ')}.`)
+      const place = candidates.find((candidate) => candidate.address.latitude !== null && candidate.address.longitude !== null)
+      if (!place) {
+        return fail(`The address (${formatAddress(candidates[0].address) || 'city only'}) has no map location yet, so nothing around it can be looked up. On the asset's page the person can press Find Location beside the address, or Change Address to enter the full street address.`)
+      }
+      const results = await lookUpSurroundings(place.address.latitude as number, place.address.longitude as number, topics, Math.max(5000, Math.min(25000, remaining)))
+      session.links.push({ label: `Open ${tree.name}`, href: `/dashboard/assets/${tree.id}` })
+      const others = [...new Set(places.filter((other) => other !== place && other.address.latitude !== null).map((other) => other.label))]
+      return {
+        content: JSON.stringify({
+          ok: true,
+          asset: tree.name,
+          looked_up_around: { record: place.label, address: formatAddress(place.address) },
+          ...(others.length > 0 ? { other_records_with_a_map_location: others } : {}),
+          note: 'The map point sits along the street at this address. Distances are straight lines from it.',
+          results,
+        }).slice(0, 60000),
+        isError: false,
+      }
+    }
+
+    if (name === 'set_field_value') {
+      const assetId = asText(input.asset_id, 60)
+      if (!isUuid(assetId)) return fail('That asset could not be found. Use list_assets to get its id.')
+      const result = await withOrg(orgId, (client) =>
+        setValueForAgent(client, orgId, userId, caller.isAdmin, {
+          assetId,
+          field: asText(input.field, 200),
+          recordName: asText(input.record_name, 200) || null,
+          value: asText(input.value, 2100),
+          month: asText(input.month, 10) || null,
+          clear: input.clear === true,
+        }),
+      )
+      if (!result.ok) return fail(result.error)
+      if (result.changed) session.changed = true
+      session.links.push({ label: 'Open the Asset', href: `/dashboard/assets/${assetId}` })
+      return {
+        content: JSON.stringify({ ok: true, saved: result.changed, ...(result.changed ? {} : { note: 'The field already held this value, so nothing changed.' }), field: result.field, record: result.record, value: result.value, ...(result.month ? { month: result.month } : {}) }),
+        isError: false,
+      }
     }
     return fail(`There is no tool called ${name}.`)
   } catch (error) {
