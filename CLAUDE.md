@@ -127,7 +127,7 @@ work and how data is isolated; this file covers how we work and where things sta
     - Who gets it: administrators of the Stratios organization. `lib/stratios.ts` decides that by
       the organization's company domain being `stratios.app` in `organization_settings`, or its id
       matching the optional `STRATIOS_ORG_ID` env var. The Stratios org was created by hand in
-      Clerk (`org_3KORIXREU8taMpsPwTA1obv5xRL`, no @stratios.app mailbox exists yet), so
+      Clerk (`org_3KQzLNz4UcqIKfuNdLBcuVz3JWj`, no @stratios.app mailbox exists yet), so
       `db/migrations/006_master_library.sql` records its domain. Everyone else gets "not found".
     - How writes are allowed: migration 006 adds policies that let a transaction change org_id-null
       rows only when `app.stratios_admin` is `on`; `withStratiosAdmin` in `lib/db.ts` sets it, and

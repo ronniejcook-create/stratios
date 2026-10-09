@@ -31,7 +31,15 @@ create policy field_settings_stratios_admin_read on field_settings for select
 -- Mark the Stratios organization by recording stratios.app as its company
 -- domain (see lib/stratios.ts). It was created by hand in the sign-in system,
 -- so the usual sign-up step that records the domain never ran for it.
+-- An earlier version of this file named the wrong organization; the first
+-- statement takes the marker back off it.
+update organization_settings
+set domain = null, updated_at = now()
+where org_id = 'org_3KORIXREU8taMpsPwTA1obv5xRL' and domain = 'stratios.app';
+
 insert into organization_settings (org_id, domain)
-select 'org_3KORIXREU8taMpsPwTA1obv5xRL', 'stratios.app'
-where not exists (select 1 from organization_settings where domain = 'stratios.app')
+select 'org_3KQzLNz4UcqIKfuNdLBcuVz3JWj', 'stratios.app'
+where not exists (
+  select 1 from organization_settings where domain = 'stratios.app' and org_id <> 'org_3KQzLNz4UcqIKfuNdLBcuVz3JWj'
+)
 on conflict (org_id) do update set domain = excluded.domain, updated_at = now();
