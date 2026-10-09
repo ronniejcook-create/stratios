@@ -101,7 +101,7 @@ export function FieldEditor({
   const [name, setName] = useState(field.name)
   const [aiDescription, setAiDescription] = useState(field.aiDescription)
   const [agentInstructions, setAgentInstructions] = useState(field.agentInstructions)
-  const [reading, setReading] = useState(false)
+  const [reading, setReading] = useState(true)
   const [dataType, setDataType] = useState(field.dataType)
   const [whenEmpty, setWhenEmpty] = useState(field.whenEmpty)
   const [whenDifferent, setWhenDifferent] = useState(field.whenDifferent)
