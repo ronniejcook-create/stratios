@@ -470,6 +470,10 @@ work and how data is isolated; this file covers how we work and where things sta
         tract by the share of its land inside the ring (`sharesWithin`, a 28 x 28 sample grid;
         within half a percent on a known shape). Medians can't be added up, which is why the
         rings show average income and the shading shows median income.
+      - Since October 9 (his request) the five shading groups use the organization's graph
+        colors, `--chart-5` for the lowest group up to `--chart-1` for the highest, read in the
+        browser by `AssetMap.tsx` (the built-in blues are the fallback). With a single-color
+        palette darker still means more; with a many-colored one the color key carries it.
       - Nothing is stored on the property yet; he was told saving these as fields is the more
         useful next step, and that neighborhood demographics are sensitive where they bear on
         leasing or lending decisions (worth a word with counsel before customers see it).

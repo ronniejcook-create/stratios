@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { PropertyMap, type MapArea, type MapPin } from '@/components/PropertyMap'
 import type { AreaProfile, TractArea } from '@/lib/demographics'
 
@@ -14,8 +14,8 @@ const MEASURES = [
 ] as const
 type MeasureKey = (typeof MEASURES)[number]['key']
 
-/** One hue, light to dark: lighter is less, darker is more. */
-const SHADES = ['#cde2fb', '#86b6ef', '#3987e5', '#1c5cab', '#0d366b']
+/** The shading used until the organization's graph colors have been read: one hue, light to dark. */
+const SHADES = ['#c0daf9', '#86b6ef', '#3987e5', '#1c5cab', '#184076']
 
 const whole = (value: number) => value.toLocaleString('en-US')
 const percent = (value: number | null) => (value === null ? 'Not available' : `${Math.round(value * 100)}%`)
@@ -68,13 +68,26 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
     setLoading(false)
   }
 
+  // The five groups are shaded with the organization's first five graph colors (Org Colors > Graph Colors),
+  // the fifth for the lowest group up to the first for the highest. In a single-color palette such as Blues
+  // those run light to dark, so darker still means more. The map needs real color values, so they are read
+  // from the page once it is on screen.
+  const frame = useRef<HTMLDivElement>(null)
+  const [shades, setShades] = useState(SHADES)
+  useEffect(() => {
+    if (!frame.current) return
+    const style = getComputedStyle(frame.current)
+    const found = [5, 4, 3, 2, 1].map((slot) => style.getPropertyValue(`--chart-${slot}`).trim())
+    if (found.every((color) => /^#[0-9a-f]{6}$/i.test(color))) setShades(found)
+  }, [])
+
   const chosen = MEASURES.find((entry) => entry.key === measure)
   const { areas, legend } = useMemo(() => {
     if (!wanted || !profile || !chosen) return { areas: undefined as MapArea[] | undefined, legend: [] as { color: string; text: string }[] }
     const values = profile.tracts.map((tract) => chosen.value(tract)).filter((value): value is number => value !== null)
     const limits = groupLimits(values)
     // With fewer groups than shades, spread them across the light-to-dark range.
-    const shadeOf = (group: number) => SHADES[limits.length === 0 ? 2 : Math.round((group * (SHADES.length - 1)) / limits.length)]
+    const shadeOf = (group: number) => shades[limits.length === 0 ? 2 : Math.round((group * (shades.length - 1)) / limits.length)]
     const shaded: MapArea[] = profile.tracts.map((tract) => {
       const value = chosen.value(tract)
       return {
@@ -89,12 +102,12 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
       text: group === 0 ? (limits.length === 0 ? 'All areas' : `Under ${chosen.format(limit)}`) : limit === Number.POSITIVE_INFINITY ? `${chosen.format(limits[group - 1])} or more` : `${chosen.format(limits[group - 1])} to ${chosen.format(limit)}`,
     }))
     return { areas: shaded, legend: key }
-  }, [wanted, profile, chosen])
+  }, [wanted, profile, chosen, shades])
 
   const rings = wanted && profile && showRings && around ? { center: [around.latitude, around.longitude] as [number, number], miles: profile.rings.map((ring) => ring.miles) } : null
 
   return (
-    <div className="map-layout">
+    <div className="map-layout" ref={frame}>
       <div className="map-main">
         <PropertyMap pins={pins} areas={areas} rings={rings} />
       </div>
