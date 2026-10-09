@@ -254,8 +254,8 @@ export function FieldEditor({
         <div className="label-row">
           <label id="fe-instructions-label" htmlFor="fe-instructions">Agent Instructions</label>
           <div className="view-toggle" role="group" aria-label="How to show the agent instructions">
-            <button type="button" aria-pressed={!reading} onClick={() => setReading(false)}>Markdown</button>
             <button type="button" aria-pressed={reading} onClick={() => setReading(true)}>Reading View</button>
+            <button type="button" aria-pressed={!reading} onClick={() => setReading(false)}>Markdown</button>
           </div>
         </div>
         {reading ? (
