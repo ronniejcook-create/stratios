@@ -291,6 +291,11 @@ work and how data is isolated; this file covers how we work and where things sta
     on their Clerk account (`unsafeMetadata.agentWidth`, so it follows them across computers) and
     in localStorage (`stratios.agentWidth.<userId>`) for an instant start. CSS reads it from
     `--agent-open-width`. Not tried in a browser by Claude.
+  - **Review list messages** (October 9): on the document review page, the "it worked" message
+    for Add Field / Dismiss / a decision shows at the top of its section (`ReviewNotices` and
+    `ReviewSection` in `ReviewControls.tsx`), because the row leaves the table on success and a
+    message on the row flashed and vanished. A section whose last row was just settled stays
+    until the message is dismissed or the page is reloaded. Errors still show on the row.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

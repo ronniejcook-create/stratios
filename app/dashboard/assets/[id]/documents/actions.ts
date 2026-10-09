@@ -37,11 +37,11 @@ export async function decideValue(input: { findingId: string; accept: boolean })
       const field = (await listFields(client, orgId)).find((candidate) => candidate.id === finding.fieldId)
       if (!field) return { ok: false as const, error: 'That field no longer exists.' }
       const decided = await decideFinding(client, orgId, userId, finding, field, input.accept === true)
-      return decided.ok ? { ok: true as const, assetId: finding.assetId, documentId: finding.documentId } : decided
+      return decided.ok ? { ok: true as const, assetId: finding.assetId, documentId: finding.documentId, fieldName: field.name } : decided
     })
     if (!result.ok) return result
     refresh(result.assetId, result.documentId)
-    return { ok: true }
+    return { ok: true, message: input.accept === true ? `${result.fieldName} now uses the document's value.` : `${result.fieldName} was left as it was.` }
   } catch (error) {
     console.error('decideValue failed', error)
     return { ok: false, error: 'That choice could not be saved. Try again.' }
@@ -64,6 +64,7 @@ export async function settleProposedField(input: { proposalId: string; add: bool
       const done = { ok: true as const, assetId: proposal.assetId, documentId: proposal.documentId, message: undefined as string | undefined }
       if (input.add !== true) {
         await settleProposal(client, orgId, userId, proposal.id, null)
+        done.message = `${proposal.name} was dismissed. No field was added.`
         return done
       }
       const created = await createField(client, orgId, {

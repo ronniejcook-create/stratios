@@ -9,7 +9,7 @@ import { listFields, listSourceTypes, type FieldDefinition } from '@/lib/fields'
 import { listScreens } from '@/lib/layout'
 import { loadAccess } from '@/lib/permissions'
 import { getAssetTree, isUuid, RECORD_LABELS } from '@/lib/records'
-import { DecisionButtons, ProposalButtons, ReadButton, RemoveButton } from './ReviewControls'
+import { DecisionButtons, ProposalButtons, ReadButton, RemoveButton, ReviewNotices, ReviewSection } from './ReviewControls'
 
 export const dynamic = 'force-dynamic'
 
@@ -183,9 +183,8 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
         </div>
       </section>
 
-      {waiting.length > 0 ? (
-        <section className="panel">
-          <h2>Needs a Decision</h2>
+      <ReviewNotices>
+      <ReviewSection area="decisions" title="Needs a Decision" empty={waiting.length === 0}>
           <p className="note">Nothing here has changed yet. Choose which value to keep for each one.</p>
           <div className="table-scroll">
             <table className="review-table">
@@ -212,12 +211,9 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
               </tbody>
             </table>
           </div>
-        </section>
-      ) : null}
+      </ReviewSection>
 
-      {openProposals.length > 0 ? (
-        <section className="panel">
-          <h2>Proposed New Fields</h2>
+      <ReviewSection area="proposals" title="Proposed New Fields" empty={openProposals.length === 0}>
           <p className="note">
             The agent found these in the document, and they match none of your fields.
             {isAdmin ? ' Adding one creates the field for your organization and fills in the value.' : ' An administrator can add them.'}
@@ -243,8 +239,8 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
               </tbody>
             </table>
           </div>
-        </section>
-      ) : null}
+      </ReviewSection>
+      </ReviewNotices>
 
       {GROUPS.map((group) => {
         const groupRows = rows.filter((row) => row.finding.outcome === group.outcome)
