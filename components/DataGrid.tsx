@@ -20,6 +20,8 @@ export type GridRow = {
   values?: Record<string, string[]>
   /** The chip style for a `chip` column. */
   tones?: Record<string, GridTone>
+  /** A small picture shown before the row's link, when the grid has `thumbnails` on. */
+  image?: string
 }
 
 type Sort = { column: string; descending: boolean } | null
@@ -159,7 +161,7 @@ function ColumnMenu({
  * behind is dimmed). The contents are only rendered while it is open, so a
  * form inside starts fresh each time.
  */
-export function Modal({ open, title, onClose, children }: { open: boolean; title: string; onClose: () => void; children: ReactNode }) {
+export function Modal({ open, title, onClose, children, wide }: { open: boolean; title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     const element = dialog.current
@@ -168,7 +170,7 @@ export function Modal({ open, title, onClose, children }: { open: boolean; title
     if (!open && element.open) element.close()
   }, [open])
   return (
-    <dialog ref={dialog} className="modal" aria-label={title} onClose={onClose}>
+    <dialog ref={dialog} className={wide ? 'modal modal-wide' : 'modal'} aria-label={title} onClose={onClose}>
       <div className="modal-head">
         <h2>{title}</h2>
         <button type="button" className="icon-button" aria-label="Close" onClick={onClose}>×</button>
@@ -194,6 +196,7 @@ export function DataGrid({
   toolbar,
   notice,
   emptyText,
+  thumbnails,
 }: {
   columns: GridColumn[]
   rows: GridRow[]
@@ -207,6 +210,8 @@ export function DataGrid({
   notice?: ReactNode
   /** Shown in the grid when there are no rows at all. */
   emptyText?: string
+  /** Leaves room for a small picture before each row's link (rows without one get an empty box). */
+  thumbnails?: boolean
 }) {
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Filters>({})
@@ -295,7 +300,16 @@ export function DataGrid({
 
   const cell = (row: GridRow, column: GridColumn) => {
     const text = row.cells[column.key] ?? ''
-    if (column.display === 'link' && row.href) return <Link href={row.href}>{text}</Link>
+    if (column.display === 'link' && row.href) {
+      if (!thumbnails) return <Link href={row.href}>{text}</Link>
+      return (
+        <Link href={row.href} className="grid-thumb-link">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {row.image ? <img className="grid-thumb" src={row.image} alt="" loading="lazy" /> : <span className="grid-thumb grid-thumb-empty" aria-hidden="true" />}
+          <span>{text}</span>
+        </Link>
+      )
+    }
     if (column.display === 'code') return <code className="key">{text}</code>
     if (column.display === 'chip') return <span className={TONE_CLASS[row.tones?.[column.key] ?? 'plain']}>{text}</span>
     return text

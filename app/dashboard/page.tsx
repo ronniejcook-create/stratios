@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { PROPERTY_TYPES } from '@/lib/assets'
 import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
 import { loadAccess } from '@/lib/permissions'
+import { listMainPhotos } from '@/lib/photos'
 import { listAssets, type AssetSummary } from '@/lib/records'
 import type { GridRow } from '@/components/DataGrid'
 import { AssetsGrid } from './AssetsGrid'
@@ -58,9 +59,20 @@ export default async function AssetsPage() {
     )
   }
 
+  // Main photos are loaded on their own, so the list still shows if the photos table isn't there yet.
+  let mainPhotos = new Map<string, string>()
+  if (problem === 'none' && assets.length > 0) {
+    try {
+      mainPhotos = await withOrg(orgId, (client) => listMainPhotos(client, orgId))
+    } catch (error) {
+      if (!isMissingSchema(error)) console.error('listMainPhotos failed', error)
+    }
+  }
+
   const rows: GridRow[] = assets.map((asset) => ({
     id: asset.id,
     href: `/dashboard/assets/${asset.id}`,
+    image: mainPhotos.has(asset.id) ? `/api/photos/${mainPhotos.get(asset.id)}` : undefined,
     cells: {
       name: asset.name,
       properties: String(asset.propertyCount),

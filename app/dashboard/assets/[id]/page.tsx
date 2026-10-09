@@ -11,7 +11,9 @@ import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from
 import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
 import { AddAddressForm, AddChildForm } from './AddForms'
+import { listPhotos, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo } from '@/lib/photos'
 import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
+import { PhotosPanel, type PhotoRow } from './PhotosPanel'
 import { FieldGroup, type FieldView, type Target } from './FieldGroup'
 import { ListSection } from './ListSection'
 import { DeleteAssetButton } from './DeleteAssetButton'
@@ -110,6 +112,27 @@ export default async function AssetPage({
       console.error('Counting the asset contents failed', error)
     }
   }
+
+  // Photos are loaded on their own too, for the same reason.
+  let photos: Photo[] = []
+  let photosError: string | null = null
+  try {
+    photos = await withOrg(orgId, (client) => listPhotos(client, orgId, tree.id))
+  } catch (error) {
+    console.error('Listing photos failed', error)
+    photosError = isMissingSchema(error)
+      ? 'Photos need a database update: run db/migrations/013_photos.sql, then reload this page.'
+      : 'The photos could not be loaded. Try again.'
+  }
+  const photoRows: PhotoRow[] = photos.map((photo) => ({
+    id: photo.id,
+    category: photo.category,
+    categoryLabel: PHOTO_CATEGORY_LABELS[photo.category],
+    caption: photo.caption,
+    isMain: photo.isMain,
+    source: photo.documentName ? `From ${photo.documentName}${photo.page ? `, page ${photo.page}` : ''}` : photo.page ? `From a document that was removed, page ${photo.page}` : 'Uploaded',
+  }))
+  const mainPhoto = photos.find((photo) => photo.isMain)
 
   // Documents are loaded on their own, so the asset still opens if their tables aren't there yet.
   let documents: DocumentSummary[] = []
@@ -407,7 +430,11 @@ export default async function AssetPage({
         <span>{tree.name}</span>
       </p>
       <div className="title-row">
-        <h1>{tree.name}</h1>
+        <div className="title-with-photo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {mainPhoto ? <img className="title-photo" src={`/api/photos/${mainPhoto.id}`} alt="" /> : null}
+          <h1>{tree.name}</h1>
+        </div>
         {orgRole === 'org:admin' ? <DeleteAssetButton assetId={tree.id} name={tree.name} contents={contents} /> : null}
       </div>
       <p className="lede">
@@ -418,6 +445,20 @@ export default async function AssetPage({
       <ScreenTabs
         screens={[
           ...screens.map((screen, index) => ({ key: screen.key, name: screen.name, content: screenContent(screen, index === 0) })),
+          {
+            key: '_photos',
+            name: photos.length > 0 ? `Photos (${photos.length})` : 'Photos',
+            content: (
+              <PhotosPanel
+                assetId={tree.id}
+                photos={photoRows}
+                canEdit={access.canAddRecords}
+                categories={PHOTO_CATEGORIES.map((value) => ({ value, label: PHOTO_CATEGORY_LABELS[value] }))}
+                documentCount={documents.length}
+                problem={photosError}
+              />
+            ),
+          },
           {
             key: '_documents',
             name: 'Documents',

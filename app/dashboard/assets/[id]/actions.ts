@@ -7,7 +7,10 @@ import { withOrg } from '@/lib/db'
 import { listHistory, saveManualValue, type HistoryEntry } from '@/lib/fields'
 import { removeListRow, saveListRow } from '@/lib/lists'
 import { loadAccess, sectionOfField } from '@/lib/permissions'
-import { insertAddress, insertChild, isRecordType, isUuid, type AddressOwner } from '@/lib/records'
+import { listDocuments, readDocumentFile } from '@/lib/documents'
+import { extractPhotos } from '@/lib/photoExtraction'
+import { isPhotoCategory, removePhoto, savePhotosFromDocument, setMainPhoto, updatePhoto } from '@/lib/photos'
+import { insertAddress, insertChild, isRecordType, isUuid, type AddressOwner, type Queryable } from '@/lib/records'
 
 const NO_PERMISSION = "You don't have permission to change this."
 
@@ -278,4 +281,80 @@ export async function deleteAssetForever(input: { assetId: string }): Promise<Sa
   revalidatePath('/dashboard')
   revalidatePath(`/dashboard/assets/${input.assetId}`)
   return { ok: true }
+}
+
+/**
+ * Photo changes: make one the main photo, change its caption or what it
+ * shows, or remove it. All need the same permission as adding a document.
+ */
+async function changePhoto(photoId: string, work: (client: Queryable, orgId: string) => Promise<string | null>): Promise<SaveFieldResult> {
+  const { userId, orgId, orgRole } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (!isUuid(photoId)) return { ok: false, error: 'That photo could not be found.' }
+  try {
+    const assetId = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      if (!access.canAddRecords) return false as const
+      return work(client, orgId)
+    })
+    if (assetId === false) return { ok: false, error: NO_PERMISSION }
+    if (assetId === null) return { ok: false, error: 'That photo could not be found. It may already have been removed.' }
+    revalidatePath(`/dashboard/assets/${assetId}`)
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (error) {
+    console.error('Changing a photo failed', error)
+    return { ok: false, error: 'That could not be saved. Try again.' }
+  }
+}
+
+export async function makeMainPhoto(input: { photoId: string }): Promise<SaveFieldResult> {
+  return changePhoto(input.photoId, (client, orgId) => setMainPhoto(client, orgId, input.photoId))
+}
+
+export async function savePhotoDetails(input: { photoId: string; caption: string; category: string }): Promise<SaveFieldResult> {
+  if (!isPhotoCategory(input.category)) return { ok: false, error: 'Choose what the photo shows.' }
+  const category = input.category
+  return changePhoto(input.photoId, (client, orgId) => updatePhoto(client, orgId, input.photoId, { caption: String(input.caption ?? ''), category }))
+}
+
+export async function deletePhoto(input: { photoId: string }): Promise<SaveFieldResult> {
+  return changePhoto(input.photoId, (client, orgId) => removePhoto(client, orgId, input.photoId))
+}
+
+/**
+ * Copies the photographs out of the documents this asset already has, for
+ * documents that were read before photos existed. The agent is not asked
+ * again, so these photos arrive without captions; ones already on the asset
+ * are skipped.
+ */
+export async function pullPhotosFromDocuments(input: { assetId: string }): Promise<{ ok: true; added: number } | { ok: false; error: string }> {
+  const { userId, orgId, orgRole } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (!isUuid(input.assetId)) return { ok: false, error: 'That asset could not be found.' }
+  try {
+    const files = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      if (!access.canAddRecords) return null
+      const found: { documentId: string; file: Buffer }[] = []
+      for (const document of await listDocuments(client, orgId, input.assetId)) {
+        const file = await readDocumentFile(client, orgId, document.id)
+        if (file) found.push({ documentId: document.id, file })
+      }
+      return found
+    })
+    if (files === null) return { ok: false, error: NO_PERMISSION }
+    let added = 0
+    for (const { documentId, file } of files) {
+      const photos = await extractPhotos(file)
+      if (photos.length === 0) continue
+      added += await withOrg(orgId, (client) => savePhotosFromDocument(client, orgId, userId, { assetId: input.assetId, documentId, photos, notes: [], mainPage: null }))
+    }
+    revalidatePath(`/dashboard/assets/${input.assetId}`)
+    revalidatePath('/dashboard')
+    return { ok: true, added }
+  } catch (error) {
+    console.error('Pulling photos from documents failed', error)
+    return { ok: false, error: 'The photos could not be pulled from the documents. Try again.' }
+  }
 }

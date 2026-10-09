@@ -806,3 +806,25 @@ td.muted { color: var(--dim); }
 .modal-warning { color: var(--danger); font-weight: 600; }
 .btn-danger { background: var(--danger); color: #2a0d07; border-color: var(--danger); }
 .btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 85%, var(--heading)); }
+
+/* Photos: the asset's Photos tab, the main photo beside the title, and thumbnails in the Assets list. */
+.title-with-photo { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.title-photo { width: 72px; height: 54px; flex: none; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); }
+.photo-panel.dragging { border-color: var(--link); box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 35%, transparent); }
+.photo-filter { margin-left: auto; height: 36px; padding: 0 10px; background: var(--bg); color: var(--heading); border: 1px solid var(--line-strong); border-radius: 6px; font: inherit; font-size: 14px; }
+.photo-grid { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.photo-card { display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.photo-card.main { border-color: var(--link); }
+.photo-open { display: block; padding: 0; border: 0; background: var(--bg-deep); cursor: zoom-in; }
+.photo-open img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.photo-info, .photo-edit { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+.photo-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.photo-caption { font-size: 13px; line-height: 1.4; color: var(--text); }
+.photo-actions { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.shell-main .photo-actions .link-button { min-height: 26px; font-size: 13px; }
+.photo-edit input, .photo-edit select { height: 34px; padding: 0 8px; background: var(--panel); color: var(--heading); border: 1px solid var(--line-strong); border-radius: 6px; font: inherit; font-size: 13px; }
+.modal.modal-wide { width: min(1100px, calc(100vw - 32px)); }
+.photo-large { display: block; max-width: 100%; max-height: calc(100vh - 180px); margin: 12px auto 0; border-radius: 6px; }
+.grid-thumb-link { display: inline-flex; align-items: center; gap: 10px; }
+.grid-thumb { width: 48px; height: 36px; flex: none; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); }
+.grid-thumb-empty { display: inline-block; }

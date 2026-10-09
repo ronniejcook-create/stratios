@@ -9,10 +9,12 @@ import { createAssetWithDefaults } from './assets'
 import { withOrg } from './db'
 import { describeFailure, NO_PERMISSION, type Caller } from './documentRequests'
 import { applyReading, attachDocument, failReading, getDocument, readDocumentFile, startReading, type Outcome } from './documents'
-import { extractableFields, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField } from './extraction'
+import { extractableFields, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField, type Reading } from './extraction'
 import { listFields } from './fields'
 import { listScreens } from './layout'
 import { loadAccess } from './permissions'
+import { extractPhotos } from './photoExtraction'
+import { savePhotosFromDocument } from './photos'
 import { getAssetTree } from './records'
 import { loadSkillsForAgent } from './skills'
 
@@ -29,12 +31,33 @@ export type ReadSuccess = {
   counts: Record<Outcome, number>
   proposals: number
   skipped: number
+  /** Photos copied out of the document onto the asset. */
+  photos: number
 }
 export type ReadOutcome = ReadSuccess | { ok: false; error: string; status: number }
 
 const NOT_FOUND = 'That document could not be found.'
 const busyMessage = (status: string) =>
   status === 'read' ? 'This document has already been read.' : 'This document is being read right now. Give it a few minutes.'
+
+/**
+ * Copies the document's photographs onto the asset, labeled with the agent's
+ * notes. This is an extra: it runs after the reading has been saved, in its
+ * own step, and a failure here (including the photos table not existing yet)
+ * never fails the reading. Returns how many photos were added.
+ */
+async function addPhotos(caller: Caller, assetId: string, documentId: string, file: Buffer, reading: Reading): Promise<number> {
+  try {
+    const photos = await extractPhotos(file)
+    if (photos.length === 0) return 0
+    return await withOrg(caller.orgId, (client) =>
+      savePhotosFromDocument(client, caller.orgId, caller.userId, { assetId, documentId, photos, notes: reading.photos, mainPage: reading.mainPhotoPage }),
+    )
+  } catch (error) {
+    console.error('Saving photos from a document failed', error)
+    return 0
+  }
+}
 
 async function giveUp(caller: Caller, documentId: string, error: string, status = 502): Promise<ReadOutcome> {
   await withOrg(caller.orgId, (client) => failReading(client, caller.orgId, documentId, error)).catch((failure) => console.error('Recording a failed reading failed', failure))
@@ -79,6 +102,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
 
   try {
     const counts = await withOrg(orgId, (client) => applyReading(client, orgId, userId, { id: documentId, name: document.name }, result.reading))
+    const photos = await addPhotos(caller, tree.id, documentId, prepared.file, result.reading)
     return {
       ok: true,
       assetId: tree.id,
@@ -91,6 +115,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       counts,
       proposals: result.reading.proposals.length,
       skipped: result.reading.skipped,
+      photos,
     }
   } catch (error) {
     console.error('Applying a reading failed', error)
@@ -133,7 +158,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
   const name = (described?.name || document.name.replace(/\.pdf$/i, '')).slice(0, 200)
 
   try {
-    return await withOrg(orgId, async (client) => {
+    const created = await withOrg(orgId, async (client) => {
       const assetId = await createAssetWithDefaults(client, orgId, userId, { name, propertyType: described?.propertyType ?? 'Other', city: described?.city ?? null })
       const tree = await getAssetTree(client, orgId, assetId)
       const property = tree?.properties[0]
@@ -160,8 +185,10 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         counts,
         proposals: reading.proposals.length,
         skipped: reading.skipped,
+        photos: 0,
       }
     })
+    return { ...created, photos: await addPhotos(caller, created.assetId, documentId, prepared.file, result.reading) }
   } catch (error) {
     console.error('Creating an asset from a document failed', error)
     return giveUp(caller, documentId, describeFailure(error, 'The asset could not be created from this document. Try again.'), 500)

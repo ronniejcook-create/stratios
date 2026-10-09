@@ -325,6 +325,40 @@ work and how data is isolated; this file covers how we work and where things sta
     scratch database (two assets plus another organization: only the chosen asset's rows go,
     another organization can't delete it). The button and pop-up were checked as a mock only.
     Any new table that stores rows by `record_id` must be added to `deleteAsset`.
+  - **Photos** (October 9; `db/migrations/013_photos.sql`, table `asset_photos`). Ronnie asked
+    whether photos could be added when an offering memorandum is read; a test on his Knoll Trail
+    memorandum pulled 29 clean photos, so it was built.
+    - Extraction: `lib/photoExtraction.ts` uses **pdf-lib** (the first dependency added since the
+      start; `package.json` only, the lock file could not be updated here because npm is
+      unreachable, Vercel's install resolves it). It copies out pictures stored as plain JPEG,
+      at least 600 x 400, not banners, not print (CMYK) color, up to 40 per document. Logos and
+      icons fall away by size. Maps and floor plans stored another way are **not** captured, and
+      a flattened brochure yields little.
+    - Labels: the reading's answer format gained `photos` (page, category, caption) and
+      `main_photo_page` (`lib/extraction.ts`); pictures are matched to the agent's notes by page.
+      Categories: exterior, interior, aerial, area, plan, other. Two-page spreads arrive as two
+      halves (the agent is told to say so in the caption); they are not joined, and
+      near-duplicates are kept. Exact duplicates are skipped by fingerprint (`sha256`).
+    - When: `addPhotos` in `lib/documentReading.ts` runs after a reading is saved, for both the
+      chat agent and the Documents tab, in its own step; a failure there (or 013 not run) never
+      fails the reading. The analyst is told how many photos were added.
+    - Storage: the picture bytes are in Postgres (`asset_photos.data`), as agreed with Ronnie for
+      now; move photos and documents to Supabase Storage together later. Roughly 4 MB per
+      memorandum. `lib/photos.ts` holds all reads and writes.
+    - Screens: a **Photos** tab on the asset (`PhotosPanel.tsx`): cards with category, caption
+      and source, click for a larger view, Set as Main, Edit, Remove, a category filter, Add
+      Photos and drag-in upload (shrunk in the browser to 2,000 px JPEG, then `POST
+      /api/photos`), and **Get Photos from Documents** for documents read before photos existed
+      (no agent call, so no captions). The main photo shows beside the asset's title and as a
+      thumbnail in the Assets list (`DataGrid` `thumbnails`). Photos are served by
+      `GET /api/photos/[id]` to signed-in members of the organization.
+    - Permissions: everyone in the organization sees photos; adding, editing and removing need
+      `access.canAddRecords`, like documents. Deleting an asset deletes its photos (cascade);
+      removing a document keeps the photos that came from it.
+    - Checked: the migration twice on the scratch database, and extraction, labels, main photo
+      choice, duplicates, upload, edit, remove and organization isolation through `lib/photos.ts`
+      with his real memorandum (all passed). The screens were checked as a mock; the routes and
+      the agent's photo notes were not run against the real app or Claude API.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

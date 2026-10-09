@@ -22,6 +22,7 @@ export function AssetsGrid({ rows, canAdd, propertyTypes }: { rows: GridRow[]; c
         noun="assets"
         searchColumns={['name', 'city']}
         searchPlaceholder="Search by name or city"
+        thumbnails={rows.some((row) => row.image)}
         emptyText={canAdd ? 'No assets yet. Use Add Asset to create the first one.' : 'No assets yet.'}
         toolbar={canAdd ? <button type="button" className="btn btn-primary btn-small" onClick={() => setAdding(true)}>Add Asset</button> : null}
       />
