@@ -735,6 +735,8 @@ td.muted { color: var(--dim); }
 .review-value { color: var(--heading); font-variant-numeric: tabular-nums; }
 .review-quote { font-style: italic; max-width: 44ch; }
 .review-where { white-space: nowrap; }
+.review-entry { max-width: 64ch; }
+.review-entry > div + div { margin-top: 2px; }
 .review-where .chip { display: block; width: fit-content; margin-top: 4px; }
 .review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 6px; }
 .review-actions .form-error, .review-actions .form-ok, .review-actions .note { margin: 0; flex-basis: 100%; }
@@ -905,6 +907,9 @@ td.muted { color: var(--dim); }
 .field-card-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; max-width: 100%; font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--heading); overflow-wrap: anywhere; }
 .field-card-value .field-unset { font-weight: 400; }
 .field-card:hover .field-card-label { color: var(--link); }
+/* A paragraph of text: the full width of the section, at reading weight, cut short after four lines. */
+.field-card-long { grid-column: 1 / -1; }
+.field-card-long .field-card-value { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; max-width: 96ch; font-weight: 400; color: var(--text); line-height: 1.5; white-space: pre-line; }
 .field-list.tiles { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .field-list.tiles .field-card { margin: 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
 .subrecord .field-list.tiles .field-card { background: var(--panel); }
@@ -919,6 +924,8 @@ td.muted { color: var(--dim); }
 .field-modal-body { min-height: 190px; padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
 .field-modal-body .field { flex: none; }
 .field-modal-value { font-size: 20px; font-weight: 600; color: var(--heading); }
+.field-modal-value.field-modal-long { font-size: 14px; font-weight: 400; line-height: 1.55; color: var(--text); white-space: pre-line; max-height: 46vh; overflow-y: auto; }
+.shell-main .field-textarea, .field-textarea { width: 100%; min-height: 36px; padding: 7px 10px; resize: vertical; font: inherit; line-height: 1.5; }
 .field-modal .field-history { padding: 0; max-height: 46vh; overflow-y: auto; }
 .field-skill { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; font-size: 14px; }
 .field-skill h3 { margin-top: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }

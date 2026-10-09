@@ -73,7 +73,7 @@ work and how data is isolated; this file covers how we work and where things sta
 - Data design: agreed in the Claude Doc "Stratios Data Design" (two tabs: the design, and the
   starter fields). Read it before touching the data model. Stage 1 of its build order is built:
   - `db/migrations/003_fields.sql`: Asset > Property > Building > Floor > Unit, addresses,
-    source types, the field dictionary with 32 Stratios standard fields (org_id null), per-setting
+    source types, the field dictionary with 32 Stratios standard fields (org_id null; 54 since migration 017), per-setting
     organization overrides, golden-record values, change history and per-source values.
   - `lib/records.ts` (hierarchy, keys), `lib/fields.ts` (dictionary, save with history),
     `lib/fieldFormat.ts` (format and parse, browser-safe), `lib/assets.ts` (new asset = asset +
@@ -199,7 +199,7 @@ work and how data is isolated; this file covers how we work and where things sta
       field and fills it), Filled In, Replaced, Confirmed, Different but Kept, Already Decided.
       Proposed fields always wait for an administrator; the per-organization "add automatically"
       setting from the design is not built.
-    - Not built: list rows (comments, critical dates) from documents, Word/Excel files, reading a
+    - Not built: Word/Excel files, reading a
       document a second time after it has been read, and showing which document a value came from
       on the asset page (the history note says "From <file>, page N").
     - Checked here: migrations on a scratch database, and upload, rules, decisions and proposed
@@ -507,6 +507,59 @@ work and how data is isolated; this file covers how we work and where things sta
     document's `read_started_at` and `read_at`). Values the agent filled from a document
     already had history with the file and page. Tested on the scratch database; he needs to
     run 016.
+  - **More standard fields, and commentary from documents** (October 9, late;
+    `db/migrations/017_more_standard_fields.sql`). Ronnie expected an offering memorandum to
+    load commentary and found none: the agent could not write list entries and there were no
+    narrative fields. Both were built.
+    - Fields: 22 new standard fields (54 standard fields now, plus the list columns), each with a
+      Description and Agent Instructions. New standard sections: **Investment Summary** (asset,
+      Overview: Investment Highlights, Business Plan), **Property Summary** (property, Overview:
+      Property Description, Location Description, Tenancy Summary; the agent is told 100 words
+      or fewer) and **Underwriting** (property, Financials: In-Place Net Operating Income,
+      Vacancy Assumption, Capital Reserve per Square Foot). Property Details gained County,
+      Zoning, Parking Ratio (text, as stated), Surface and Garage Parking Spaces, Number of
+      Tenants, Percent Leased, Weighted Average Lease Term (years). Building Details gained
+      Construction Type, Roof, HVAC, Elevators, Typical Floor Plate, Ceiling Height (text).
+    - His organization had already added several of these from the agent's proposals. The
+      migration moves such a field's values, history and permissions onto the new standard
+      field and deletes the organization's copy, when the key is the standard key or a listed
+      other name (for example `weightedAverageLeaseTermRemaining`, `capitalReservePerSf`,
+      `generalVacancyAssumption`, `averageFloorPlate`), the kind of value matches, and the
+      organization has no values in the standard field yet. A same-key field of a different
+      kind is renamed "(Custom)". The whole file is one transaction. Anything it did not match
+      stays an organization field under Other Fields (Available Vacant SF, Static Vacant SF,
+      Covered Parking Ratio are expected to stay); he can retire leftovers by hand.
+    - Long text: no new field type. A text value over 90 characters shows as a full-width
+      paragraph cut after four lines (`.field-card-long`), and text fields are edited in a box
+      that grows; Enter saves a short one-line value, Ctrl+Enter saves a paragraph. Text is
+      still limited to 2,000 characters.
+    - List entries from documents: the reading's answer format gained `list_rows` (record, list,
+      page, cells). The agent is shown every list on assets, properties and buildings whose
+      section the person may edit (`extractableLists`), with its columns, and may add up to 25
+      entries (comments of 60 words or fewer; a critical date per dated event).
+      `interpretAnswer` drops a cell that does not fit its column, and an entry with nothing of
+      substance or with no value in the column its list is ordered by unless that column fills
+      itself in (so a critical date needs a date; a comment's date defaults to today and Made
+      By to the document's name). `addDocumentRows` in `lib/lists.ts` writes the entries with
+      source Documents, the document and the page, and a first history entry per cell; it runs
+      in the same step as `applyReading` behind a savepoint, so a failure there never fails the
+      reading, and it does nothing if the document's entries were already added.
+    - The review page has **Added to Lists** (`listDocumentRows`: entries whose stored source
+      value carries the document, not since removed) with Remove (`EntryRemoveButton`, the
+      asset page's `removeRow`). The analyst is told how many entries were added.
+    - The standard "Reading an Offering Memorandum" skill gained a "Commentary and Critical
+      Dates" part (appended by 017 once). An organization that modified that skill does not
+      get it, but the general rule in the prompt covers the basics without any skill.
+    - The answer limit went from 16,000 to 20,000 tokens. Readings are longer now, so the
+      270-second limit is closer; if he reports "took too long", lower `MAX_LIST_ROWS` or move
+      the call to streaming.
+    - Checked: 017 twice as a role without BYPASSRLS, with a stand-in organization holding
+      matching, differently typed and duplicate fields; and the new fields, the prompt, the
+      checking of entries, storage, history, the review list, editing, removal and asset
+      deletion through the real code on the scratch database (scripted Claude answer). The
+      long-text block and box were clicked through in Chromium. The review page section was
+      not opened in a browser, and nothing was run against the real Claude API, so how good
+      the comments are shows on his first memorandum.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

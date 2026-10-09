@@ -7,9 +7,10 @@ import { sectionByField } from '@/lib/extraction'
 import { formatPeriod, formatValue, isEmptyValue } from '@/lib/fieldFormat'
 import { listFields, listSourceTypes, type FieldDefinition } from '@/lib/fields'
 import { listScreens } from '@/lib/layout'
+import { listDocumentRows, listLists } from '@/lib/lists'
 import { loadAccess } from '@/lib/permissions'
 import { getAssetTree, isUuid, RECORD_LABELS } from '@/lib/records'
-import { DecisionButtons, ProposalButtons, ReadButton, RemoveButton, ReviewNotices, ReviewSection } from './ReviewControls'
+import { DecisionButtons, EntryRemoveButton, ProposalButtons, ReadButton, RemoveButton, ReviewNotices, ReviewSection } from './ReviewControls'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,6 +53,8 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
         sections: sectionByField(await listScreens(client, orgId)),
         sources: await listSourceTypes(client),
         access: await loadAccess(client, orgId, userId, isAdmin),
+        lists: await listLists(client, orgId),
+        listRows: await listDocumentRows(client, orgId, docId),
       }
     })
   } catch (error) {
@@ -67,7 +70,7 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
     )
   }
   if (!loaded) notFound()
-  const { document, tree, findings, proposals, fields, sections, sources, access } = loaded
+  const { document, tree, findings, proposals, fields, sections, sources, access, lists, listRows } = loaded
 
   const fieldById = new Map(fields.map((field) => [field.id, field]))
   const sourceName = (key: string | null) => (key ? sources.find((source) => source.key === key)?.name ?? key : '')
@@ -95,6 +98,16 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
   const decided = rows.filter((row) => row.finding.outcome === 'decision' && row.finding.decision !== null)
   const openProposals = canOpenFile ? proposals.filter((proposal) => proposal.status === 'proposed') : []
   const settledProposals = canOpenFile ? proposals.filter((proposal) => proposal.status !== 'proposed') : []
+
+  // Entries the agent added to lists (comments, critical dates). A list follows the permission of its section.
+  const entries = listRows.flatMap((row) => {
+    const list = lists.find((candidate) => candidate.id === row.listId)
+    if (!list) return []
+    const level = list.sectionId ? access.sectionLevel(list.sectionId) : access.admin ? 'edit' : 'hidden'
+    if (level === 'hidden') return []
+    const columns = fields.filter((field) => field.listId === list.id && access.fieldLevel(field.id, list.sectionId) !== 'hidden')
+    return [{ row, list, columns, canEdit: level === 'edit' }]
+  })
 
   const pageLink = (page: number | null) =>
     page === null ? null : canOpenFile ? (
@@ -155,7 +168,7 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
           <>
             {document.summary && canOpenFile ? <p>{document.summary}</p> : null}
             <p className="note">
-              {rows.length === 0 && openProposals.length === 0
+              {rows.length === 0 && openProposals.length === 0 && entries.length === 0
                 ? 'The agent found no values for your fields in this document.'
                 : `The agent found ${rows.length} ${rows.length === 1 ? 'value' : 'values'}: ${[
                     `${rows.filter((row) => row.finding.outcome === 'filled').length} filled in`,
@@ -164,6 +177,7 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
                     `${waiting.length} waiting for a decision`,
                     `${rows.filter((row) => row.finding.outcome === 'kept').length} kept as they were`,
                   ].join(', ')}.`}
+              {entries.length > 0 ? ` It also added ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} to lists, shown under Added to Lists below.` : ''}
               {hiddenCount > 0 ? ` ${hiddenCount} more ${hiddenCount === 1 ? 'is for a field' : 'are for fields'} your role cannot see.` : ''}
             </p>
           </>
@@ -234,6 +248,44 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
                     <td><span className="review-value">{proposal.value}</span></td>
                     <td className="review-where">{pageLink(proposal.page)}</td>
                     {isAdmin ? <td><ProposalButtons proposalId={proposal.id} /></td> : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+      </ReviewSection>
+
+      <ReviewSection area="entries" title="Added to Lists" empty={entries.length === 0}>
+          <p className="note">
+            The agent wrote these entries from the document and added them to the asset&apos;s lists, such as Commentary and Critical Dates.
+            Remove any you don&apos;t want; the rest can be changed on the asset itself.
+          </p>
+          <div className="table-scroll">
+            <table className="review-table">
+              <thead>
+                <tr><th>List</th><th>Entry</th><th>Where</th><th>Your Choice</th></tr>
+              </thead>
+              <tbody>
+                {entries.map(({ row, list, columns, canEdit }) => (
+                  <tr key={row.id}>
+                    <td>
+                      <span className="review-field">{list.name}</span>
+                      <div className="doc-sub">{RECORD_LABELS[row.recordType]}: {recordNames.get(row.recordId) ?? 'Removed'}</div>
+                    </td>
+                    <td className="review-entry">
+                      {columns.map((column) => {
+                        const value = row.values[column.id]
+                        if (!value || isEmptyValue(value)) return null
+                        return (
+                          <div key={column.id}>
+                            <span className="doc-sub">{column.name}: </span>
+                            <span className="review-value">{formatValue(column, value)}</span>
+                          </div>
+                        )
+                      })}
+                    </td>
+                    <td className="review-where">{pageLink(row.page)}</td>
+                    <td>{canEdit ? <EntryRemoveButton assetId={tree.id} rowId={row.id} /> : <span className="note">Your role can view this list but not change it.</span>}</td>
                   </tr>
                 ))}
               </tbody>

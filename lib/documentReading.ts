@@ -9,14 +9,15 @@ import { createAssetWithDefaults } from './assets'
 import { withOrg } from './db'
 import { describeFailure, NO_PERMISSION, type Caller } from './documentRequests'
 import { applyReading, attachDocument, failReading, getDocument, readDocumentFile, startReading, type Outcome } from './documents'
-import { extractableFields, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField, type Reading } from './extraction'
+import { extractableFields, extractableLists, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField, type Reading } from './extraction'
 import { listFields } from './fields'
 import { listScreens } from './layout'
+import { addDocumentRows, listLists, type DocumentRow } from './lists'
 import { loadAccess } from './permissions'
 import { extractPhotos } from './photoExtraction'
 import { joinSpreads } from './photoJoin'
 import { planPagesOf, saveDocumentPhotoNotes, savePhotosFromDocument, type PlanPage } from './photos'
-import { getAssetTree } from './records'
+import { getAssetTree, type Queryable } from './records'
 import { loadSkillsForAgent } from './skills'
 
 export type ReadSuccess = {
@@ -32,6 +33,8 @@ export type ReadSuccess = {
   counts: Record<Outcome, number>
   proposals: number
   skipped: number
+  /** Entries added to lists: comments, critical dates and the like. */
+  listRows: number
   /** Photos copied out of the document onto the asset. */
   photos: number
   /** Pages the agent marked as plans or maps. The browser draws these as pictures and adds them to the photos. */
@@ -64,6 +67,29 @@ async function addPhotos(caller: Caller, assetId: string, documentId: string, fi
   }
 }
 
+/**
+ * Adds the list entries the agent found (comments, critical dates). Like the
+ * photos this is an extra: if it fails, the entries are left out and the
+ * values already saved in this step are kept.
+ */
+async function addListRows(client: Queryable, caller: Caller, document: { id: string; name: string }, rows: DocumentRow[]): Promise<number> {
+  if (rows.length === 0) return 0
+  try {
+    await client.query('savepoint list_rows')
+  } catch {
+    return 0
+  }
+  try {
+    const added = await addDocumentRows(client, caller.orgId, caller.userId, document, rows)
+    await client.query('release savepoint list_rows')
+    return added
+  } catch (error) {
+    console.error('Adding list entries from a document failed; continuing without them', error)
+    await client.query('rollback to savepoint list_rows').catch(() => {})
+    return 0
+  }
+}
+
 async function giveUp(caller: Caller, documentId: string, error: string, status = 502): Promise<ReadOutcome> {
   await withOrg(caller.orgId, (client) => failReading(client, caller.orgId, documentId, error)).catch((failure) => console.error('Recording a failed reading failed', failure))
   return { ok: false, error, status }
@@ -91,8 +117,10 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       if (!(await startReading(client, orgId, userId, documentId))) return { ok: false as const, error: busyMessage(document.status), status: 409 }
       if (!document.assetId) await attachDocument(client, orgId, documentId, targetId)
       const file = await readDocumentFile(client, orgId, documentId)
-      const fields = extractableFields(await listFields(client, orgId), sectionByField(await listScreens(client, orgId)), access.fieldLevel)
-      return { ok: true as const, document, tree, file, fields, skills: await loadSkillsForAgent(client, orgId) }
+      const allFields = await listFields(client, orgId)
+      const fields = extractableFields(allFields, sectionByField(await listScreens(client, orgId)), access.fieldLevel)
+      const lists = extractableLists(await listLists(client, orgId), allFields, access.sectionLevel)
+      return { ok: true as const, document, tree, file, fields, lists, skills: await loadSkillsForAgent(client, orgId) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)
@@ -102,11 +130,14 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
   const { document, tree } = prepared
   if (!prepared.file) return giveUp(caller, documentId, 'The file for this document is missing. Upload it again.', 500)
 
-  const result = await readDocument({ file: prepared.file, documentName: document.name, records: recordsOf(tree), fields: prepared.fields, skills: prepared.skills, timeoutMs })
+  const result = await readDocument({ file: prepared.file, documentName: document.name, records: recordsOf(tree), fields: prepared.fields, lists: prepared.lists, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
 
   try {
-    const counts = await withOrg(orgId, (client) => applyReading(client, orgId, userId, { id: documentId, name: document.name }, result.reading))
+    const { counts, listRows } = await withOrg(orgId, async (client) => {
+      const applied = await applyReading(client, orgId, userId, { id: documentId, name: document.name }, result.reading)
+      return { counts: applied, listRows: await addListRows(client, caller, { id: documentId, name: document.name }, result.reading.rows) }
+    })
     const photos = await addPhotos(caller, tree.id, documentId, prepared.file, result.reading)
     return {
       ok: true,
@@ -120,6 +151,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       counts,
       proposals: result.reading.proposals.length,
       skipped: result.reading.skipped,
+      listRows,
       photos,
       planPages: planPagesOf(result.reading.photos),
     }
@@ -147,8 +179,10 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
       if (document.assetId) return { ok: false as const, error: 'That document already belongs to an asset.', status: 400 }
       if (!(await startReading(client, orgId, userId, documentId))) return { ok: false as const, error: busyMessage(document.status), status: 409 }
       const file = await readDocumentFile(client, orgId, documentId)
-      const fields = extractableFields(await listFields(client, orgId), sectionByField(await listScreens(client, orgId)), access.fieldLevel)
-      return { ok: true as const, document, file, fields, skills: await loadSkillsForAgent(client, orgId) }
+      const allFields = await listFields(client, orgId)
+      const fields = extractableFields(allFields, sectionByField(await listScreens(client, orgId)), access.fieldLevel)
+      const lists = extractableLists(await listLists(client, orgId), allFields, access.sectionLevel)
+      return { ok: true as const, document, file, fields, lists, skills: await loadSkillsForAgent(client, orgId) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)
@@ -158,7 +192,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
   const { document } = prepared
   if (!prepared.file) return giveUp(caller, documentId, 'The file for this document is missing. Upload it again.', 500)
 
-  const result = await readDocument({ file: prepared.file, documentName: document.name, records: newAssetRecords(), fields: prepared.fields, newAsset: true, skills: prepared.skills, timeoutMs })
+  const result = await readDocument({ file: prepared.file, documentName: document.name, records: newAssetRecords(), fields: prepared.fields, lists: prepared.lists, newAsset: true, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
   const described = result.newAsset
   const name = (described?.name || document.name.replace(/\.pdf$/i, '')).slice(0, 200)
@@ -177,8 +211,10 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         ...result.reading,
         candidates: result.reading.candidates.map((candidate) => ({ ...candidate, recordId: real[candidate.recordId] ?? candidate.recordId })),
         proposals: result.reading.proposals.map((proposal) => ({ ...proposal, recordId: real[proposal.recordId] ?? proposal.recordId })),
+        rows: result.reading.rows.map((row) => ({ ...row, recordId: real[row.recordId] ?? row.recordId })),
       }
       const counts = await applyReading(client, orgId, userId, { id: documentId, name: document.name }, reading)
+      const listRows = await addListRows(client, caller, { id: documentId, name: document.name }, reading.rows)
       return {
         ok: true as const,
         assetId,
@@ -191,6 +227,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         counts,
         proposals: reading.proposals.length,
         skipped: reading.skipped,
+        listRows,
         photos: 0,
         planPages: planPagesOf(reading.photos),
       }

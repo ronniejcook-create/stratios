@@ -20,5 +20,5 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   if (!result.ok) return fail(result.error, result.status)
   revalidatePath(`/dashboard/assets/${result.assetId}`)
   revalidatePath('/dashboard')
-  return json({ ok: true, counts: result.counts, proposals: result.proposals, skipped: result.skipped })
+  return json({ ok: true, counts: result.counts, proposals: result.proposals, skipped: result.skipped, listRows: result.listRows })
 }

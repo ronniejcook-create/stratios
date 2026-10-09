@@ -50,6 +50,9 @@ function when(iso: string): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+/** Text longer than this is shown as a paragraph rather than a one-line value. */
+const LONG_TEXT = 90
+
 const TYPE_NAMES: Record<string, string> = { text: 'Text', number: 'Number', money: 'Money', percent: 'Percent', date: 'Date', boolean: 'Yes / No', picklist: 'Pick List' }
 
 /**
@@ -78,8 +81,10 @@ export function FieldGroup({
       <div className={`field-list${style === 'tiles' ? ' tiles' : ''}`}>
         {fields.map((field) => {
           const shown = formatValue(field, field.value)
+          // A paragraph (a description, a summary) gets the full width and is cut short; the pop-up shows all of it.
+          const long = style !== 'tiles' && !field.calculated && field.dataType === 'text' && shown.length > LONG_TEXT
           return (
-            <button key={field.id} type="button" className="field-card" onClick={() => setOpenId(field.id)} title={`Open ${field.name}`}>
+            <button key={field.id} type="button" className={`field-card${long ? ' field-card-long' : ''}`} onClick={() => setOpenId(field.id)} title={`Open ${field.name}`}>
               <span className="field-card-label">{field.name}</span>
               <span className="field-card-value">
                 {field.calculated ? (
@@ -243,6 +248,25 @@ function FieldDetails({ target, field, canManageFields, onClose }: { target: Tar
                     <option value="yes">Yes</option>
                     <option value="no">No</option>
                   </select>
+                ) : field.dataType === 'text' ? (
+                  // Grows with what is typed, from one line for a short value to a paragraph for a summary.
+                  <textarea
+                    id={inputId}
+                    className="field-textarea"
+                    rows={Math.min(12, Math.max(1, Math.ceil(raw.length / 62) + (raw.match(/\n/g)?.length ?? 0)))}
+                    value={raw}
+                    onChange={(e) => setRaw(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Enter saves a short one-line value, as it would in a plain box; in a paragraph it starts a new line (Ctrl+Enter saves).
+                      if (e.key !== 'Enter' || e.shiftKey) return
+                      if (e.ctrlKey || e.metaKey || (raw.length <= LONG_TEXT && !raw.includes('\n'))) {
+                        e.preventDefault()
+                        e.currentTarget.form?.requestSubmit()
+                      }
+                    }}
+                    maxLength={2000}
+                    autoFocus
+                  />
                 ) : (
                   <input
                     id={inputId}
@@ -269,7 +293,7 @@ function FieldDetails({ target, field, canManageFields, onClose }: { target: Tar
             </>
           ) : (
             <>
-              <p className="field-modal-value">
+              <p className={`field-modal-value${field.dataType === 'text' && shown.length > LONG_TEXT ? ' field-modal-long' : ''}`}>
                 {field.calculated ? 'Calculated later' : shown || 'Not set'}
                 {!field.calculated && shown && field.monthly && field.period ? <span className="field-meta"> {formatPeriod(field.period)}</span> : null}
               </p>

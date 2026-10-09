@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useMemo, useState, useTransitio
 import { useRouter } from 'next/navigation'
 import { AiIcon } from '@/components/AiIcon'
 import { decideValue, deleteDocument, settleProposedField, type ActionResult } from '../actions'
+import { removeRow } from '../../actions'
 import { readUploadedDocument } from '@/lib/documentClient'
 
 type Notice = { text: string; error: boolean }
@@ -102,6 +103,29 @@ export function ProposalButtons({ proposalId }: { proposalId: string }) {
     <span className="review-actions">
       <button type="button" className="btn btn-primary btn-small" disabled={busy} onClick={() => run(() => settleProposedField({ proposalId, add: true }))}>Add Field</button>
       <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => run(() => settleProposedField({ proposalId, add: false }))}>Dismiss</button>
+      <Note note={note} />
+    </span>
+  )
+}
+
+/** Removes a list entry the agent added from the document. */
+export function EntryRemoveButton({ assetId, rowId }: { assetId: string; rowId: string }) {
+  const { busy, note, run } = useAction('entries')
+  return (
+    <span className="review-actions">
+      <button
+        type="button"
+        className="btn btn-ghost btn-small"
+        disabled={busy}
+        onClick={() =>
+          run(async () => {
+            const result = await removeRow({ assetId, rowId })
+            return result.ok ? { ok: true, message: 'The entry was removed from its list.' } : result
+          })
+        }
+      >
+        Remove
+      </button>
       <Note note={note} />
     </span>
   )

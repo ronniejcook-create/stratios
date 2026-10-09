@@ -99,6 +99,7 @@ function describeReading(session: Session, result: ReadOutcome): string {
     values_waiting_for_a_decision: result.counts.decision,
     values_kept_because_the_field_never_replaces: result.counts.kept,
     new_fields_proposed: result.proposals,
+    comments_and_critical_dates_added_to_lists: result.listRows,
     photos_added_to_the_asset: result.photos,
     plan_and_map_pages_being_added_as_pictures: result.planPages.length,
     values_the_agent_returned_that_did_not_fit_a_field: result.skipped,
