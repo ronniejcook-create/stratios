@@ -916,6 +916,13 @@ td.muted { color: var(--dim); }
 .property-map .leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
 
 /* Map tab with demographics: the map beside a panel of controls, a color key and the ring table. */
+.map-bar { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.map-tabs { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; }
+.map-tab { padding: 5px 12px; border: 0; border-radius: 6px; background: none; font: inherit; font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; }
+.map-tab:hover { color: var(--heading); }
+.map-tab.active { background: var(--accent); color: var(--accent-ink); }
+.map-around { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.map-around select { height: 34px; max-width: 320px; padding: 0 8px; background: var(--panel); color: var(--heading); border: 1px solid var(--line-strong); border-radius: 6px; font: inherit; font-size: 13px; }
 .map-layout { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
 .map-main { flex: 1 1 420px; min-width: 0; }
 .map-main .property-map { margin-top: 0; }

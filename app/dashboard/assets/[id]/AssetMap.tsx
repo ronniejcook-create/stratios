@@ -60,28 +60,43 @@ function groupLimits(values: number[]): number[] {
   return limits
 }
 
+/** What can be laid over the map, one at a time. The first is the plain map. */
+const LAYERS = [
+  { key: 'none', label: 'None' },
+  { key: 'demographics', label: 'Demographics' },
+  { key: 'flood', label: 'Flood Zones' },
+  { key: 'schools', label: 'Schools' },
+] as const
+type Layer = (typeof LAYERS)[number]['key']
+/** The distance circles that can be drawn around the address, whatever else is showing. */
+const RING_MILES = [1, 3, 5] as const
+/** How far out the census neighborhoods reach. */
+const DEMOGRAPHIC_MILES = 5
+
 /**
- * The Map tab's contents: the map with its pins, and on request the census
- * picture around one of them: neighborhoods shaded by a chosen figure, rings
- * at 1, 3 and 5 miles, and a table of estimated totals inside each ring. FEMA's
- * flood zones around the same address can be laid over it as well.
+ * The Map tab's contents: the map with its pins, and a row of tabs choosing
+ * what is laid over it around one of them, one thing at a time: nothing,
+ * census demographics (neighborhoods shaded by a chosen figure and a table of
+ * estimated totals within 1, 3 and 5 miles), FEMA's flood zones, or schools.
+ * The 1, 3 and 5 mile rings are a separate tick box and work with any of them.
  */
 export function AssetMap({ pins }: { pins: MapPin[] }) {
   const [aroundId, setAroundId] = useState(pins[0]?.id ?? '')
   const [profiles, setProfiles] = useState<Record<string, AreaProfile>>({})
-  const [wanted, setWanted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [measure, setMeasure] = useState<MeasureKey | ''>('medianIncome')
-  const [showRings, setShowRings] = useState(true)
+  const [showRings, setShowRings] = useState(false)
+  const [layer, setLayer] = useState<Layer>('none')
+  const wanted = layer === 'demographics'
+  const floodWanted = layer === 'flood'
+  const schoolsWanted = layer === 'schools'
 
   const [floods, setFloods] = useState<Record<string, FloodProfile>>({})
-  const [floodWanted, setFloodWanted] = useState(false)
   const [floodLoading, setFloodLoading] = useState(false)
   const [floodError, setFloodError] = useState<string | null>(null)
 
   const [schoolSets, setSchoolSets] = useState<Record<string, SchoolProfile>>({})
-  const [schoolsWanted, setSchoolsWanted] = useState(false)
   const [schoolsLoading, setSchoolsLoading] = useState(false)
   const [schoolsError, setSchoolsError] = useState<string | null>(null)
   const [hiddenKinds, setHiddenKinds] = useState<SchoolKind[]>([])
@@ -93,7 +108,6 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   const schools = around ? schoolSets[around.id] : undefined
 
   const loadSchools = async (pin: MapPin) => {
-    setSchoolsWanted(true)
     setSchoolsError(null)
     if (schoolSets[pin.id]) return
     setSchoolsLoading(true)
@@ -109,7 +123,6 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   }
 
   const loadFlood = async (pin: MapPin) => {
-    setFloodWanted(true)
     setFloodError(null)
     if (floods[pin.id]) return
     setFloodLoading(true)
@@ -125,7 +138,6 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   }
 
   const load = async (pin: MapPin) => {
-    setWanted(true)
     setError(null)
     if (profiles[pin.id]) return
     setLoading(true)
@@ -181,7 +193,7 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
     return { areas: shaded, legend: key }
   }, [wanted, profile, chosen, shades])
 
-  // Flood zones use the same five shades, the darkest end for the most serious, and sit on top of the neighborhoods.
+  // Flood zones use the same five shades, the darkest end for the most serious.
   const floodColor = (kind: FloodKind) => (FLOOD_SHADE[kind] === undefined ? NOT_STUDIED : shades[FLOOD_SHADE[kind]!])
   const floodAreas = useMemo(() => {
     if (!floodWanted || !flood) return [] as MapArea[]
@@ -209,50 +221,62 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
       })),
     [listed, dots],
   )
-  // The map takes in the widest of what is being shown around the address.
-  const reachMiles = Math.max(floodWanted && flood ? flood.miles : 0, schoolsWanted && schools ? schools.miles : 0)
+  // The map takes in what is being shown around the address.
+  const reachMiles = wanted && profile ? DEMOGRAPHIC_MILES : floodWanted && flood ? flood.miles : schoolsWanted && schools ? schools.miles : 0
   const reach = reachMiles > 0 && around ? { center: [around.latitude, around.longitude] as [number, number], miles: reachMiles } : null
 
-  const rings = wanted && profile && showRings && around ? { center: [around.latitude, around.longitude] as [number, number], miles: profile.rings.map((ring) => ring.miles) } : null
+  const rings = showRings && around ? { center: [around.latitude, around.longitude] as [number, number], miles: RING_MILES } : null
+
+  // Choosing a tab shows that layer for the address in "Around", fetching it the first time.
+  const show = (next: Layer, pin: MapPin | undefined = around) => {
+    setLayer(next)
+    if (!pin) return
+    if (next === 'demographics') void load(pin)
+    if (next === 'flood') void loadFlood(pin)
+    if (next === 'schools') void loadSchools(pin)
+  }
 
   return (
-    <div className="map-layout" ref={frame}>
-      <div className="map-main">
-        <PropertyMap pins={pins} areas={drawn} rings={rings} reach={reach} points={points} />
-      </div>
-
-      <aside className="map-side" aria-label="Map layers">
+    <div ref={frame}>
+      <div className="map-bar">
+        <div className="map-tabs" role="tablist" aria-label="Shown on the map">
+          {LAYERS.map((entry) => (
+            <button key={entry.key} type="button" role="tab" aria-selected={entry.key === layer} className={`map-tab${entry.key === layer ? ' active' : ''}`} onClick={() => show(entry.key)}>
+              {entry.label}
+            </button>
+          ))}
+        </div>
+        <label className="map-check">
+          <input type="checkbox" checked={showRings} onChange={(event) => setShowRings(event.target.checked)} />
+          Show 1, 3 and 5 Mile Rings
+        </label>
         {pins.length > 1 ? (
-          <div className="field">
-            <label htmlFor="map-around">Around</label>
+          <label className="map-around">
+            Around
             <select
-              id="map-around"
               value={around?.id ?? ''}
               onChange={(event) => {
                 setAroundId(event.target.value)
-                const next = pins.find((pin) => pin.id === event.target.value)
-                if (wanted && next) void load(next)
-                if (floodWanted && next) void loadFlood(next)
-                if (schoolsWanted && next) void loadSchools(next)
+                show(layer, pins.find((pin) => pin.id === event.target.value))
               }}
             >
               {pins.map((pin) => (
                 <option key={pin.id} value={pin.id}>{pin.title}: {pin.address}</option>
               ))}
             </select>
-          </div>
+          </label>
         ) : null}
+      </div>
 
-        <h3>Demographics</h3>
-        {!wanted ? (
-          <>
-            <p className="note">Census figures for the neighborhoods around this address, with totals within 1, 3 and 5 miles.</p>
-            <button type="button" className="btn btn-primary btn-small" disabled={!around} onClick={() => around && void load(around)}>Show Demographics</button>
-          </>
-        ) : null}
+      <div className="map-layout">
+      <div className="map-main">
+        <PropertyMap pins={pins} areas={drawn} rings={rings} reach={reach} points={points} />
+      </div>
 
-        {loading ? <p className="note" role="status">Getting census figures. The first time for an address can take a few seconds…</p> : null}
-        {error ? (
+      {layer !== 'none' ? (
+      <aside className="map-side" aria-label={LAYERS.find((entry) => entry.key === layer)?.label}>
+        {wanted && loading ? <p className="note" role="status">Getting census figures. The first time for an address can take a few seconds…</p> : null}
+        {wanted && error ? (
           <>
             <p className="form-error" role="alert">{error}</p>
             <button type="button" className="btn btn-ghost btn-small" onClick={() => around && void load(around)}>Try Again</button>
@@ -280,14 +304,9 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
             ) : null}
             {chosen && legend.length === 0 ? <p className="note">The Census has no {chosen.label.toLowerCase()} figures for these neighborhoods.</p> : null}
 
-            <label className="map-check">
-              <input type="checkbox" checked={showRings} onChange={(event) => setShowRings(event.target.checked)} />
-              Show 1, 3 and 5 Mile Rings
-            </label>
-
             <div className="table-scroll">
               <table className="map-rings">
-                <caption>Estimated Within Each Ring</caption>
+                <caption>Estimated Within Each Distance</caption>
                 <thead>
                   <tr>
                     <th scope="col"><span className="sr-only">Figure</span></th>
@@ -306,22 +325,14 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
               </table>
             </div>
             <p className="doc-sub">
-              Source: U.S. Census Bureau, American Community Survey, {profile.survey}. Each shaded area is a census tract. Ring figures are
+              Source: U.S. Census Bureau, American Community Survey, {profile.survey}. Each shaded area is a census tract. Figures within each distance are
               estimates: a tract a ring cuts through counts by the share of its land inside the ring.
             </p>
-            <button type="button" className="link-button" onClick={() => setWanted(false)}>Hide Demographics</button>
           </>
         ) : null}
 
-        <h3 className="map-side-next">Flood Zones</h3>
-        {!floodWanted ? (
-          <>
-            <p className="note">FEMA&apos;s flood zone for this address, and the higher-risk zones within about a mile.</p>
-            <button type="button" className="btn btn-primary btn-small" disabled={!around} onClick={() => around && void loadFlood(around)}>Show Flood Zones</button>
-          </>
-        ) : null}
-        {floodLoading ? <p className="note" role="status">Getting FEMA&apos;s flood map. This can take a few seconds…</p> : null}
-        {floodError ? (
+        {floodWanted && floodLoading ? <p className="note" role="status">Getting FEMA&apos;s flood map. This can take a few seconds…</p> : null}
+        {floodWanted && floodError ? (
           <>
             <p className="form-error" role="alert">{floodError}</p>
             <button type="button" className="btn btn-ghost btn-small" onClick={() => around && void loadFlood(around)}>Try Again</button>
@@ -359,19 +370,11 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
               the building, so near the edge of a zone check the building itself on{' '}
               <a href="https://msc.fema.gov/portal/home" target="_blank" rel="noreferrer">FEMA&apos;s Flood Map Service Center</a>. This is not an official flood determination.
             </p>
-            <button type="button" className="link-button" onClick={() => setFloodWanted(false)}>Hide Flood Zones</button>
           </>
         ) : null}
 
-        <h3 className="map-side-next">Schools</h3>
-        {!schoolsWanted ? (
-          <>
-            <p className="note">The school district for this address, and the public schools, private schools and colleges within 3 miles.</p>
-            <button type="button" className="btn btn-primary btn-small" disabled={!around} onClick={() => around && void loadSchools(around)}>Show Schools</button>
-          </>
-        ) : null}
-        {schoolsLoading ? <p className="note" role="status">Getting the schools. This can take a few seconds…</p> : null}
-        {schoolsError ? (
+        {schoolsWanted && schoolsLoading ? <p className="note" role="status">Getting the schools. This can take a few seconds…</p> : null}
+        {schoolsWanted && schoolsError ? (
           <>
             <p className="form-error" role="alert">{schoolsError}</p>
             <button type="button" className="btn btn-ghost btn-small" onClick={() => around && void loadSchools(around)}>Try Again</button>
@@ -436,10 +439,11 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
               colleges {SCHOOL_YEARS.college}). Distances are straight lines. The nearest school is not always the assigned one: each
               district draws its own attendance zones, which are not in this data. There are no ratings or test scores here.
             </p>
-            <button type="button" className="link-button" onClick={() => setSchoolsWanted(false)}>Hide Schools</button>
           </>
         ) : null}
       </aside>
+      ) : null}
+      </div>
     </div>
   )
 }

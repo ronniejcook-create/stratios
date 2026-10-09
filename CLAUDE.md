@@ -541,6 +541,18 @@ work and how data is isolated; this file covers how we work and where things sta
         real panel and map in Chromium with a part of those answers under two palettes. As
         with flood zones, **whether Vercel's servers can reach nces.ed.gov is not known**;
         everything above `schoolProfile` is browser-safe if the questions have to move there.
+    - **One layer at a time, chosen by tabs** (October 9, late; Ronnie's request; replaces the
+      three Show / Hide buttons described above). Above the map is a row of pill tabs
+      (`.map-tabs` in `AssetMap.tsx`): **None** (first, the plain map, and the start),
+      **Demographics**, **Flood Zones**, **Schools**. Picking a tab loads that layer for the
+      address and shows only it; the side panel holds that layer's details and is gone on
+      None, so the map is full width. Layers already loaded are kept, so switching back is
+      instant. **Show 1, 3 and 5 Mile Rings** is its own tick box beside the tabs, off to
+      start, and works with any tab including None; the demographics table still gives the
+      totals within those distances. With several pins the "Around" picker is in the same row.
+      The map moves to take in the layer (5 miles for demographics, 1 for flood, 3 for
+      schools); with the rings on it takes in the rings. Clicked through in Chromium with
+      stand-in answers; not opened inside the app.
     - Addresses on units are not listed with these actions or pinned (units show their address
       as a tooltip, as before).
     - Checked for the map: the real component in Chromium with the real Leaflet files and
