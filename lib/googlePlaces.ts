@@ -24,6 +24,23 @@ export const typeAheadEnabled = (): boolean => googleKey() !== null
 /** Session tokens tie the keystrokes and the final pick together for billing. Only safe characters are let through. */
 const cleanToken = (token: string) => (/^[A-Za-z0-9_-]{8,64}$/.test(token) ? token : null)
 
+/**
+ * Google's own explanation of a refused request ("Places API (New) has not
+ * been used in project ... or it is disabled", "API key not valid", ...).
+ * It is shown to the signed-in person, because it says exactly what to fix
+ * in Google Cloud; it never contains the key.
+ */
+async function googleReason(response: Response): Promise<string> {
+  const text = await response.text().catch(() => '')
+  try {
+    const message = (JSON.parse(text) as { error?: { message?: unknown } })?.error?.message
+    if (typeof message === 'string' && message.trim()) return message.replace(/\s+/g, ' ').trim().slice(0, 300)
+  } catch {
+    // not JSON; fall through
+  }
+  return text.replace(/\s+/g, ' ').trim().slice(0, 300) || 'no reason given'
+}
+
 export type SuggestResult = { ok: true; suggestions: Suggestion[] } | { ok: false; error: string }
 
 /** Reads Google's answer into suggestions. Anything that isn't a place with an id is dropped. */
@@ -61,13 +78,14 @@ export async function suggestAddresses(text: string, sessionToken: string): Prom
       cache: 'no-store',
     })
     if (!response.ok) {
-      console.error('Google address suggestions failed', response.status, (await response.text().catch(() => '')).slice(0, 300))
-      return { ok: false, error: response.status === 403 ? 'Google refused the request. Check that Places API (New) is turned on for the key.' : 'Suggestions are not available right now.' }
+      const reason = await googleReason(response)
+      console.error('Google address suggestions failed', response.status, reason)
+      return { ok: false, error: `Google answered ${response.status}: ${reason}` }
     }
     return { ok: true, suggestions: readSuggestions(await response.json()) }
   } catch (error) {
     console.error('Google address suggestions could not be reached', error)
-    return { ok: false, error: 'Suggestions are not available right now.' }
+    return { ok: false, error: 'Google could not be reached.' }
   }
 }
 

@@ -104,7 +104,7 @@ export function AddAddressForm({
   const [looking, startLooking] = useTransition()
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [active, setActive] = useState(-1)
-  const [suggestionsOff, setSuggestionsOff] = useState(false)
+  const [suggestionsOff, setSuggestionsOff] = useState<string | null>(null)
   const session = useRef('')
   const latest = useRef(0)
 
@@ -126,7 +126,7 @@ export function AddAddressForm({
 
   // Ask for suggestions a moment after the typing pauses; an answer for older text is ignored.
   // Not while a pick or a lookup is in flight: the box's text changes then, and that is not typing.
-  const wantSuggestions = typeAhead && !suggestionsOff && open && !byHand && matches === null && !looking
+  const wantSuggestions = typeAhead && suggestionsOff === null && open && !byHand && matches === null && !looking
   useEffect(() => {
     if (!wantSuggestions) return
     const typed = text.trim()
@@ -140,8 +140,8 @@ export function AddAddressForm({
       const result = await suggestAddress({ text: typed, session: session.current })
       if (request !== latest.current) return
       if (!result.ok) {
-        // Suggestions are a convenience: if they fail, stop asking and leave Find Address to do the job.
-        setSuggestionsOff(true)
+        // Suggestions are a convenience: if they fail, stop asking, say why, and leave Find Address to do the job.
+        setSuggestionsOff(result.error)
         setSuggestions([])
         return
       }
@@ -245,7 +245,7 @@ export function AddAddressForm({
 
   const match = matches?.[picked]
   const listOpen = suggestions.length > 0
-  const suggesting = typeAhead && !suggestionsOff
+  const suggesting = typeAhead && suggestionsOff === null
   return (
     <div className="address-lookup">
       <div className="inline-form">
@@ -322,6 +322,11 @@ export function AddAddressForm({
           : 'Type the street address with its city and state, then Find Address. United States addresses only.'}{' '}
         <button type="button" className="link-button" onClick={() => setByHand(true)}>Enter It by Hand</button> instead.
       </p>
+      {suggestionsOff ? (
+        <p className="note address-note" role="status">
+          Suggestions while typing are off for now. {suggestionsOff} Find Address still works.
+        </p>
+      ) : null}
       {lookupError ? <p className="form-error" role="alert">{lookupError}</p> : null}
 
       {matches && matches.length === 0 ? (
