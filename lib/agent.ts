@@ -4,6 +4,7 @@
 // as the signed-in person, inside their organization and with their
 // permissions, so the agent can never see or change more than they can.
 
+import { buildAnalystPrompt, DEFAULT_ANALYST_INSTRUCTIONS, getAnalystInstructions } from './analystInstructions'
 import { createAssetWithDefaults, PROPERTY_TYPES } from './assets'
 import { ApiError, claudeApiKey, converse, type ChatMessage, type ContentBlock, type ToolDefinition } from './claude'
 import { withOrg } from './db'
@@ -64,18 +65,6 @@ const TOOLS: ToolDefinition[] = [
     input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
   },
 ]
-
-const SYSTEM = `You are the Portfolio Analyst inside Stratios, a commercial real estate portfolio system. You help the person look up and manage their assets by talking with them, and you can act through tools.
-
-How to work:
-- Do what the person asks using the tools. When they attach a document and ask you to create an asset from it, call create_asset_from_document straight away; do not ask them to confirm first.
-- When they attach a document without saying what to do with it, and they are on an asset's page, ask whether to read it into that asset or create a new asset from it.
-- Use list_assets to find an asset they name, and get_asset before answering questions about its values.
-- Only state values that a tool returned. If a value is missing or you are not allowed to see it, say so. Never estimate or invent figures.
-- After a tool changes something, say plainly what was done: the asset's name, how many values were filled in, how many are waiting for the person's decision, and how many new fields were proposed. Mention the document's own summary in a sentence if it is useful. The app shows buttons under your reply that open the asset and the review list, so do not write links, ids or addresses yourself.
-- If a tool fails, tell the person what went wrong in plain words and what they can do.
-- Write in plain, short sentences. No jargon, no headings. Use a short bullet list only for several parallel items.
-- You can only do what the tools allow. If asked for something else (charts, emails, deleting things, changing settings), say you can't do that yet.`
 
 type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string> }
 
@@ -232,9 +221,18 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
   while (messages.length > 0 && messages[0].role !== 'user') messages.shift()
   if (messages.length === 0) return { ok: false, error: 'Type a message first.' }
 
+  // The general instructions are written by Stratios administrators; fall back to the built-in ones if they can't be read.
+  let instructions = DEFAULT_ANALYST_INSTRUCTIONS
+  try {
+    instructions = (await withOrg(caller.orgId, (client) => getAnalystInstructions(client))).instructions
+  } catch (error) {
+    console.error('Reading the analyst instructions failed; using the built-in ones', error)
+  }
+  const system = buildAnalystPrompt(instructions)
+
   try {
     for (let step = 0; step < MAX_STEPS; step += 1) {
-      const answer = await converse(apiKey, { system: SYSTEM, messages, tools: TOOLS, timeoutMs: Math.max(10000, Math.min(60000, session.deadline - Date.now())) })
+      const answer = await converse(apiKey, { system, messages, tools: TOOLS, timeoutMs: Math.max(10000, Math.min(60000, session.deadline - Date.now())) })
       const said = answer.content.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text').map((block) => block.text).join('\n').trim()
       const requests = answer.content.filter((block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use')
       if (answer.stopReason !== 'tool_use' || requests.length === 0) {

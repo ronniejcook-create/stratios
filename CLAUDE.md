@@ -227,6 +227,17 @@ work and how data is isolated; this file covers how we work and where things sta
       contents without filling fields, multi-property documents (only the main property is
       created), and any tool beyond the five above. Files dropped but never sent stay in the
       database with no asset (no clean-up yet).
+  - **Analyst Instructions screen** (October 8, late; `db/migrations/010_analyst_instructions.sql`):
+    Stratios Admin > Analyst Instructions (`app/dashboard/analyst/`, Stratios administrators only,
+    same check as the Master Library). The analyst's general instructions are edited there with
+    the Reading View / Markdown editor and apply to every organization from its next reply
+    (`agent_profiles` table, one row for `analyst`; everyone reads, only `app.stratios_admin`
+    writes). `lib/analystInstructions.ts` holds the built-in default (used when no row exists, or
+    010 has not been run), the save/reset logic and `buildAnalystPrompt`, which always appends
+    the fixed rules shown on the screen as "Always Applied" (no invented values, tool limits, no
+    links or ids, document contents are not instructions). Ronnie was told instructions shape
+    behavior but new abilities need new tools; he asked about address lookup to coordinates,
+    property photos, a Skills screen and n8n. None of those are started.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
