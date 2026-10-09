@@ -171,6 +171,18 @@ export type SaveInput = {
   note?: string | null
   /** The list row this value belongs to; required for a list's column, otherwise left out. */
   rowId?: string | null
+  /**
+   * Set when the value is one a new record starts with (its name, its type).
+   * A starting value always gets a "Set to ..." entry in its history, so the
+   * history says where the value first came from and who brought it in.
+   */
+  starting?: boolean
+  /**
+   * Set when the value was read from a document rather than typed: it is then
+   * recorded as coming from Documents, not Manual Entry, and is not treated
+   * as a hand-entered value that later sources must leave alone.
+   */
+  fromDocument?: { id: string; name: string } | null
 }
 
 export type SaveResult = { ok: true; changed: boolean } | { ok: false; error: string }
@@ -217,7 +229,9 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
   const next = parsed.value
   if (field.coreColumn === 'name' && isEmptyValue(next)) return { ok: false, error: `${field.name} can't be empty.` }
 
-  const note = input.note?.trim() ? input.note.trim().slice(0, 2000) : null
+  const fromDocument = input.fromDocument ?? null
+  const source = fromDocument ? 'documents' : 'manual'
+  const note = input.note?.trim() ? input.note.trim().slice(0, 2000) : fromDocument ? `From "${fromDocument.name}"`.slice(0, 2000) : null
   const table = tableFor(input.recordType)
 
   // Lock the golden row (if there is one) so two saves can't cross.
@@ -244,20 +258,29 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
     current = { ...EMPTY_VALUE, text: core.rows[0]?.value ?? null }
   }
 
-  // What Manual Entry says is always recorded, whether or not it changes the golden record.
+  // What this source says is always recorded, whether or not it changes the golden record.
   await client.query(
     `delete from field_source_values
-     where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4 and source_type = 'manual'
+     where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4 and source_type = $7
        and period is not distinct from $5::date and row_id is not distinct from $6::uuid`,
-    [orgId, input.recordType, input.recordId, field.id, period, rowId],
+    [orgId, input.recordType, input.recordId, field.id, period, rowId, source],
   )
   if (!isEmptyValue(next)) {
-    await client.query(
-      `insert into field_source_values
-         (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by, row_id)
-       values ($1, $2, $3, $4, $5::date, 'manual', $6, $7::numeric, $8::date, $9::boolean, $10, $11::uuid)`,
-      [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, userId, rowId],
-    )
+    if (fromDocument) {
+      await client.query(
+        `insert into field_source_values
+           (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by, row_id, document_id)
+         values ($1, $2, $3, $4, $5::date, 'documents', $6, $7::numeric, $8::date, $9::boolean, $10, $11::uuid, $12::uuid)`,
+        [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, userId, rowId, fromDocument.id],
+      )
+    } else {
+      await client.query(
+        `insert into field_source_values
+           (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by, row_id)
+         values ($1, $2, $3, $4, $5::date, 'manual', $6, $7::numeric, $8::date, $9::boolean, $10, $11::uuid)`,
+        [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, userId, rowId],
+      )
+    }
   }
 
   const changed = !sameValue(current, next)
@@ -267,37 +290,41 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
     await client.query(
       `update field_values
        set value_text = $2, value_number = $3::numeric, value_date = $4::date, value_bool = $5::boolean,
-           source_type = 'manual', manual_override = true, status = 'approved', note = $6, updated_by = $7, updated_at = now()
+           source_type = $9, manual_override = $10::boolean, status = 'approved', note = $6, updated_by = $7, updated_at = now()
        where id = $1 and org_id = $8`,
-      [existing.rows[0].id, next.text, next.number, next.date, next.bool, note, userId, orgId],
+      [existing.rows[0].id, next.text, next.number, next.date, next.bool, note, userId, orgId, source, source === 'manual'],
     )
   } else if (!isEmptyValue(next)) {
     await client.query(
       `insert into field_values
          (org_id, record_type, record_id, field_id, period, value_text, value_number, value_date, value_bool,
           source_type, manual_override, status, note, updated_by, row_id)
-       values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, 'manual', true, 'approved', $10, $11, $12::uuid)`,
-      [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, note, userId, rowId],
+       values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, $13, $14::boolean, 'approved', $10, $11, $12::uuid)`,
+      [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, note, userId, rowId, source, source === 'manual'],
     )
   }
-  if (!changed) return { ok: true, changed: false }
+  // A record's first value for a field that also lives in a fixed column (its name, its type) equals that
+  // column, so it is "unchanged"; as a starting value it still gets its first history entry, from empty.
+  const firstEntry = input.starting === true && existing.rows.length === 0 && !isEmptyValue(next)
+  if (!changed && !firstEntry) return { ok: true, changed: false }
+  if (firstEntry) current = { ...EMPTY_VALUE }
 
   await client.query(
     `insert into field_value_history
        (org_id, record_type, record_id, field_id, period,
         old_text, old_number, old_date, old_bool, new_text, new_number, new_date, new_bool, source_type, note, changed_by, row_id)
-     values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, $10, $11::numeric, $12::date, $13::boolean, 'manual', $14, $15, $16::uuid)`,
+     values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, $10, $11::numeric, $12::date, $13::boolean, $17, $14, $15, $16::uuid)`,
     [
       orgId, input.recordType, input.recordId, field.id, period,
       current.text, current.number, current.date, current.bool,
-      next.text, next.number, next.date, next.bool, note, userId, rowId,
+      next.text, next.number, next.date, next.bool, note, userId, rowId, source,
     ],
   )
 
   if (field.coreColumn) {
     await client.query(`update ${table} set ${field.coreColumn} = $1 where id = $2 and org_id = $3`, [next.text, input.recordId, orgId])
   }
-  return { ok: true, changed: true }
+  return { ok: true, changed }
 }
 
 export type HistoryEntry = {

@@ -481,8 +481,8 @@ work and how data is isolated; this file covers how we work and where things sta
       checked from here.
   - **Field blocks and the field pop-up** (October 9, later; Ronnie found label, value, Edit and
     History on one line unreadable). `FieldGroup.tsx` now shows each field as a block: the name
-    on top in bold, the value underneath in smaller muted text (he sent a screenshot of the
-    document review page's field cell as the look to match). Clicking anywhere on a block opens
+    on top, small and muted, and the value underneath in bold (he first asked for the reverse,
+    then had it swapped; "Not set" and "Calculated later" stay light so gaps stand out). Clicking anywhere on a block opens
     a pop-up (`Modal`) with tabs **Edit** ("Value" when the field is view-only or calculated),
     **History** and **Skill Details** (type, key, Description and the field's Agent
     Instructions rendered with `toHtml`; administrators get a link to the field in Fields
@@ -494,6 +494,19 @@ work and how data is isolated; this file covers how we work and where things sta
     told; the organization's skills library is not shown there. `FieldView` gained
     `description` and `agentInstructions`. Checked by clicking through the real component in
     Chromium with stand-in data; not inside the app.
+  - **Starting values have history** (October 9, later; `db/migrations/016_starting_value_history.sql`).
+    Ronnie opened History on Property Name for an asset the agent created from a memorandum and
+    saw "No changes recorded yet... Manual Entry". Cause: `createAssetWithDefaults` saved the
+    name and type through `saveManualValue`, which wrote no history when the value equaled the
+    record's fixed column, and always as Manual Entry. Now `saveManualValue` takes `starting`
+    (always write the first "Set to ..." entry) and `fromDocument` (record the value as source
+    Documents with the note `From "<file>"`, not a hand-entered override), and
+    `createAssetFromDocument` passes the document. Migration 016 backfills existing data: a
+    first history entry for every value that has none, and Documents as the source for the
+    starting values of assets created during a document's reading (asset created between the
+    document's `read_started_at` and `read_at`). Values the agent filled from a document
+    already had history with the file and page. Tested on the scratch database; he needs to
+    run 016.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

@@ -165,7 +165,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
 
   try {
     const created = await withOrg(orgId, async (client) => {
-      const assetId = await createAssetWithDefaults(client, orgId, userId, { name, propertyType: described?.propertyType ?? 'Other', city: described?.city ?? null })
+      const assetId = await createAssetWithDefaults(client, orgId, userId, { name, propertyType: described?.propertyType ?? 'Other', city: described?.city ?? null }, { id: documentId, name: document.name })
       const tree = await getAssetTree(client, orgId, assetId)
       const property = tree?.properties[0]
       const building = property?.buildings[0]

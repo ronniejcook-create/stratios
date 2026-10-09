@@ -7,7 +7,9 @@ export const PROPERTY_TYPES = ['Office', 'Retail', 'Industrial', 'Multifamily', 
 /**
  * Creates an asset with one property and one building, so a simple asset
  * needs no extra set-up. The property takes the asset's name and the chosen
- * type; a city, if given, becomes the property's first address.
+ * type; a city, if given, becomes the property's first address. The name and
+ * type are written into each field's history as its first entry, saying who
+ * created the asset and whether the values were typed or read from a document.
  * Returns the new asset's id.
  */
 export async function createAssetWithDefaults(
@@ -15,6 +17,8 @@ export async function createAssetWithDefaults(
   orgId: string,
   userId: string,
   input: { name: string; propertyType: string; city: string | null },
+  /** The document the asset was created from, when an agent read it out of one. Its starting values are then recorded as coming from that document. */
+  fromDocument: { id: string; name: string } | null = null,
 ): Promise<string> {
   const assetId = await insertAsset(client, orgId, userId, input.name)
   const propertyId = await insertChild(client, orgId, userId, 'property', assetId, input.name, input.propertyType)
@@ -37,7 +41,7 @@ export async function createAssetWithDefaults(
   for (const item of starting) {
     const id = fieldId(item.recordType, item.key)
     if (!id) continue
-    const result = await saveManualValue(client, orgId, userId, { recordType: item.recordType, recordId: item.recordId, fieldId: id, raw: item.raw })
+    const result = await saveManualValue(client, orgId, userId, { recordType: item.recordType, recordId: item.recordId, fieldId: id, raw: item.raw, starting: true, fromDocument })
     if (!result.ok) throw new Error(result.error)
   }
   return assetId
