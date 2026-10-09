@@ -184,7 +184,8 @@ Things not yet verified or still owed:
 - Agents must follow field permissions, and a KPI built from a hidden field must be hidden, once
   the analyst and formulas exist.
 - Organizations can't rename, reorder or hide standard sections and screens yet.
-- The design document's build-order section doesn't yet say which stages are done.
+- The design document's build-order section notes that steps 1 to 3 are built; update it as
+  later stages land.
 
 ## Ideas offered but not started
 
