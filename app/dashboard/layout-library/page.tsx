@@ -35,7 +35,7 @@ export default async function MasterLayoutsPage() {
     console.error('MasterLayoutsPage failed', error)
     return (
       <>
-        <h1>Master Layouts</h1>
+        <h1>Layouts</h1>
         <div className="panel notice">
           <h2>{isMissingSchema(error) ? 'Database Update Needed' : 'The Layout Could Not Be Loaded'}</h2>
           <p>{isMissingSchema(error) ? 'Run the newest files in db/migrations against the database, then reload this page.' : 'Check the database connection and try again.'}</p>
@@ -47,7 +47,7 @@ export default async function MasterLayoutsPage() {
 
   return (
     <>
-      <h1>Master Layouts</h1>
+      <h1>Layouts</h1>
       <p className="lede">
         The standard layout every organization starts from: {screens.length} {screens.length === 1 ? 'screen' : 'screens'} and {sectionCount}{' '}
         {sectionCount === 1 ? 'section' : 'sections'}.
@@ -56,7 +56,7 @@ export default async function MasterLayoutsPage() {
         <h2>Changes Here Reach Every Organization</h2>
         <p>
           A screen, section or list added here appears for all organizations as soon as it is saved. To add one for the Stratios organization only, use Layouts under Admin
-          Settings instead. Standard fields are managed in the <Link href="/dashboard/library">Master Library</Link>.
+          Settings instead. Standard fields are managed in <Link href="/dashboard/library">Fields Library</Link>.
         </p>
       </div>
 

@@ -34,9 +34,9 @@ const SECTIONS: { title: string; adminOnly?: boolean; stratiosOnly?: boolean; it
     stratiosOnly: true,
     items: [
       { label: 'Analyst Instructions', href: '/dashboard/analyst', icon: icon(<><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" /></>) },
+      { label: 'Fields Library', href: '/dashboard/library', icon: icon(<><rect x="3.5" y="4.5" width="17" height="6" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6" rx="1.5" /><path d="M7 7.5h4M7 16.5h6" /></>) },
+      { label: 'Layouts', href: '/dashboard/layout-library', icon: icon(<><rect x="3.5" y="4" width="17" height="16" rx="2" /><path d="M3.5 9.5h17M9 9.5V20" /></>) },
       { label: 'Skills Library', href: '/dashboard/skill-library', icon: icon(<><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z" /><path d="M5 17a3 3 0 0 1 3-3h11" /><path d="M9 8h6" /></>) },
-      { label: 'Master Library', href: '/dashboard/library', icon: icon(<><rect x="3.5" y="4.5" width="17" height="6" rx="1.5" /><rect x="3.5" y="13.5" width="17" height="6" rx="1.5" /><path d="M7 7.5h4M7 16.5h6" /></>) },
-      { label: 'Master Layouts', href: '/dashboard/layout-library', icon: icon(<><rect x="3.5" y="4" width="17" height="16" rx="2" /><path d="M3.5 9.5h17M9 9.5V20" /></>) },
     ],
   },
 ]

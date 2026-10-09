@@ -276,9 +276,12 @@ work and how data is isolated; this file covers how we work and where things sta
     the address is still `/dashboard/members`), Roles and Permissions, **Fields Library** (was
     Fields and Layout; `/dashboard/fields`), **Layouts** (new, `/dashboard/layouts`: screens,
     sections and lists, split out of the fields page), **Skills Library** (`/dashboard/skills`),
-    Org Colors. Stratios Admin: Analyst Instructions, Skills Library (`/dashboard/skill-library`),
-    Master Library (standard fields only now), **Master Layouts** (new,
-    `/dashboard/layout-library`; the name was Claude's choice). Both layout pages share
+    Org Colors. Stratios Admin uses the same three names for the Stratios standard versions:
+    Analyst Instructions, **Fields Library** (was Master Library, standard fields only;
+    `/dashboard/library`), **Layouts** (new, `/dashboard/layout-library`), Skills Library
+    (`/dashboard/skill-library`). Ronnie asked for Master Library to be renamed "Skills Library";
+    it holds fields and a Skills Library already sat beside it, so it was named Fields Library
+    and he was told. Older notes here that say "Master Library" mean this screen. Both layout pages share
     `app/dashboard/layouts/LayoutTable.tsx`. Older notes in this file still say "Fields and
     Layout" and "Members" in places; read them as the new names.
   - Not built yet (later stages): formulas

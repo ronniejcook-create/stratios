@@ -38,7 +38,7 @@ export default async function LibraryPage() {
     console.error('LibraryPage failed', error)
     return (
       <>
-        <h1>Master Library</h1>
+        <h1>Fields Library</h1>
         <div className="panel notice">
           <h2>{isMissingSchema(error) ? 'Database Update Needed' : 'The Library Could Not Be Loaded'}</h2>
           <p>{isMissingSchema(error) ? 'Run the newest files in db/migrations against the database, then reload this page.' : 'Check the database connection and try again.'}</p>
@@ -68,10 +68,10 @@ export default async function LibraryPage() {
 
   return (
     <>
-      <h1>Master Library</h1>
+      <h1>Fields Library</h1>
       <p className="lede">
         The {fields.length} Stratios standard fields that every organization starts from. The standard screens and sections are in{' '}
-        <Link href="/dashboard/layout-library">Master Layouts</Link>.
+        <Link href="/dashboard/layout-library">Layouts</Link>.
       </p>
       <div className="panel notice">
         <h2>Changes Here Reach Every Organization</h2>

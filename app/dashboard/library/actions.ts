@@ -90,7 +90,7 @@ export async function addLibrarySection(prev: FormState, formData: FormData): Pr
     if (!result.ok) return { error: result.error, message: null, done: prev.done }
     revalidatePath('/dashboard/layout-library')
     revalidatePath('/dashboard/library')
-    return { error: null, message: kind === 'list' ? 'Standard list added. Add its columns in the Master Library, choosing the list under Show In.' : 'Standard section added.', done: prev.done + 1 }
+    return { error: null, message: kind === 'list' ? 'Standard list added. Add its columns in Fields Library, choosing the list under Show In.' : 'Standard section added.', done: prev.done + 1 }
   } catch (error) {
     console.error('addLibrarySection failed', error)
     return { error: 'That could not be added. Try again.', message: null, done: prev.done }

@@ -44,7 +44,7 @@ export default async function LibraryFieldPage({ params }: { params: Promise<{ i
   return (
     <>
       <p className="crumbs">
-        <Link href="/dashboard/library">Master Library</Link>
+        <Link href="/dashboard/library">Fields Library</Link>
         <span aria-hidden="true"> / </span>
         <span>{field.name}</span>
       </p>
