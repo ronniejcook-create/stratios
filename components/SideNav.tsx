@@ -53,7 +53,9 @@ export function SideNav({ isAdmin, isStratiosAdmin = false }: { isAdmin: boolean
 
   const sections = SECTIONS.filter((section) => (isAdmin || !section.adminOnly) && (isStratiosAdmin || !section.stratiosOnly)).map((section) => ({
     ...section,
-    items: section.items.filter((item) => !term || item.label.toLowerCase().includes(term)),
+    // The two admin groups are kept in alphabetical order, so a new item needs no placing by hand.
+    items: (section.adminOnly || section.stratiosOnly ? [...section.items].sort((a, b) => a.label.localeCompare(b.label)) : section.items)
+      .filter((item) => !term || item.label.toLowerCase().includes(term)),
   })).filter((section) => section.items.length > 0)
 
   return (

@@ -281,7 +281,8 @@ work and how data is isolated; this file covers how we work and where things sta
     `/dashboard/library`), **Layouts** (new, `/dashboard/layout-library`), Skills Library
     (`/dashboard/skill-library`). Ronnie asked for Master Library to be renamed "Skills Library";
     it holds fields and a Skills Library already sat beside it, so it was named Fields Library
-    and he was told. Older notes here that say "Master Library" mean this screen. Both layout pages share
+    and he was told. Older notes here that say "Master Library" mean this screen. Both admin
+    groups are sorted alphabetically in `SideNav.tsx` at display time (his request). Both layout pages share
     `app/dashboard/layouts/LayoutTable.tsx`. Older notes in this file still say "Fields and
     Layout" and "Members" in places; read them as the new names.
   - Not built yet (later stages): formulas
