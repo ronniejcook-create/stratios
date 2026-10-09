@@ -311,7 +311,7 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 
 /* Signed-in workspace: top bar, navigation (left), page, AI agents (right) */
 .shell {
-  --nav-width: 240px; --agent-width: 360px;
+  --nav-width: 240px; --agent-width: min(var(--agent-open-width, 360px), max(300px, 100vw - 420px)); /* the open width is each person's own; see AppShell */
   height: 100vh; display: grid;
   grid-template-columns: var(--nav-width) minmax(0, 1fr) var(--agent-width);
   grid-template-rows: 52px minmax(0, 1fr);
@@ -339,7 +339,14 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 
 .shell-nav, .shell-agent { background: var(--bg-deep); overflow-y: auto; min-height: 0; }
 .shell-nav { grid-area: nav; border-right: 1px solid var(--line); }
-.shell-agent { grid-area: agent; border-left: 1px solid var(--line); }
+.shell-agent { grid-area: agent; position: relative; border-left: 1px solid var(--line); }
+/* The left edge of the agents column: drag it to make the column wider or narrower. */
+.agent-resizer { position: absolute; top: 0; bottom: 0; left: 0; width: 7px; z-index: 6; cursor: col-resize; touch-action: none; }
+.agent-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--link); opacity: 0; transition: opacity 0.12s ease; }
+.agent-resizer:hover::after, .agent-resizer:focus-visible::after, .shell.agent-resizing .agent-resizer::after { opacity: 1; }
+.agent-resizer:focus-visible { outline: none; }
+.shell.agent-resizing { cursor: col-resize; user-select: none; }
+.shell.agent-resizing .shell-main, .shell.agent-resizing .agent-panel { pointer-events: none; }
 .shell-main { grid-area: main; overflow-y: auto; min-height: 0; padding: 32px 28px 80px; }
 
 /* Left navigation */

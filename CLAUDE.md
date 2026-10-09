@@ -285,6 +285,12 @@ work and how data is isolated; this file covers how we work and where things sta
     groups are sorted alphabetically in `SideNav.tsx` at display time (his request). Both layout pages share
     `app/dashboard/layouts/LayoutTable.tsx`. Older notes in this file still say "Fields and
     Layout" and "Members" in places; read them as the new names.
+  - **Resizable agent column** (October 9): drag the left edge of the AI agents column
+    (`.agent-resizer` in `AppShell.tsx`; arrow keys work too, double-click resets to 360). Width
+    is clamped to 300-900 px and always leaves 420 px for the page. Each person's width is saved
+    on their Clerk account (`unsafeMetadata.agentWidth`, so it follows them across computers) and
+    in localStorage (`stratios.agentWidth.<userId>`) for an instant start. CSS reads it from
+    `--agent-open-width`. Not tried in a browser by Claude.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
