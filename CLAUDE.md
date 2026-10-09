@@ -481,6 +481,36 @@ work and how data is isolated; this file covers how we work and where things sta
       - Checked: the arithmetic and the Census calls with scripted answers, and the real panel
         and map in Chromium with made-up figures. Never run against the real Data API (no key
         here); TIGERweb's field names were confirmed against a live answer.
+    - **Flood zones on the map** (October 9, late; no migration; the first of the "other public
+      overlays" he asked about, crime and the rest are not started). Under Demographics in the
+      Map tab's side panel, **Show Flood Zones** (`AssetMap.tsx`) loads
+      `GET /api/flood-zones?addressId=` (an address of the organization, like demographics) ->
+      `lib/floodZones.ts`, which asks **FEMA's National Flood Hazard Layer** (free, no key;
+      `hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query`) two things at
+      once: the zone at the point, and the outlines of every zone within a mile each way
+      (GeoJSON, simplified to about five yards; kept a week by Next's fetch cache).
+      - Zones are put in groups by `classify` (zone letters plus FEMA's subtype): Floodway, High
+        Risk, Coastal (V zones), High Risk (A zones), Moderate Risk (Zone X, 0.2% chance),
+        Reduced Risk Behind a Levee, Not Studied (D), Minimal Risk (left clear) and Not Mapped
+        (open water). It was checked against FEMA's full list of zone and subtype pairs.
+        FEMA's own special-area flag is wrong on a few Zone X records, so "Special Flood Hazard
+        Area" follows the group.
+      - The panel shows **This Address** (zone, group, one plain sentence, Special Flood Hazard
+        Area yes or no, FEMA's description, base flood elevation when the zone has one), a
+        color key, and a note that the pin sits along the street, not on the building, and
+        that this is not an official flood determination. The map moves to take in the mile
+        (`reach` on `PropertyMap`; rings win when demographics are shown too). Zones use the
+        organization's graph colors, color 1 for Floodway down to color 5 for the levee group
+        (grey for Not Studied), drawn over the neighborhoods when both are on (`edge` on
+        `MapArea` gives a zone an outline in its own color).
+      - Nothing is stored on the property; a Flood Zone field filled from this is the natural
+        next step. A zone's shape is not cut at the mile, so a long floodplain runs past it.
+      - Checked: the real service answered for his Knoll Trail address through the browser on
+        his computer (Zone X, minimal; AE and 0.2% zones along the creek to the east; half a
+        second), and the real panel and map in Chromium with those answers under two palettes.
+        **Whether Vercel's servers can reach hazards.fema.gov is not known** (the cloud
+        workspace can't); if he reports "could not be reached", ask FEMA from the browser
+        instead: everything in `lib/floodZones.ts` above `floodProfile` is browser-safe.
     - Addresses on units are not listed with these actions or pinned (units show their address
       as a tooltip, as before).
     - Checked for the map: the real component in Chromium with the real Leaflet files and

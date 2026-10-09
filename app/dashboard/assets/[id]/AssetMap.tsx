@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PropertyMap, type MapArea, type MapPin } from '@/components/PropertyMap'
 import type { AreaProfile, TractArea } from '@/lib/demographics'
+import { FLOOD_LABELS, FLOOD_MEANINGS, type FloodKind, type FloodProfile } from '@/lib/floodZones'
 
 /** What the neighborhoods can be shaded by. Each reads one figure from a census tract and says how to write it. */
 const MEASURES = [
@@ -16,6 +17,13 @@ type MeasureKey = (typeof MEASURES)[number]['key']
 
 /** The shading used until the organization's graph colors have been read: one hue, light to dark. */
 const SHADES = ['#c0daf9', '#86b6ef', '#3987e5', '#1c5cab', '#184076']
+
+/**
+ * Which of the five shades each kind of flood zone is drawn in, counting from the darkest of a single-color
+ * palette (graph color 1) for the most serious. Land FEMA has not studied is a fixed grey.
+ */
+const FLOOD_SHADE: Partial<Record<FloodKind, number>> = { floodway: 4, coastal: 3, high: 2, moderate: 1, levee: 0 }
+const NOT_STUDIED = '#8a8f98'
 
 const whole = (value: number) => value.toLocaleString('en-US')
 const percent = (value: number | null) => (value === null ? 'Not available' : `${Math.round(value * 100)}%`)
@@ -38,7 +46,8 @@ function groupLimits(values: number[]): number[] {
 /**
  * The Map tab's contents: the map with its pins, and on request the census
  * picture around one of them: neighborhoods shaded by a chosen figure, rings
- * at 1, 3 and 5 miles, and a table of estimated totals inside each ring.
+ * at 1, 3 and 5 miles, and a table of estimated totals inside each ring. FEMA's
+ * flood zones around the same address can be laid over it as well.
  */
 export function AssetMap({ pins }: { pins: MapPin[] }) {
   const [aroundId, setAroundId] = useState(pins[0]?.id ?? '')
@@ -49,8 +58,30 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   const [measure, setMeasure] = useState<MeasureKey | ''>('medianIncome')
   const [showRings, setShowRings] = useState(true)
 
+  const [floods, setFloods] = useState<Record<string, FloodProfile>>({})
+  const [floodWanted, setFloodWanted] = useState(false)
+  const [floodLoading, setFloodLoading] = useState(false)
+  const [floodError, setFloodError] = useState<string | null>(null)
+
   const around = pins.find((pin) => pin.id === aroundId) ?? pins[0]
   const profile = around ? profiles[around.id] : undefined
+  const flood = around ? floods[around.id] : undefined
+
+  const loadFlood = async (pin: MapPin) => {
+    setFloodWanted(true)
+    setFloodError(null)
+    if (floods[pin.id]) return
+    setFloodLoading(true)
+    try {
+      const response = await fetch(`/api/flood-zones?addressId=${pin.id}`)
+      const result = (await response.json().catch(() => null)) as { ok?: boolean; profile?: FloodProfile; error?: string } | null
+      if (result?.ok && result.profile) setFloods((current) => ({ ...current, [pin.id]: result.profile! }))
+      else setFloodError(result?.error ?? 'The flood zones could not be loaded. Try again.')
+    } catch {
+      setFloodError('The flood zones could not be loaded. Check your connection and try again.')
+    }
+    setFloodLoading(false)
+  }
 
   const load = async (pin: MapPin) => {
     setWanted(true)
@@ -104,16 +135,33 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
     return { areas: shaded, legend: key }
   }, [wanted, profile, chosen, shades])
 
+  // Flood zones use the same five shades, the darkest end for the most serious, and sit on top of the neighborhoods.
+  const floodColor = (kind: FloodKind) => (FLOOD_SHADE[kind] === undefined ? NOT_STUDIED : shades[FLOOD_SHADE[kind]!])
+  const floodAreas = useMemo(() => {
+    if (!floodWanted || !flood) return [] as MapArea[]
+    return flood.areas.map((area): MapArea => {
+      const color = FLOOD_SHADE[area.kind] === undefined ? NOT_STUDIED : shades[FLOOD_SHADE[area.kind]!]
+      return {
+        id: `flood-${area.id}`,
+        outline: area.outline,
+        color,
+        edge: color,
+        label: `Flood Zone ${area.zone}: ${FLOOD_LABELS[area.kind]}${area.detail && area.detail.toLowerCase() !== FLOOD_LABELS[area.kind].toLowerCase() ? `\n${area.detail}` : ''}${area.elevation ? `\nBase flood elevation: ${area.elevation}` : ''}`,
+      }
+    })
+  }, [floodWanted, flood, shades])
+  const drawn = useMemo(() => (areas || floodAreas.length > 0 ? [...(areas ?? []), ...floodAreas] : undefined), [areas, floodAreas])
+  const reach = floodWanted && flood && around ? { center: [around.latitude, around.longitude] as [number, number], miles: flood.miles } : null
+
   const rings = wanted && profile && showRings && around ? { center: [around.latitude, around.longitude] as [number, number], miles: profile.rings.map((ring) => ring.miles) } : null
 
   return (
     <div className="map-layout" ref={frame}>
       <div className="map-main">
-        <PropertyMap pins={pins} areas={areas} rings={rings} />
+        <PropertyMap pins={pins} areas={drawn} rings={rings} reach={reach} />
       </div>
 
-      <aside className="map-side" aria-label="Demographics">
-        <h3>Demographics</h3>
+      <aside className="map-side" aria-label="Map layers">
         {pins.length > 1 ? (
           <div className="field">
             <label htmlFor="map-around">Around</label>
@@ -124,6 +172,7 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
                 setAroundId(event.target.value)
                 const next = pins.find((pin) => pin.id === event.target.value)
                 if (wanted && next) void load(next)
+                if (floodWanted && next) void loadFlood(next)
               }}
             >
               {pins.map((pin) => (
@@ -133,6 +182,7 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
           </div>
         ) : null}
 
+        <h3>Demographics</h3>
         {!wanted ? (
           <>
             <p className="note">Census figures for the neighborhoods around this address, with totals within 1, 3 and 5 miles.</p>
@@ -199,6 +249,56 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
               estimates: a tract a ring cuts through counts by the share of its land inside the ring.
             </p>
             <button type="button" className="link-button" onClick={() => setWanted(false)}>Hide Demographics</button>
+          </>
+        ) : null}
+
+        <h3 className="map-side-next">Flood Zones</h3>
+        {!floodWanted ? (
+          <>
+            <p className="note">FEMA&apos;s flood zone for this address, and the higher-risk zones within about a mile.</p>
+            <button type="button" className="btn btn-primary btn-small" disabled={!around} onClick={() => around && void loadFlood(around)}>Show Flood Zones</button>
+          </>
+        ) : null}
+        {floodLoading ? <p className="note" role="status">Getting FEMA&apos;s flood map. This can take a few seconds…</p> : null}
+        {floodError ? (
+          <>
+            <p className="form-error" role="alert">{floodError}</p>
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => around && void loadFlood(around)}>Try Again</button>
+          </>
+        ) : null}
+        {floodWanted && flood ? (
+          <>
+            {flood.at ? (
+              <div className="flood-at">
+                <span className="flood-at-label">This Address</span>
+                <strong>Zone {flood.at.zone}: {FLOOD_LABELS[flood.at.kind]}</strong>
+                <p>{FLOOD_MEANINGS[flood.at.kind]}</p>
+                <dl>
+                  <div><dt>Special Flood Hazard Area</dt><dd>{flood.at.special ? 'Yes' : 'No'}</dd></div>
+                  {flood.at.detail ? <div><dt>FEMA&apos;s Description</dt><dd>{flood.at.detail}</dd></div> : null}
+                  {flood.at.elevation ? <div><dt>Base Flood Elevation</dt><dd>{flood.at.elevation}</dd></div> : null}
+                </dl>
+              </div>
+            ) : (
+              <p className="note">FEMA has no flood map data for this spot. Not every county&apos;s flood maps are available as map data.</p>
+            )}
+            {flood.kinds.length > 0 ? (
+              <ul className="map-legend" aria-label="Colors for flood zones">
+                {flood.kinds.map((kind) => (
+                  <li key={kind} title={FLOOD_MEANINGS[kind]}><span className="map-swatch" style={{ background: floodColor(kind) }} aria-hidden="true" />{FLOOD_LABELS[kind]}</li>
+                ))}
+                <li title={FLOOD_MEANINGS.minimal}><span className="map-swatch map-swatch-empty" aria-hidden="true" />{FLOOD_LABELS.minimal}</li>
+              </ul>
+            ) : flood.at ? (
+              <p className="note">There are no higher-risk zones within about a mile.</p>
+            ) : null}
+            {flood.partial ? <p className="note">There are more zones here than FEMA sends at once, so some outlines may be missing.</p> : null}
+            <p className="doc-sub">
+              Source: FEMA National Flood Hazard Layer, the flood insurance maps now in effect. The pin sits along the street rather than on
+              the building, so near the edge of a zone check the building itself on{' '}
+              <a href="https://msc.fema.gov/portal/home" target="_blank" rel="noreferrer">FEMA&apos;s Flood Map Service Center</a>. This is not an official flood determination.
+            </p>
+            <button type="button" className="link-button" onClick={() => setFloodWanted(false)}>Hide Flood Zones</button>
           </>
         ) : null}
       </aside>

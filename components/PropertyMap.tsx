@@ -5,8 +5,13 @@ import { useEffect, useRef, useState } from 'react'
 /** One pin: a place with a name, the address shown under it, and where it is. */
 export type MapPin = { id: string; title: string; subtitle: string; address: string; latitude: number; longitude: number }
 
-/** A shaded area laid over the map: its shape (rings of [latitude, longitude]), its color, and what hovering it says. */
-export type MapArea = { id: string; outline: [number, number][][]; color: string | null; label: string }
+/**
+ * A shaded area laid over the map: its shape (rings of [latitude, longitude]), its color, and what hovering it says.
+ * `edge` is the color of its outline; left out, a thin light line keeps neighboring areas apart.
+ */
+export type MapArea = { id: string; outline: [number, number][][]; color: string | null; label: string; edge?: string }
+/** A square around a point, so many miles each way, that the map should take in. */
+export type MapReach = { center: [number, number]; miles: number }
 /** Circles drawn around a point, each so many miles out. */
 export type MapRings = { center: [number, number]; miles: readonly number[] }
 
@@ -102,9 +107,10 @@ const safe = (text: string) => text.replace(/[&<>"']/g, (character) => `&#${char
  *
  * `areas` and `rings` lay information over the map (shaded neighborhoods,
  * distance circles). They are drawn under the pins and can change without the
- * map starting over; when rings appear the view widens to take them in.
+ * map starting over; when rings appear the view widens to take them in, and
+ * failing rings it moves to take in `reach`.
  */
-export function PropertyMap({ pins, areas, rings }: { pins: MapPin[]; areas?: MapArea[]; rings?: MapRings | null }) {
+export function PropertyMap({ pins, areas, rings, reach }: { pins: MapPin[]; areas?: MapArea[]; rings?: MapRings | null; reach?: MapReach | null }) {
   const box = useRef<HTMLDivElement>(null)
   const [problem, setProblem] = useState<string | null>(null)
   // The live map and Leaflet itself, once ready, for the overlay to draw on.
@@ -183,6 +189,7 @@ export function PropertyMap({ pins, areas, rings }: { pins: MapPin[]; areas?: Ma
 
   // The overlay: shaded areas first, then the distance circles on top of them. Pins stay above both.
   const ringKey = rings ? `${rings.center.join(',')}:${rings.miles.join(',')}` : ''
+  const reachKey = reach ? `${reach.center.join(',')}:${reach.miles}` : ''
   useEffect(() => {
     if (!ready) return
     const { leaflet, map } = ready
@@ -193,7 +200,7 @@ export function PropertyMap({ pins, areas, rings }: { pins: MapPin[]; areas?: Ma
       leaflet
         .polygon(area.outline, {
           // A thin light edge keeps neighboring areas apart; an area with no figure is left clear.
-          color: '#ffffff', weight: 1, opacity: area.color ? 0.9 : 0.5,
+          color: area.edge ?? '#ffffff', weight: 1, opacity: area.color ? 0.9 : 0.5,
           fillColor: area.color ?? '#000000', fillOpacity: area.color ? 0.62 : 0, fillRule: 'evenodd',
         })
         .bindTooltip(safe(area.label).replace(/\n/g, '<br>'), { sticky: true, direction: 'top', className: 'map-tip' })
@@ -210,13 +217,17 @@ export function PropertyMap({ pins, areas, rings }: { pins: MapPin[]; areas?: Ma
           .addTo(group as unknown as LeafletMap)
       }
       if (outer) map.fitBounds(outer.getBounds().pad(0.04), { padding: [10, 10], maxZoom: ONE_PIN_ZOOM })
+    } else if (reach) {
+      const up = reach.miles / 69.05
+      const across = up / Math.max(0.2, Math.cos((reach.center[0] * Math.PI) / 180))
+      map.fitBounds([[reach.center[0] - up, reach.center[1] - across], [reach.center[0] + up, reach.center[1] + across]], { padding: [10, 10], maxZoom: ONE_PIN_ZOOM })
     }
     return () => {
       group.clearLayers()
       group.remove()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, areas, ringKey])
+  }, [ready, areas, ringKey, reachKey])
 
   if (problem) return <p className="form-error" role="alert">{problem}</p>
   return <div ref={box} className="property-map" role="region" aria-label="Map of this asset's addresses" />

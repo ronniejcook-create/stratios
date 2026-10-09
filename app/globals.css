@@ -921,6 +921,15 @@ td.muted { color: var(--dim); }
 .map-main .property-map { margin-top: 0; }
 .map-side { flex: 0 1 300px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .map-side h3 { font-size: 14px; }
+.map-side .map-side-next { width: 100%; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--line); }
+.flood-at { width: 100%; display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+.flood-at-label { font-size: 12px; color: var(--muted); }
+.flood-at strong { font-size: 15px; }
+.flood-at p { margin: 0; color: var(--muted); }
+.flood-at dl { margin: 4px 0 0; display: grid; gap: 2px; }
+.flood-at dl div { display: flex; justify-content: space-between; gap: 12px; }
+.flood-at dt { color: var(--muted); }
+.flood-at dd { margin: 0; text-align: right; }
 .map-side .field { width: 100%; flex: none; }
 .shell-main .map-side .note, .shell-main .map-side .form-error { margin-top: 0; }
 .map-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; color: var(--text); }
