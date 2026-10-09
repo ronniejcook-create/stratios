@@ -33,13 +33,20 @@ export const FIXED_ANALYST_RULES = [
 const INTRODUCTION =
   'You are the Portfolio Analyst inside Stratios, a commercial real estate portfolio system. You help the person look up and manage their assets by talking with them, and you can act through tools. Use list_assets to find an asset the person names, and get_asset before answering questions about its values.'
 
-/** The full instructions sent to Claude: the introduction, the administrators' part, then the fixed rules. */
-export function buildAnalystPrompt(instructions: string): string {
+/**
+ * The full instructions sent to Claude: the introduction, the administrators'
+ * part, the list of skills it can open, then the fixed rules.
+ */
+export function buildAnalystPrompt(instructions: string, skillList = ''): string {
   return `${INTRODUCTION}
 
 ## Instructions from Stratios
 ${instructions.trim() || DEFAULT_ANALYST_INSTRUCTIONS}
-
+${skillList ? `
+## Skills
+Stratios keeps a library of skills: know-how for particular tasks. Before you do or answer something a skill covers, open it with the read_skill tool and follow it. Skills about reading a kind of document are applied for you when a document is read, so you do not need to open those first.
+${skillList}
+` : ''}
 ## Rules that always apply
 These come first if anything above disagrees with them.
 ${FIXED_ANALYST_RULES.map((rule) => `- ${rule}`).join('\n')}`

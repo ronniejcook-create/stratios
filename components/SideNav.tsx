@@ -32,6 +32,7 @@ const SECTIONS: { title: string; adminOnly?: boolean; stratiosOnly?: boolean; it
     stratiosOnly: true,
     items: [
       { label: 'Analyst Instructions', href: '/dashboard/analyst', icon: icon(<><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" /></>) },
+      { label: 'Skills Library', href: '/dashboard/skills', icon: icon(<><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z" /><path d="M5 17a3 3 0 0 1 3-3h11" /><path d="M9 8h6" /></>) },
       { label: 'Master Library', href: '/dashboard/library', icon: icon(<><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5v-13z" /><path d="M10 4h4v16h-4z" /><path d="M14.6 6.2l3.6-1 3.3 12.6-3.6 1z" /></>) },
     ],
   },

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { DEFAULT_ANALYST_INSTRUCTIONS, FIXED_ANALYST_RULES, getAnalystInstructions, type AnalystInstructions } from '@/lib/analystInstructions'
@@ -37,7 +38,10 @@ export default async function AnalystInstructionsPage() {
   return (
     <>
       <h1>Analyst Instructions</h1>
-      <p className="lede">How the Portfolio Analyst works and writes, for every organization.</p>
+      <p className="lede">
+        How the Portfolio Analyst works and writes in every conversation, for every organization. Know-how for a particular task or kind of document belongs in
+        the <Link href="/dashboard/skills">Skills Library</Link>.
+      </p>
 
       {needsUpdate ? (
         <div className="panel notice">

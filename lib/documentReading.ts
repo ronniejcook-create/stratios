@@ -14,6 +14,7 @@ import { listFields } from './fields'
 import { listScreens } from './layout'
 import { loadAccess } from './permissions'
 import { getAssetTree } from './records'
+import { loadSkillsForAgent } from './skills'
 
 export type ReadSuccess = {
   ok: true
@@ -63,7 +64,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       if (!document.assetId) await attachDocument(client, orgId, documentId, targetId)
       const file = await readDocumentFile(client, orgId, documentId)
       const fields = extractableFields(await listFields(client, orgId), sectionByField(await listScreens(client, orgId)), access.fieldLevel)
-      return { ok: true as const, document, tree, file, fields }
+      return { ok: true as const, document, tree, file, fields, skills: await loadSkillsForAgent(client) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)
@@ -73,7 +74,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
   const { document, tree } = prepared
   if (!prepared.file) return giveUp(caller, documentId, 'The file for this document is missing. Upload it again.', 500)
 
-  const result = await readDocument({ file: prepared.file, documentName: document.name, records: recordsOf(tree), fields: prepared.fields, timeoutMs })
+  const result = await readDocument({ file: prepared.file, documentName: document.name, records: recordsOf(tree), fields: prepared.fields, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
 
   try {
@@ -116,7 +117,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
       if (!(await startReading(client, orgId, userId, documentId))) return { ok: false as const, error: busyMessage(document.status), status: 409 }
       const file = await readDocumentFile(client, orgId, documentId)
       const fields = extractableFields(await listFields(client, orgId), sectionByField(await listScreens(client, orgId)), access.fieldLevel)
-      return { ok: true as const, document, file, fields }
+      return { ok: true as const, document, file, fields, skills: await loadSkillsForAgent(client) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)
@@ -126,7 +127,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
   const { document } = prepared
   if (!prepared.file) return giveUp(caller, documentId, 'The file for this document is missing. Upload it again.', 500)
 
-  const result = await readDocument({ file: prepared.file, documentName: document.name, records: newAssetRecords(), fields: prepared.fields, newAsset: true, timeoutMs })
+  const result = await readDocument({ file: prepared.file, documentName: document.name, records: newAssetRecords(), fields: prepared.fields, newAsset: true, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
   const described = result.newAsset
   const name = (described?.name || document.name.replace(/\.pdf$/i, '')).slice(0, 200)

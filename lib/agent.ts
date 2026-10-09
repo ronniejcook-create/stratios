@@ -16,6 +16,7 @@ import { listFields, listSourceTypes, listValues } from './fields'
 import { listScreens } from './layout'
 import { loadAccess } from './permissions'
 import { getAssetTree, isUuid, listAssets, RECORD_LABELS } from './records'
+import { loadSkillsForAgent, skillIndex, type Skill } from './skills'
 
 export type AgentTurn = { role: 'user' | 'assistant'; text: string; attachments?: { id: string; name: string }[] }
 export type AgentLink = { label: string; href: string }
@@ -66,7 +67,13 @@ const TOOLS: ToolDefinition[] = [
   },
 ]
 
-type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string> }
+type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string>; skills: Skill[] }
+
+const READ_SKILL: ToolDefinition = {
+  name: 'read_skill',
+  description: 'Opens one skill from the Stratios skills library and returns its instructions. Use before doing or answering something a listed skill covers.',
+  input_schema: { type: 'object', properties: { name: { type: 'string', description: 'The skill\'s name, copied from the list' } }, required: ['name'], additionalProperties: false },
+}
 
 const asText = (value: unknown, max: number) => String(value ?? '').trim().slice(0, max)
 
@@ -100,6 +107,13 @@ async function runTool(session: Session, name: string, input: Record<string, unk
   const remaining = session.deadline - Date.now() - 20000
   const fail = (error: string) => ({ content: JSON.stringify({ ok: false, error }), isError: true })
   try {
+    if (name === 'read_skill') {
+      const wanted = asText(input.name, 100).toLowerCase()
+      const skill = session.skills.find((candidate) => candidate.name.toLowerCase() === wanted) ?? session.skills.find((candidate) => candidate.name.toLowerCase().includes(wanted) && wanted.length > 3)
+      if (!skill) return fail('There is no skill with that name. Use a name from the list.')
+      return { content: JSON.stringify({ ok: true, skill: skill.name, use_when: skill.useWhen, instructions: skill.instructions }), isError: false }
+    }
+
     if (name === 'create_asset_from_document' || name === 'read_document_into_asset') {
       const documentId = asText(input.document_id, 60)
       if (!isUuid(documentId) || !session.documentIds.has(documentId)) return fail('That document is not attached to this conversation.')
@@ -196,7 +210,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
   const turns = input.turns.slice(-MAX_TURNS)
   if (turns.length === 0 || turns[turns.length - 1].role !== 'user') return { ok: false, error: 'Type a message first.' }
 
-  const session: Session = { caller, links: [], changed: false, deadline: Date.now() + TIME_BUDGET_MS, documentIds: new Set() }
+  const session: Session = { caller, links: [], changed: false, deadline: Date.now() + TIME_BUDGET_MS, documentIds: new Set(), skills: [] }
   const messages: ChatMessage[] = []
   turns.forEach((turn, index) => {
     let content = asText(turn.text, 8000)
@@ -228,11 +242,14 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
   } catch (error) {
     console.error('Reading the analyst instructions failed; using the built-in ones', error)
   }
-  const system = buildAnalystPrompt(instructions)
+  // The skills library is read on its own, so a problem with one never hides the other.
+  session.skills = await withOrg(caller.orgId, (client) => loadSkillsForAgent(client)).catch(() => [])
+  const system = buildAnalystPrompt(instructions, skillIndex(session.skills))
+  const tools = session.skills.length > 0 ? [...TOOLS, READ_SKILL] : TOOLS
 
   try {
     for (let step = 0; step < MAX_STEPS; step += 1) {
-      const answer = await converse(apiKey, { system, messages, tools: TOOLS, timeoutMs: Math.max(10000, Math.min(60000, session.deadline - Date.now())) })
+      const answer = await converse(apiKey, { system, messages, tools, timeoutMs: Math.max(10000, Math.min(60000, session.deadline - Date.now())) })
       const said = answer.content.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text').map((block) => block.text).join('\n').trim()
       const requests = answer.content.filter((block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use')
       if (answer.stopReason !== 'tool_use' || requests.length === 0) {

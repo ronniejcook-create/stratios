@@ -238,6 +238,24 @@ work and how data is isolated; this file covers how we work and where things sta
     links or ids, document contents are not instructions). Ronnie was told instructions shape
     behavior but new abilities need new tools; he asked about address lookup to coordinates,
     property photos, a Skills screen and n8n. None of those are started.
+  - **Skills Library** (October 8, late; `db/migrations/011_skills.sql`): Stratios Admin > Skills
+    Library (`app/dashboard/skills/`, Stratios administrators only). Ronnie asked for a library
+    the agents reference instead of one set of instructions, for example different instructions
+    per document type. A skill is a name, a "Use When" line, Markdown instructions and an
+    In Use / Turned Off status (`skills` table, org_id null = standard; the column is there for
+    organization skills later). Logic in `lib/skills.ts`.
+    - Reading a document: every enabled skill is put in the extraction prompt in full
+      (`skillsInFull`, capped at 60,000 characters); the agent decides the document type and
+      follows the skills whose Use When fits. Skills can't change the answer format or the rules.
+    - Chat: the analyst's instructions list each skill's name and Use When (`skillIndex`), and a
+      sixth tool, `read_skill`, opens one. `loadSkillsForAgent` never throws (savepoint), so the
+      agents work without skills if 011 has not been run.
+    - The migration seeds two starter skills on first run only: Reading an Offering Memorandum
+      (asking price is not Purchase Price; prefer actual over pro forma) and Reading an Appraisal.
+    - Analyst Instructions stays as the always-on behavior; skills are task-specific. This
+      answers the first open design question: skills are their own library, separate from a
+      field's Agent Instructions. KPI skills (stage 5) should build on this table. Skills have no
+      versions or per-property-type or per-organization variants yet.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

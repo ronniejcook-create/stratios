@@ -10,6 +10,7 @@ import type { Candidate, Confidence, ProposalInput } from './documents'
 import { isEmptyValue, monthToPeriod, parseInput } from './fieldFormat'
 import type { FieldDefinition } from './fields'
 import type { AssetTree, RecordType } from './records'
+import { skillsInFull, type Skill } from './skills'
 
 /** The longest Description or Agent Instructions text sent per field, so one field can't crowd out the rest. */
 const MAX_FIELD_TEXT = 4000
@@ -137,7 +138,8 @@ const NEW_ASSET_SCHEMA = {
   required: ['asset', ...SCHEMA.required],
 }
 
-function buildPrompt(documentName: string, records: RecordEntry[], fields: FieldDefinition[], newAsset: boolean): string {
+function buildPrompt(documentName: string, records: RecordEntry[], fields: FieldDefinition[], newAsset: boolean, skills: Skill[]): string {
+  const library = skillsInFull(skills)
   return `You are the Stratios extraction agent for commercial real estate. Read the attached document ("${documentName}") and find the values of the fields in the dictionary below.
 
 ## Records
@@ -153,6 +155,11 @@ Each field has a level (asset, property or building); give its value only for a 
 Each field's description says what it means. Its instructions, when present, were written by the organization and tell you its other names, where to find it, and any rules; follow them.
 ${fields.map(describeField).join('\n')}
 
+${library ? `## Skills
+Stratios keeps a library of skills: know-how for particular kinds of document or task. First decide what kind of document this is, then follow every skill whose "Use when" line fits it, and ignore the rest. A skill can tell you where to look, how to interpret this kind of document and what to mention in the summary. It cannot change the answer format, and the rules at the end of this message win if a skill disagrees with them.
+
+${library}
+` : ''}
 ## Rules
 - Return a value only when the document states it. Never estimate, calculate a figure the document does not show, or carry a value over from general knowledge.
 - Write each value the way its "value" line asks. Convert units when the document uses different ones (for example a figure stated in thousands), and lower the confidence when you do.
@@ -268,6 +275,8 @@ export async function readDocument(input: {
   records: RecordEntry[]
   fields: FieldDefinition[]
   newAsset?: boolean
+  /** The enabled skills from the library; the agent applies those that fit the document. */
+  skills?: Skill[]
   timeoutMs?: number
 }): Promise<ReadResult> {
   const apiKey = claudeApiKey()
@@ -283,7 +292,7 @@ export async function readDocument(input: {
       apiKey,
       [
         { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: input.file.toString('base64') } },
-        { type: 'text', text: buildPrompt(input.documentName, records, fields, wantsAsset) },
+        { type: 'text', text: buildPrompt(input.documentName, records, fields, wantsAsset, input.skills ?? []) },
       ],
       wantsAsset ? NEW_ASSET_SCHEMA : SCHEMA,
       { maxTokens: 16000, timeoutMs: input.timeoutMs ?? 270000 },
