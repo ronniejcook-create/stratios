@@ -7,7 +7,8 @@ import { listFields, type FieldDefinition } from '@/lib/fields'
 import { listScreens, type Screen } from '@/lib/layout'
 import { listLists, type ListDefinition } from '@/lib/lists'
 import { RECORD_LABELS, RECORD_TYPES } from '@/lib/records'
-import { FieldsGrid, type FieldRow } from './FieldsGrid'
+import type { GridRow } from '@/components/DataGrid'
+import { FieldsGrid } from './FieldsGrid'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,7 +77,7 @@ export default async function FieldsPage() {
   const customized = fields.filter((field) => field.standard && field.modifiedSettings.length > 0).length
   const added = fields.filter((field) => !field.standard).length
 
-  const rows: FieldRow[] = RECORD_TYPES.flatMap((type) =>
+  const rows: GridRow[] = RECORD_TYPES.flatMap((type, level) =>
     fields
       .filter((field) => field.appliesTo === type)
       .sort((a, b) => shownIn(a).localeCompare(shownIn(b)) || a.sortOrder - b.sortOrder)
@@ -85,14 +86,16 @@ export default async function FieldsPage() {
         return {
           id: field.id,
           href: `/dashboard/fields/${field.id}`,
-          name: field.name,
-          fieldKey: field.key,
-          belongsTo: RECORD_LABELS[type],
-          type: `${TYPE_LABELS.get(field.dataType) ?? field.dataType}${field.tracking === 'monthly' ? ', Monthly' : ''}${field.calculated ? ', Calculated' : ''}`,
-          shownIn: shownIn(field),
-          status: !field.standard ? 'Added by You' : modified ? 'Customized' : 'Standard',
-          statusTone: !field.standard ? 'own' as const : modified ? 'modified' as const : 'plain' as const,
-          statusOrder: !field.standard ? 2 : modified ? 1 : 0,
+          cells: {
+            name: field.name,
+            belongsTo: RECORD_LABELS[type],
+            fieldKey: field.key,
+            type: `${TYPE_LABELS.get(field.dataType) ?? field.dataType}${field.tracking === 'monthly' ? ', Monthly' : ''}${field.calculated ? ', Calculated' : ''}`,
+            shownIn: shownIn(field),
+            status: !field.standard ? 'Added by You' : modified ? 'Customized' : 'Standard',
+          },
+          order: { belongsTo: level, status: !field.standard ? 2 : modified ? 1 : 0 },
+          tones: { status: !field.standard ? 'own' as const : modified ? 'modified' as const : 'plain' as const },
         }
       }),
   )
@@ -113,7 +116,6 @@ export default async function FieldsPage() {
         <FieldsGrid
           rows={rows}
           statusHeading="Status"
-          belongsToOrder={LEVELS.map((level) => level.label)}
           addTitle="Add a Field"
           levels={LEVELS}
           types={DATA_TYPES.map((type) => ({ value: type.value, label: type.label }))}

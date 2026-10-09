@@ -296,18 +296,24 @@ work and how data is isolated; this file covers how we work and where things sta
     `ReviewSection` in `ReviewControls.tsx`), because the row leaves the table on success and a
     message on the row flashed and vanished. A section whose last row was just settled stays
     until the message is dismissed or the page is reloaded. Errors still show on the row.
-  - **Fields Library grid** (October 9): both Fields Library pages show one grid instead of a
-    table per level (`app/dashboard/fields/FieldsGrid.tsx`, shared; each page builds plain
-    `FieldRow`s on the server). "Belongs To" is a column. A search box (name or key), and each
-    column heading opens a spreadsheet-style menu Ronnie asked for (`ColumnMenu`: Sort A to Z /
-    Z to A, Clear Filter, a search box and tick boxes for the column's values with Select All,
-    OK / Cancel; a column's list shows the values left by the other columns' filters). "Clear
-    Filters and Sorting" resets everything. All in the browser, nothing is remembered between
-    visits. Excel's Sort by Color and Text Filters were left out. **Add Field** is a button that
-    opens a pop-up (a native `<dialog class="modal">`, the first modal in the app; reuse its
-    styles) holding `AddFieldForm`; on success it closes and the message shows above the grid.
-    The grid and its menus were clicked through in Chromium with Playwright (real component,
-    stand-in rows and form), not inside the app.
+  - **Spreadsheet-style grids** (October 9, Ronnie's requests): the Assets list and both Fields
+    Library pages use one shared grid, `components/DataGrid.tsx` (`DataGrid`, `Modal`). Pages
+    build plain `GridRow`s on the server (`cells` text per column, optional `order` numbers for
+    counts or a natural order, `values` for cells holding several values such as an asset's
+    types and cities, `tones` for chips). Each column heading opens an Excel-like menu
+    (`ColumnMenu`: Sort A to Z / Z to A, or Smallest / Largest for numbers; Clear Filter; a
+    search box and tick boxes for the column's values with Select All; OK / Cancel; a column's
+    list shows the values left by the other columns' filters; empty cells are "(Blank)"). There
+    is also a search box and "Clear Filters and Sorting". All in the browser, nothing is
+    remembered between visits. Excel's Sort by Color and Text Filters were left out.
+    - Fields Library (`app/dashboard/fields/FieldsGrid.tsx`): "Belongs To" is a column instead
+      of a table per level. Assets (`app/dashboard/AssetsGrid.tsx`): Name, Properties, Type, City.
+    - **Add Field** and **Add Asset** are buttons at the right of the search row that open a
+      pop-up (`Modal`, a native `<dialog class="modal">`; reuse it for future pop-ups). Add
+      Field closes with a message above the grid; Add Asset opens the new asset as before.
+    - Use `DataGrid` for other lists (Users, Skills, Layouts) if he asks for the same there.
+    - The real components were clicked through in Chromium with Playwright using stand-in rows
+      and forms, not inside the app.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

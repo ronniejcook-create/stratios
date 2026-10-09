@@ -8,7 +8,8 @@ import { listScreens, type Screen } from '@/lib/layout'
 import { listLists, type ListDefinition } from '@/lib/lists'
 import { RECORD_LABELS, RECORD_TYPES } from '@/lib/records'
 import { isStratiosAdmin } from '@/lib/stratios'
-import { FieldsGrid, type FieldRow } from '../fields/FieldsGrid'
+import type { GridRow } from '@/components/DataGrid'
+import { FieldsGrid } from '../fields/FieldsGrid'
 import { addLibraryField } from './actions'
 
 export const dynamic = 'force-dynamic'
@@ -64,7 +65,7 @@ export default async function LibraryPage() {
     ),
     ...lists.map((list) => ({ value: `list:${list.id}`, label: `Column of List: ${list.name}`, appliesTo: list.appliesTo as string })),
   ]
-  const rows: FieldRow[] = RECORD_TYPES.flatMap((type) =>
+  const rows: GridRow[] = RECORD_TYPES.flatMap((type, level) =>
     fields
       .filter((field) => field.appliesTo === type)
       .sort((a, b) => shownIn(a).localeCompare(shownIn(b)) || a.sortOrder - b.sortOrder)
@@ -73,14 +74,16 @@ export default async function LibraryPage() {
         return {
           id: field.id,
           href: `/dashboard/library/${field.id}`,
-          name: field.name,
-          fieldKey: field.key,
-          belongsTo: RECORD_LABELS[type],
-          type: `${TYPE_LABELS.get(field.dataType) ?? field.dataType}${field.tracking === 'monthly' ? ', Monthly' : ''}${field.calculated ? ', Calculated' : ''}`,
-          shownIn: shownIn(field),
-          status: orgs === 0 ? 'None' : orgs === 1 ? '1 organization' : `${orgs} organizations`,
-          statusTone: orgs === 0 ? 'muted' as const : 'modified' as const,
-          statusOrder: orgs,
+          cells: {
+            name: field.name,
+            belongsTo: RECORD_LABELS[type],
+            fieldKey: field.key,
+            type: `${TYPE_LABELS.get(field.dataType) ?? field.dataType}${field.tracking === 'monthly' ? ', Monthly' : ''}${field.calculated ? ', Calculated' : ''}`,
+            shownIn: shownIn(field),
+            status: orgs === 0 ? 'None' : orgs === 1 ? '1 organization' : `${orgs} organizations`,
+          },
+          order: { belongsTo: level, status: orgs },
+          tones: { status: orgs === 0 ? 'muted' as const : 'modified' as const },
         }
       }),
   )
@@ -105,7 +108,6 @@ export default async function LibraryPage() {
         <FieldsGrid
           rows={rows}
           statusHeading="Customized By"
-          belongsToOrder={LEVELS.map((level) => level.label)}
           addTitle="Add a Standard Field"
           addAction={addLibraryField}
           levels={LEVELS}

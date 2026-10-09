@@ -753,7 +753,7 @@ td.muted { color: var(--dim); }
 }
 .grid-toolbar input::placeholder { color: var(--placeholder); }
 .grid-toolbar .grid-search { flex: 1 1 200px; max-width: 280px; }
-.grid-toolbar .grid-add { margin-left: auto; }
+.grid-toolbar .grid-add { margin-left: auto; display: inline-flex; }
 .shell-main .grid-count { margin-top: 10px; }
 .sort-button {
   display: inline-flex; align-items: center; gap: 6px; padding: 0; background: none; border: 0;

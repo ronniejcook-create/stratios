@@ -5,7 +5,7 @@ import { addAsset, type AddAssetState } from './actions'
 
 const initialState: AddAssetState = { error: null }
 
-export function AddAssetForm({ propertyTypes }: { propertyTypes: readonly string[] }) {
+export function AddAssetForm({ propertyTypes, onCancel }: { propertyTypes: readonly string[]; onCancel?: () => void }) {
   const [state, formAction, pending] = useActionState(addAsset, initialState)
 
   return (
@@ -27,12 +27,15 @@ export function AddAssetForm({ propertyTypes }: { propertyTypes: readonly string
           <label htmlFor="asset-city">City</label>
           <input id="asset-city" name="city" type="text" maxLength={200} placeholder="Optional" />
         </div>
+      </div>
+      <p className="note">An asset starts with one property and one building. Its page opens once it is added, where you can add more.</p>
+      {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
+      <div className="button-row modal-actions">
+        {onCancel ? <button type="button" className="btn btn-ghost btn-small" disabled={pending} onClick={onCancel}>Cancel</button> : null}
         <button type="submit" className="btn btn-primary btn-small" disabled={pending}>
           {pending ? 'Adding…' : 'Add Asset'}
         </button>
       </div>
-      <p className="note">An asset starts with one property and one building. You can add more on the asset&apos;s page.</p>
-      {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
     </form>
   )
 }
