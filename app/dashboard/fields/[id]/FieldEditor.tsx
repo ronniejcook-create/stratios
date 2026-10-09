@@ -2,7 +2,9 @@
 
 import { useState, useTransition, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { removeField, resetSettings, saveSettings, type ActionResult } from '../actions'
+import { GenerateButton } from '@/components/GenerateButton'
+import { Markdown } from '@/components/Markdown'
+import { generateDescription, removeField, resetSettings, saveSettings, type ActionResult } from '../actions'
 import type { FieldSettingsInput } from '@/lib/fieldAdmin'
 
 type SaveAction = (input: { fieldId: string; settings: FieldSettingsInput; sectionId: string | null; moveSection: boolean }) => Promise<ActionResult>
@@ -13,12 +15,12 @@ export type EditableField = {
   standard: boolean
   calculated: boolean
   dataType: string
+  appliesTo: string
+  tracking: string
   isListColumn: boolean
   name: string
   aiDescription: string
-  otherNames: string[]
-  extractionHints: string
-  sourcePriority: string[]
+  agentInstructions: string
   whenEmpty: string
   whenDifferent: string
   manualOverride: string
@@ -28,7 +30,21 @@ export type EditableField = {
   standardValues: Record<string, unknown>
 }
 
-type Source = { key: string; name: string }
+type TypeOption = { value: string; label: string }
+
+const INSTRUCTIONS_EXAMPLE = `### Other Names
+- What documents and systems may call this field
+
+### Where to Find It
+Which document, section or table usually holds it.
+
+### Source Priority
+1. Accounting System
+2. Documents
+3. Manual Entry
+
+### Rules
+Any conversion, rounding or judgment to apply.`
 
 const WHEN_EMPTY = [
   { value: 'fill', label: 'Fill Automatically' },
@@ -53,7 +69,8 @@ export function FieldEditor({
   field,
   sections,
   currentSectionId,
-  sources,
+  types,
+  typeLockedReason,
   modifications,
   saveAction = saveSettings,
   removeAction = removeField,
@@ -74,15 +91,18 @@ export function FieldEditor({
   field: EditableField
   sections: { id: string; label: string }[]
   currentSectionId: string | null
-  sources: Source[]
+  /** The field types to choose from. */
+  types: TypeOption[]
+  /** Why the type can't be changed, or null when it can. */
+  typeLockedReason: string | null
   modifications: { setting: string; modifiedAt: string }[]
 }) {
   const router = useRouter()
   const [name, setName] = useState(field.name)
   const [aiDescription, setAiDescription] = useState(field.aiDescription)
-  const [otherNames, setOtherNames] = useState(field.otherNames.join('\n'))
-  const [extractionHints, setExtractionHints] = useState(field.extractionHints)
-  const [priority, setPriority] = useState(field.sourcePriority)
+  const [agentInstructions, setAgentInstructions] = useState(field.agentInstructions)
+  const [reading, setReading] = useState(false)
+  const [dataType, setDataType] = useState(field.dataType)
   const [whenEmpty, setWhenEmpty] = useState(field.whenEmpty)
   const [whenDifferent, setWhenDifferent] = useState(field.whenDifferent)
   const [manualOverride, setManualOverride] = useState(field.manualOverride)
@@ -92,11 +112,11 @@ export function FieldEditor({
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [busy, startBusy] = useTransition()
+  const [generating, startGenerating] = useTransition()
 
-  const sourceName = (key: string) => sources.find((source) => source.key === key)?.name ?? key
-  const unused = sources.filter((source) => !priority.includes(source.key))
   const lines = (value: string) => value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-  const numeric = field.dataType === 'number' || field.dataType === 'money'
+  const numeric = dataType === 'number' || dataType === 'money'
+  const typeEditable = !field.standard && typeLockedReason === null
 
   const run = (work: () => Promise<{ ok: true; message: string } | { ok: false; error: string }>, after?: () => void) => {
     setMessage(null)
@@ -119,47 +139,57 @@ export function FieldEditor({
         settings: {
           name,
           aiDescription,
-          otherNames: lines(otherNames),
-          extractionHints,
-          sourcePriority: priority,
+          agentInstructions,
           whenEmpty,
           whenDifferent,
           manualOverride,
           unit,
           options: lines(options),
+          ...(typeEditable ? { dataType } : {}),
         },
         sectionId: sectionId || null,
         moveSection: !field.isListColumn && (sectionId || null) !== currentSectionId,
       }),
     )
 
+  // Fills the Description box with Claude's definition. It is not saved until Save Changes.
+  const generate = () => {
+    setMessage(null)
+    startGenerating(async () => {
+      const result = await generateDescription({
+        name,
+        appliesTo: field.appliesTo,
+        dataType,
+        unit,
+        options: lines(options),
+        tracking: field.tracking,
+        calculated: field.calculated,
+      })
+      if (!result.ok) {
+        setMessage({ text: result.error, error: true })
+        return
+      }
+      setAiDescription(result.description)
+      setMessage({ text: 'Description generated. Review it, then save your changes.', error: false })
+    })
+  }
+
   // Resetting reloads the page so the form shows the standard values again.
   const reset = (setting: string | null) => run(() => resetSettings({ fieldId: field.id, setting }), () => window.location.reload())
 
-  const move = (index: number, by: number) =>
-    setPriority((current) => {
-      const next = [...current]
-      const target = index + by
-      if (target < 0 || target >= next.length) return current
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
-    })
-
   /** Shows "Modified", the standard value and a reset link beside a setting the organization has changed. */
-  const modified = (setting: string, format: (value: unknown) => string = (value) => String(value ?? '')): ReactNode => {
+  const modified = (setting: string, format: (value: unknown) => string = (value) => String(value ?? ''), showStandard = true): ReactNode => {
     if (!field.standard || !field.modifiedSettings.includes(setting)) return null
     const changed = modifications.find((item) => item.setting === setting)
     const standard = format(field.standardValues[setting])
     return (
       <span className="modified-note">
         <span className="chip chip-modified">Modified{changed ? ` ${when(changed.modifiedAt)}` : ''}</span>
-        <span>Standard: {standard || 'empty'}</span>
+        {showStandard ? <span>Standard: {standard || 'empty'}</span> : <span>No longer follows Stratios updates to these instructions.</span>}
         <button type="button" className="link-button" disabled={busy} onClick={() => reset(setting)}>Reset</button>
       </span>
     )
   }
-  const asList = (value: unknown) => (Array.isArray(value) ? value.join(', ') : '')
-  const asSources = (value: unknown) => (Array.isArray(value) ? value.map((key) => sourceName(String(key))).join(', then ') : '')
   const asChoice = (choices: { value: string; label: string }[]) => (value: unknown) => choices.find((choice) => choice.value === value)?.label ?? String(value ?? '')
 
   return (
@@ -187,6 +217,14 @@ export function FieldEditor({
             </select>
           </div>
         )}
+        <div className="field field-narrow">
+          <label htmlFor="fe-type">Type</label>
+          <select id="fe-type" value={dataType} onChange={(e) => setDataType(e.target.value)} disabled={!typeEditable} title={typeLockedReason ?? undefined}>
+            {types.map((type) => (
+              <option key={type.value} value={type.value}>{type.label}</option>
+            ))}
+          </select>
+        </div>
         {!field.standard && numeric ? (
           <div className="field field-narrow">
             <label htmlFor="fe-unit">Unit</label>
@@ -195,7 +233,9 @@ export function FieldEditor({
         ) : null}
       </div>
 
-      {!field.standard && field.dataType === 'picklist' ? (
+      {typeLockedReason ? <p className="note">{typeLockedReason}</p> : null}
+
+      {!field.standard && dataType === 'picklist' ? (
         <div className="field">
           <label htmlFor="fe-options">Options (One per Line)</label>
           <textarea id="fe-options" rows={5} value={options} onChange={(e) => setOptions(e.target.value)} />
@@ -203,50 +243,46 @@ export function FieldEditor({
       ) : null}
 
       <div className="field">
-        <label htmlFor="fe-ai">AI Description</label>
-        <textarea id="fe-ai" rows={2} value={aiDescription} onChange={(e) => setAiDescription(e.target.value)} maxLength={1000} placeholder="What this field means, in plain words, for the agents" />
+        <div className="label-row">
+          <label htmlFor="fe-ai">Description</label>
+          <GenerateButton busy={generating} disabled={busy || !name.trim()} onClick={generate} title="Ask AI to write a definition for this field" />
+        </div>
+        <textarea id="fe-ai" rows={3} value={aiDescription} onChange={(e) => setAiDescription(e.target.value)} maxLength={1000} placeholder="What this field means, in plain words" />
         {modified('ai_description')}
       </div>
-      <div className="form-row">
-        <div className="field">
-          <label htmlFor="fe-names">Other Names (One per Line)</label>
-          <textarea id="fe-names" rows={4} value={otherNames} onChange={(e) => setOtherNames(e.target.value)} placeholder="What documents and systems may call it" />
-          {modified('other_names', asList)}
+      <div className="field">
+        <div className="label-row">
+          <label htmlFor="fe-instructions">Agent Instructions</label>
+          <div className="view-toggle" role="group" aria-label="How to show the agent instructions">
+            <button type="button" aria-pressed={!reading} onClick={() => setReading(false)}>Markdown</button>
+            <button type="button" aria-pressed={reading} onClick={() => setReading(true)}>Reading View</button>
+          </div>
         </div>
-        <div className="field">
-          <label htmlFor="fe-hints">Extraction Hints</label>
-          <textarea id="fe-hints" rows={4} value={extractionHints} onChange={(e) => setExtractionHints(e.target.value)} maxLength={1000} placeholder="Where and how to find it in a document" />
-          {modified('extraction_hints')}
-        </div>
+        {reading ? (
+          <Markdown source={agentInstructions} empty="No instructions yet. Switch to Markdown to write them." />
+        ) : (
+          <textarea
+            id="fe-instructions"
+            className="instructions-box"
+            rows={18}
+            value={agentInstructions}
+            onChange={(e) => setAgentInstructions(e.target.value)}
+            maxLength={20000}
+            spellCheck
+            placeholder={INSTRUCTIONS_EXAMPLE}
+          />
+        )}
+        {modified('agent_instructions', undefined, false)}
+        <p className="note">
+          Everything an agent needs to know about this field, written like a skill: other names, where to find it, which source to prefer, how to work it out and how to word it.
+          Use # for headings, - for bullets and **bold** for emphasis. Saved now; agents start reading it when documents and agents are connected.
+        </p>
       </div>
 
       {field.calculated ? (
-        <p className="note">This field is calculated, so it has no sources to rank.</p>
+        <p className="note">This field is calculated, so the rules for incoming values don&apos;t apply.</p>
       ) : (
         <>
-          <div className="field">
-            <span className="field-title">Source Priority (Highest First)</span>
-            <ol className="priority-list">
-              {priority.map((key, index) => (
-                <li key={key}>
-                  <span className="priority-rank">{index + 1}</span>
-                  <span className="priority-name">{sourceName(key)}</span>
-                  <button type="button" className="link-button" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Move ${sourceName(key)} up`}>Up</button>
-                  <button type="button" className="link-button" disabled={index === priority.length - 1} onClick={() => move(index, 1)} aria-label={`Move ${sourceName(key)} down`}>Down</button>
-                  <button type="button" className="link-button danger" disabled={priority.length === 1} onClick={() => setPriority((current) => current.filter((item) => item !== key))} aria-label={`Remove ${sourceName(key)}`}>Remove</button>
-                </li>
-              ))}
-            </ol>
-            {unused.length > 0 ? (
-              <div className="priority-add">
-                <span>Add:</span>
-                {unused.map((source) => (
-                  <button key={source.key} type="button" className="preset" onClick={() => setPriority((current) => [...current, source.key])}>{source.name}</button>
-                ))}
-              </div>
-            ) : null}
-            {modified('source_priority', asSources)}
-          </div>
           <div className="form-row">
             <div className="field">
               <label htmlFor="fe-empty">When the Field Is Empty</label>
@@ -276,12 +312,12 @@ export function FieldEditor({
               {modified('manual_override', asChoice(MANUAL_OVERRIDE))}
             </div>
           </div>
-          <p className="note">Source priority and these three rules are saved now and take effect when documents and feeds are connected.</p>
+          <p className="note">These three rules are saved now and take effect when documents and feeds are connected.</p>
         </>
       )}
 
       <div className="button-row">
-        <button type="submit" className="btn btn-primary btn-small" disabled={busy}>{busy ? 'Saving…' : 'Save Changes'}</button>
+        <button type="submit" className="btn btn-primary btn-small" disabled={busy || generating}>{busy ? 'Saving…' : 'Save Changes'}</button>
         {field.standard && field.modifiedSettings.length > 0 ? (
           <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => reset(null)}>Reset All to Standard</button>
         ) : null}

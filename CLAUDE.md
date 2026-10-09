@@ -29,7 +29,7 @@ work and how data is isolated; this file covers how we work and where things sta
   provision; we set the env vars by hand instead.
 - Database: Supabase Postgres. Locally the Session pooler string; on Vercel the Transaction pooler
   (port 6543). Migrations in `db/migrations/` are run by pasting into Supabase's SQL editor.
-- AI: Claude API called with plain `fetch` in `lib/brandColors.ts` (default model
+- AI: Claude API called with plain `fetch` in `lib/claude.ts` (default model
   `claude-sonnet-5-5`, override with `ANTHROPIC_MODEL`). The key is workspace-scoped; the optional
   `ANTHROPIC_WORKSPACE_ID` header is supported.
 
@@ -136,6 +136,25 @@ work and how data is isolated; this file covers how we work and where things sta
       means "the standard itself". New standard keys are checked against every organization's.
     - A change is live for all organizations at once; settings an organization modified keep
       their value (that is just how `field_settings` overrides already work).
+  - Field editor changes (October 8, evening; `db/migrations/007_agent_instructions.sql`):
+    - "AI Description" is now just **Description**, with a small Generate button
+      (`components/GenerateButton.tsx`) that asks Claude for a definition
+      (`lib/fieldDescription.ts`, action `generateDescription`). It also sits on Add a Field.
+      Nothing is saved until the admin saves. All Claude calls now go through `lib/claude.ts`.
+    - Other Names, Extraction Hints and Source Priority were replaced, at Ronnie's request, by one
+      big Markdown **Agent Instructions** box per field (`agent_instructions`, up to 20,000
+      characters) that agents will read like a skill. It has a Markdown / Reading View toggle
+      (`components/Markdown.tsx`, our own small reader; no raw HTML). The old columns are kept but
+      no longer shown or saved; migration 007 wrote their contents into each field's instructions
+      once. It is one overridable setting, so an organization that edits a standard field's
+      instructions stops receiving Stratios updates to that whole block. He was told the trade-off:
+      source priority in text means an agent, not the app, decides which source wins. The three
+      rules (when empty, when different, hand-picked value) are still controls.
+    - The editor shows **Type**. It can be changed only on a field the organization added and only
+      while no values exist (`fieldHasValues`); standard fields and the Master Library show it locked.
+    - `listFields` reads `agent_instructions` through `to_jsonb(...)` so pages still load on a
+      database where 007 has not been run; saving a field there fails until it is.
+    - The design document still describes the three separate settings; update it when he confirms.
   - Not built yet (later stages): documents and extraction, formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

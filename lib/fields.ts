@@ -31,6 +31,8 @@ export type FieldDefinition = {
   otherNames: string[]
   extractionHints: string | null
   sourcePriority: string[]
+  /** Markdown the agents read like a skill: other names, where to find the value, which source to prefer, how to work it out. */
+  agentInstructions: string | null
   whenEmpty: 'fill' | 'ask'
   whenDifferent: 'ask' | 'replace' | 'never'
   manualOverride: 'stays' | 'replaceable'
@@ -51,9 +53,7 @@ export type FieldDefinition = {
 export const OVERRIDABLE = {
   name: 'name',
   ai_description: 'aiDescription',
-  other_names: 'otherNames',
-  extraction_hints: 'extractionHints',
-  source_priority: 'sourcePriority',
+  agent_instructions: 'agentInstructions',
   when_empty: 'whenEmpty',
   when_different: 'whenDifferent',
   manual_override: 'manualOverride',
@@ -71,6 +71,7 @@ export async function listFields(client: Queryable, orgId: string | null): Promi
     `select id::text as id, org_id, key, name, applies_to, data_type, unit, options, tracking, rollup, calculated, formula,
             core_column, group_name, sort_order, ai_description, to_json(other_names) as other_names, extraction_hints,
             to_json(source_priority) as source_priority, when_empty, when_different, manual_override,
+            to_jsonb(field_definitions) ->> 'agent_instructions' as agent_instructions,
             list_id::text as list_id, default_value
      from field_definitions
      where (org_id is null or org_id = $1) and retired_at is null
@@ -98,6 +99,7 @@ export async function listFields(client: Queryable, orgId: string | null): Promi
     otherNames: (row.other_names as string[]) ?? [],
     extractionHints: row.extraction_hints ?? null,
     sourcePriority: (row.source_priority as string[]) ?? [],
+    agentInstructions: row.agent_instructions ?? null,
     whenEmpty: row.when_empty,
     whenDifferent: row.when_different,
     manualOverride: row.manual_override,

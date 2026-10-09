@@ -104,9 +104,7 @@ export async function saveLibraryField(input: { fieldId: string; settings: Field
   const settings: FieldSettingsInput = {
     name: String(raw.name ?? ''),
     aiDescription: String(raw.aiDescription ?? ''),
-    otherNames: list(raw.otherNames),
-    extractionHints: String(raw.extractionHints ?? ''),
-    sourcePriority: list(raw.sourcePriority),
+    agentInstructions: String(raw.agentInstructions ?? ''),
     whenEmpty: String(raw.whenEmpty ?? ''),
     whenDifferent: String(raw.whenDifferent ?? ''),
     manualOverride: String(raw.manualOverride ?? ''),

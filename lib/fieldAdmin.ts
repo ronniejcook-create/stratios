@@ -162,37 +162,35 @@ export async function createField(client: Queryable, orgId: string | null, input
 export type FieldSettingsInput = {
   name: string
   aiDescription: string
-  otherNames: string[]
-  extractionHints: string
-  sourcePriority: string[]
+  agentInstructions: string
   whenEmpty: string
   whenDifferent: string
   manualOverride: string
   /** Only used for fields the organization added. */
   unit?: string
   options?: string[]
+  /** Only for a field the organization added, and only while it has no values. */
+  dataType?: string
 }
+
+/** The longest Agent Instructions text a field can hold. */
+export const MAX_INSTRUCTIONS = 20000
 
 type CleanSettings = {
   name: string
   ai_description: string | null
-  other_names: string[]
-  extraction_hints: string | null
-  source_priority: string[]
+  agent_instructions: string | null
   when_empty: 'fill' | 'ask'
   when_different: 'ask' | 'replace' | 'never'
   manual_override: 'stays' | 'replaceable'
 }
 
-async function cleanSettings(client: Queryable, input: FieldSettingsInput): Promise<Result<{ settings: CleanSettings }>> {
+function cleanSettings(input: FieldSettingsInput): Result<{ settings: CleanSettings }> {
   const name = input.name.trim()
   if (!name) return { ok: false, error: 'The field needs a name.' }
   if (name.length > 100) return { ok: false, error: 'The name is too long.' }
-  const sources = await client.query('select key from source_types where in_waterfall')
-  const allowed = new Set(sources.rows.map((row) => String(row.key)))
-  const sourcePriority = cleanList(input.sourcePriority, 10)
-  if (sourcePriority.some((source) => !allowed.has(source))) return { ok: false, error: 'One of the sources is not recognized.' }
-  if (sourcePriority.length === 0) return { ok: false, error: 'Choose at least one source.' }
+  const instructions = (input.agentInstructions ?? '').replace(/\r\n?/g, '\n').trim()
+  if (instructions.length > MAX_INSTRUCTIONS) return { ok: false, error: `The agent instructions are too long (the limit is ${MAX_INSTRUCTIONS.toLocaleString('en-US')} characters).` }
   if (input.whenEmpty !== 'fill' && input.whenEmpty !== 'ask') return { ok: false, error: 'Choose what happens when the field is empty.' }
   if (input.whenDifferent !== 'ask' && input.whenDifferent !== 'replace' && input.whenDifferent !== 'never') {
     return { ok: false, error: 'Choose what happens when a different value arrives.' }
@@ -203,9 +201,7 @@ async function cleanSettings(client: Queryable, input: FieldSettingsInput): Prom
     settings: {
       name,
       ai_description: input.aiDescription.trim().slice(0, 1000) || null,
-      other_names: cleanList(input.otherNames, 30),
-      extraction_hints: input.extractionHints.trim().slice(0, 1000) || null,
-      source_priority: sourcePriority,
+      agent_instructions: instructions || null,
       when_empty: input.whenEmpty,
       when_different: input.whenDifferent,
       manual_override: input.manualOverride,
@@ -232,28 +228,38 @@ export async function saveFieldSettings(
 ): Promise<Result<{ modified: string[] }>> {
   const field = (await listFields(client, orgId)).find((candidate) => candidate.id === fieldId)
   if (!field) return { ok: false, error: 'That field could not be found.' }
-  const cleaned = await cleanSettings(client, input)
+  const cleaned = cleanSettings(input)
   if (!cleaned.ok) return cleaned
   const { settings } = cleaned
-  // A calculated field has no sources to rank.
-  if (field.calculated) settings.source_priority = field.sourcePriority
 
   if (!field.standard) {
-    const numeric = field.dataType === 'number' || field.dataType === 'money'
-    const unit = numeric ? (input.unit ?? '').trim().slice(0, 30) || null : field.unit
-    let options = field.options
-    if (field.dataType === 'picklist') {
+    // The type can change only while nothing has been entered, so no stored value is ever left in the wrong shape.
+    let dataType = field.dataType
+    if (input.dataType && input.dataType !== field.dataType) {
+      const next = DATA_TYPES.find((type) => type.value === input.dataType)?.value
+      if (!next) return { ok: false, error: 'Choose a type.' }
+      if (await fieldHasValues(client, fieldId)) return { ok: false, error: 'The type can no longer be changed because values have been entered for this field.' }
+      if (field.tracking === 'monthly' && next !== 'number' && next !== 'money' && next !== 'percent') {
+        return { ok: false, error: 'A field tracked by month has to stay a number, money or percent.' }
+      }
+      dataType = next
+    }
+    const changed = dataType !== field.dataType
+    const numeric = dataType === 'number' || dataType === 'money'
+    const unit = numeric ? (input.unit ?? '').trim().slice(0, 30) || null : changed ? null : field.unit
+    let options = changed ? null : field.options
+    if (dataType === 'picklist') {
       options = cleanList(input.options ?? [], 100)
       if (options.length === 0) return { ok: false, error: 'Enter at least one option for the pick list.' }
     }
     await client.query(
       `update field_definitions
-       set name = $3, ai_description = $4, other_names = $5::text[], extraction_hints = $6, source_priority = $7::text[],
-           when_empty = $8, when_different = $9, manual_override = $10, unit = $11, options = $12::jsonb
+       set name = $3, ai_description = $4, agent_instructions = $5,
+           when_empty = $6, when_different = $7, manual_override = $8, unit = $9, options = $10::jsonb, data_type = $11
        where id = $1 and org_id = $2`,
       [
-        fieldId, orgId, settings.name, settings.ai_description, settings.other_names, settings.extraction_hints, settings.source_priority,
-        settings.when_empty, settings.when_different, settings.manual_override, unit, options ? JSON.stringify(options) : null,
+        fieldId, orgId, settings.name, settings.ai_description, settings.agent_instructions,
+        settings.when_empty, settings.when_different, settings.manual_override, unit, options ? JSON.stringify(options) : null, dataType,
       ],
     )
     return { ok: true, modified: [] }
@@ -281,6 +287,16 @@ export async function saveFieldSettings(
     )
   }
   return { ok: true, modified }
+}
+
+/** True once any value, from a person or a source, has been stored for a field in this organization. */
+export async function fieldHasValues(client: Queryable, fieldId: string): Promise<boolean> {
+  const { rows } = await client.query(
+    `select exists (select 1 from field_values where field_id = $1)
+         or exists (select 1 from field_source_values where field_id = $1) as used`,
+    [fieldId],
+  )
+  return rows[0]?.used === true
 }
 
 /** Puts a standard field back to the Stratios standard: one setting, or all of them. */
@@ -442,10 +458,9 @@ export async function createList(
 export async function saveStandardField(client: Queryable, fieldId: string, input: FieldSettingsInput): Promise<Result> {
   const field = (await listFields(client, null)).find((candidate) => candidate.id === fieldId)
   if (!field) return { ok: false, error: 'That standard field could not be found.' }
-  const cleaned = await cleanSettings(client, field.calculated ? { ...input, sourcePriority: ['manual'] } : input)
+  const cleaned = cleanSettings(input)
   if (!cleaned.ok) return cleaned
   const { settings } = cleaned
-  if (field.calculated) settings.source_priority = field.sourcePriority
   if (field.coreColumn === 'name' && settings.name.length === 0) return { ok: false, error: 'The field needs a name.' }
 
   const numeric = field.dataType === 'number' || field.dataType === 'money'
@@ -457,11 +472,11 @@ export async function saveStandardField(client: Queryable, fieldId: string, inpu
   }
   await client.query(
     `update field_definitions
-     set name = $2, ai_description = $3, other_names = $4::text[], extraction_hints = $5, source_priority = $6::text[],
-         when_empty = $7, when_different = $8, manual_override = $9, unit = $10, options = $11::jsonb
+     set name = $2, ai_description = $3, agent_instructions = $4,
+         when_empty = $5, when_different = $6, manual_override = $7, unit = $8, options = $9::jsonb
      where id = $1 and org_id is null`,
     [
-      fieldId, settings.name, settings.ai_description, settings.other_names, settings.extraction_hints, settings.source_priority,
+      fieldId, settings.name, settings.ai_description, settings.agent_instructions,
       settings.when_empty, settings.when_different, settings.manual_override, unit, options ? JSON.stringify(options) : null,
     ],
   )

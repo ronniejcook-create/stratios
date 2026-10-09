@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { isDatabaseConfigured, withOrg } from '@/lib/db'
-import { DATA_TYPES, listModifications } from '@/lib/fieldAdmin'
+import { DATA_TYPES, fieldHasValues, listModifications } from '@/lib/fieldAdmin'
 import { listFields } from '@/lib/fields'
 import { listScreens } from '@/lib/layout'
 import { listLists } from '@/lib/lists'
@@ -26,7 +26,7 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
       field,
       screens: await listScreens(client, orgId),
       lists: await listLists(client, orgId),
-      sources: await client.query('select key, name from source_types where in_waterfall order by sort_order'),
+      hasValues: field.standard ? false : await fieldHasValues(client, id),
       modifications: await listModifications(client, orgId, id),
     }
   })
@@ -69,12 +69,12 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
             standard: field.standard,
             calculated: field.calculated,
             dataType: field.dataType,
+            appliesTo: field.appliesTo,
+            tracking: field.tracking,
             isListColumn: Boolean(field.listId),
             name: field.name,
             aiDescription: field.aiDescription ?? '',
-            otherNames: field.otherNames,
-            extractionHints: field.extractionHints ?? '',
-            sourcePriority: field.sourcePriority,
+            agentInstructions: field.agentInstructions ?? '',
             whenEmpty: field.whenEmpty,
             whenDifferent: field.whenDifferent,
             manualOverride: field.manualOverride,
@@ -85,7 +85,12 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
           }}
           sections={sections.map((section) => ({ id: section.id, label: section.label }))}
           currentSectionId={sections.find((section) => section.hasField)?.id ?? null}
-          sources={loaded.sources.rows.map((row) => ({ key: String(row.key), name: String(row.name) }))}
+          types={DATA_TYPES}
+          typeLockedReason={
+            field.standard ? 'The type of a standard field is set by Stratios.'
+            : loaded.hasValues ? 'The type can no longer be changed because values have been entered for this field.'
+            : null
+          }
           modifications={modifications.map((item) => ({ setting: item.setting, modifiedAt: item.modifiedAt }))}
         />
       </section>

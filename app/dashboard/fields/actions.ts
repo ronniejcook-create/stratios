@@ -14,6 +14,7 @@ import {
   saveFieldSettings,
   type FieldSettingsInput,
 } from '@/lib/fieldAdmin'
+import { generateFieldDescription, type DescriptionResult, type FieldFacts } from '@/lib/fieldDescription'
 import { OVERRIDABLE } from '@/lib/fields'
 import { isUuid } from '@/lib/records'
 
@@ -115,14 +116,13 @@ export async function saveSettings(input: { fieldId: string; settings: FieldSett
   const settings: FieldSettingsInput = {
     name: String(raw.name ?? ''),
     aiDescription: String(raw.aiDescription ?? ''),
-    otherNames: list(raw.otherNames),
-    extractionHints: String(raw.extractionHints ?? ''),
-    sourcePriority: list(raw.sourcePriority),
+    agentInstructions: String(raw.agentInstructions ?? ''),
     whenEmpty: String(raw.whenEmpty ?? ''),
     whenDifferent: String(raw.whenDifferent ?? ''),
     manualOverride: String(raw.manualOverride ?? ''),
     unit: String(raw.unit ?? ''),
     options: list(raw.options),
+    dataType: String(raw.dataType ?? ''),
   }
 
   try {
@@ -174,4 +174,25 @@ export async function removeField(input: { fieldId: string }): Promise<ActionRes
   }
   revalidatePath('/dashboard/fields')
   return { ok: true, message: 'Field removed.' }
+}
+
+/**
+ * Asks Claude to write a field's description. Nothing is saved here: the
+ * text goes back into the Description box for the administrator to review.
+ * Also used by the Master Library, whose users are administrators too.
+ */
+export async function generateDescription(input: FieldFacts): Promise<DescriptionResult> {
+  const admin = await requireAdmin()
+  if (!admin) return { ok: false, error: NOT_ADMIN }
+  const raw = input ?? ({} as FieldFacts)
+  const list = (value: unknown) => (Array.isArray(value) ? value.map((item) => String(item)) : [])
+  return generateFieldDescription({
+    name: String(raw.name ?? ''),
+    appliesTo: String(raw.appliesTo ?? ''),
+    dataType: String(raw.dataType ?? ''),
+    unit: String(raw.unit ?? ''),
+    options: list(raw.options),
+    tracking: String(raw.tracking ?? ''),
+    calculated: raw.calculated === true,
+  })
 }

@@ -1,7 +1,8 @@
 'use client'
 
-import { useActionState, useEffect, useRef, useState } from 'react'
-import { addField, addScreen, addSection, type FormState } from './actions'
+import { useActionState, useEffect, useRef, useState, useTransition } from 'react'
+import { GenerateButton } from '@/components/GenerateButton'
+import { addField, addScreen, addSection, generateDescription, type FormState } from './actions'
 
 const initialState: FormState = { error: null, message: null, done: 0 }
 
@@ -42,13 +43,40 @@ export function AddFieldForm({
   const [level, setLevel] = useState(levels[0]?.value ?? 'asset')
   const [type, setType] = useState('text')
   const [showIn, setShowIn] = useState('')
+  const [description, setDescription] = useState('')
+  const [generateError, setGenerateError] = useState<string | null>(null)
+  const [generating, startGenerating] = useTransition()
   const formRef = useResetOnDone(state.done)
   useEffect(() => {
     if (state.done > 0) {
       setType('text')
       setShowIn('')
+      setDescription('')
     }
   }, [state.done])
+
+  // Fills the Description box from what has been typed into the form so far.
+  const generate = () => {
+    const data = new FormData(formRef.current ?? undefined)
+    const name = String(data.get('name') ?? '').trim()
+    if (!name) {
+      setGenerateError('Give the field a name first.')
+      return
+    }
+    setGenerateError(null)
+    startGenerating(async () => {
+      const result = await generateDescription({
+        name,
+        appliesTo: level,
+        dataType: type,
+        unit: String(data.get('unit') ?? ''),
+        options: String(data.get('options') ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+        tracking: String(data.get('tracking') ?? ''),
+      })
+      if (result.ok) setDescription(result.description)
+      else setGenerateError(result.error)
+    })
+  }
 
   const numeric = type === 'number' || type === 'money' || type === 'percent'
   const inList = showIn.startsWith('list:')
@@ -118,12 +146,16 @@ export function AddFieldForm({
           </div>
         ) : null}
         <div className="field field-wide">
-          <label htmlFor="new-field-ai">AI Description (Optional)</label>
-          <input id="new-field-ai" name="aiDescription" type="text" maxLength={1000} placeholder="What this field means, in plain words, for the agents" />
+          <div className="label-row">
+            <label htmlFor="new-field-ai">Description (Optional)</label>
+            <GenerateButton busy={generating} disabled={pending} onClick={generate} title="Ask AI to write a definition for this field" />
+          </div>
+          <input id="new-field-ai" name="aiDescription" type="text" maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this field means, in plain words" />
         </div>
         <button type="submit" className="btn btn-primary btn-small" disabled={pending}>{pending ? 'Adding…' : 'Add Field'}</button>
       </div>
       <p className="note">The key is made from the name and never changes afterward. Type and tracking can&apos;t be changed once the field exists.</p>
+      {generateError ? <p className="form-error" role="alert">{generateError}</p> : null}
       <Feedback state={state} />
     </form>
   )

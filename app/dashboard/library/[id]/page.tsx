@@ -27,7 +27,6 @@ export default async function LibraryFieldPage({ params }: { params: Promise<{ i
       field,
       screens: await listScreens(client, null),
       lists: await listLists(client, null),
-      sources: await client.query('select key, name from source_types where in_waterfall order by sort_order'),
       customized: (await countCustomizations(client)).get(id) ?? 0,
     }
   })
@@ -79,12 +78,12 @@ export default async function LibraryFieldPage({ params }: { params: Promise<{ i
             standard: false,
             calculated: field.calculated,
             dataType: field.dataType,
+            appliesTo: field.appliesTo,
+            tracking: field.tracking,
             isListColumn: Boolean(field.listId),
             name: field.name,
             aiDescription: field.aiDescription ?? '',
-            otherNames: field.otherNames,
-            extractionHints: field.extractionHints ?? '',
-            sourcePriority: field.sourcePriority,
+            agentInstructions: field.agentInstructions ?? '',
             whenEmpty: field.whenEmpty,
             whenDifferent: field.whenDifferent,
             manualOverride: field.manualOverride,
@@ -95,7 +94,8 @@ export default async function LibraryFieldPage({ params }: { params: Promise<{ i
           }}
           sections={sections.map((section) => ({ id: section.id, label: section.label }))}
           currentSectionId={sections.find((section) => section.hasField)?.id ?? null}
-          sources={loaded.sources.rows.map((row) => ({ key: String(row.key), name: String(row.name) }))}
+          types={DATA_TYPES}
+          typeLockedReason="The type of a standard field can't be changed here, because organizations may already hold values for it."
           modifications={[]}
         />
       </section>
