@@ -5,6 +5,7 @@ import { PropertyMap, type MapArea, type MapLine, type MapPin, type MapPoint } f
 import type { AreaProfile, TractArea } from '@/lib/demographics'
 import { SCHOOL_KINDS, SCHOOL_LABELS, SCHOOL_YEARS, type School, type SchoolKind, type SchoolProfile } from '@/lib/schools'
 import { isRail, TRANSIT_KINDS, TRANSIT_LABELS, type TransitKind, type TransitProfile } from '@/lib/transit'
+import { HAZARD_CHOICES, HAZARD_RATINGS, hazardLabel, type HazardChoice, type HazardProfile } from '@/lib/hazards'
 import { FLOOD_LABELS, FLOOD_MEANINGS, type FloodKind, type FloodProfile } from '@/lib/floodZones'
 
 /** What the neighborhoods can be shaded by. Each reads one figure from a census tract and says how to write it. */
@@ -70,6 +71,7 @@ const LAYERS = [
   { key: 'flood', label: 'Flood Zones' },
   { key: 'schools', label: 'Schools' },
   { key: 'transit', label: 'Transit' },
+  { key: 'hazards', label: 'Natural Hazards' },
 ] as const
 type Layer = (typeof LAYERS)[number]['key']
 /** The distance circles that can be drawn around the address, whatever else is showing. */
@@ -81,8 +83,8 @@ const DEMOGRAPHIC_MILES = 5
  * The Map tab's contents: the map with its pins, and a row of tabs choosing
  * what is laid over it around one of them, one thing at a time: nothing,
  * census demographics (neighborhoods shaded by a chosen figure and a table of
- * estimated totals within 1, 3 and 5 miles), FEMA's flood zones, schools, or
- * public transit.
+ * estimated totals within 1, 3 and 5 miles), FEMA's flood zones, schools,
+ * public transit, or FEMA's natural hazard ratings.
  * The 1, 3 and 5 mile rings are a separate tick box and work with any of them.
  */
 export function AssetMap({ pins }: { pins: MapPin[] }) {
@@ -97,6 +99,7 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   const floodWanted = layer === 'flood'
   const schoolsWanted = layer === 'schools'
   const transitWanted = layer === 'transit'
+  const hazardsWanted = layer === 'hazards'
 
   const [floods, setFloods] = useState<Record<string, FloodProfile>>({})
   const [floodLoading, setFloodLoading] = useState(false)
@@ -114,11 +117,32 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   const [hiddenTransit, setHiddenTransit] = useState<TransitKind[]>([])
   const [allRoutes, setAllRoutes] = useState(false)
 
+  const [hazardSets, setHazardSets] = useState<Record<string, HazardProfile>>({})
+  const [hazardsLoading, setHazardsLoading] = useState(false)
+  const [hazardsError, setHazardsError] = useState<string | null>(null)
+  const [hazardChoice, setHazardChoice] = useState<HazardChoice>('ALL')
+
   const around = pins.find((pin) => pin.id === aroundId) ?? pins[0]
   const profile = around ? profiles[around.id] : undefined
   const flood = around ? floods[around.id] : undefined
   const schools = around ? schoolSets[around.id] : undefined
   const transit = around ? transits[around.id] : undefined
+  const hazards = around ? hazardSets[around.id] : undefined
+
+  const loadHazards = async (pin: MapPin) => {
+    setHazardsError(null)
+    if (hazardSets[pin.id]) return
+    setHazardsLoading(true)
+    try {
+      const response = await fetch(`/api/hazards?addressId=${pin.id}`)
+      const result = (await response.json().catch(() => null)) as { ok?: boolean; profile?: HazardProfile; error?: string } | null
+      if (result?.ok && result.profile) setHazardSets((current) => ({ ...current, [pin.id]: result.profile! }))
+      else setHazardsError(result?.error ?? 'The natural hazard ratings could not be loaded. Try again.')
+    } catch {
+      setHazardsError('The natural hazard ratings could not be loaded. Check your connection and try again.')
+    }
+    setHazardsLoading(false)
+  }
 
   const loadTransit = async (pin: MapPin) => {
     setTransitError(null)
@@ -236,7 +260,20 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
       }
     })
   }, [floodWanted, flood, shades])
-  const drawn = useMemo(() => (areas || floodAreas.length > 0 ? [...(areas ?? []), ...floodAreas] : undefined), [areas, floodAreas])
+  // Natural hazards: the tracts nearby shaded by their rating for the chosen hazard, the five ratings on the
+  // same five shades, lightest for Very Low. A tract the hazard does not apply to is left clear.
+  const hazardAreas = useMemo(() => {
+    if (!hazardsWanted || !hazards) return [] as MapArea[]
+    const column = HAZARD_CHOICES.indexOf(hazardChoice)
+    return hazards.areas.map((area): MapArea => {
+      const level = area.levels[column] ?? -1
+      return { id: `hazard-${area.id}`, outline: area.outline, color: level < 0 ? null : shades[level], label: `${area.name}\n${hazardLabel(hazardChoice)}: ${level < 0 ? 'not rated' : HAZARD_RATINGS[level]}` }
+    })
+  }, [hazardsWanted, hazards, hazardChoice, shades])
+  const drawn = useMemo(
+    () => (areas || floodAreas.length > 0 || hazardAreas.length > 0 ? [...(areas ?? []), ...floodAreas, ...hazardAreas] : undefined),
+    [areas, floodAreas, hazardAreas],
+  )
   // Schools: the kinds ticked in the color key, as dots on the map and a list nearest first.
   const listed = useMemo(() => (schoolsWanted && schools ? schools.schools.filter((school) => !hiddenKinds.includes(school.kind)) : []), [schoolsWanted, schools, hiddenKinds])
   const schoolPoints = useMemo(
@@ -276,7 +313,7 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   // The transit view is walking distance, widened to bring the nearest rail station into view.
   const transitReach = transit ? Math.min(transit.railMiles, Math.max(transit.walkMiles, (transit.nearestRail?.miles ?? 0) + 0.25)) : 0
   // The map takes in what is being shown around the address.
-  const reachMiles = wanted && profile ? DEMOGRAPHIC_MILES : floodWanted && flood ? flood.miles : schoolsWanted && schools ? schools.miles : transitWanted && transit ? transitReach : 0
+  const reachMiles = wanted && profile ? DEMOGRAPHIC_MILES : floodWanted && flood ? flood.miles : schoolsWanted && schools ? schools.miles : transitWanted && transit ? transitReach : hazardsWanted && hazards && hazards.areas.length > 0 ? hazards.miles : 0
   const reach = reachMiles > 0 && around ? { center: [around.latitude, around.longitude] as [number, number], miles: reachMiles } : null
 
   const rings = showRings && around ? { center: [around.latitude, around.longitude] as [number, number], miles: RING_MILES } : null
@@ -289,6 +326,7 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
     if (next === 'flood') void loadFlood(pin)
     if (next === 'schools') void loadSchools(pin)
     if (next === 'transit') void loadTransit(pin)
+    if (next === 'hazards') void loadHazards(pin)
   }
 
   return (
@@ -581,6 +619,70 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
               about half a mile. Distances are straight lines.
               Agencies take part by choice, so a small system may be missing; Amtrak and intercity buses are not included; and this shows
               where service runs, not how often.
+            </p>
+          </>
+        ) : null}
+
+        {hazardsWanted && hazardsLoading ? <p className="note" role="status">Getting FEMA&apos;s hazard ratings. This can take a few seconds…</p> : null}
+        {hazardsWanted && hazardsError ? (
+          <>
+            <p className="form-error" role="alert">{hazardsError}</p>
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => around && void loadHazards(around)}>Try Again</button>
+          </>
+        ) : null}
+        {hazardsWanted && hazards ? (
+          <>
+            {hazards.at ? (
+              <>
+                <div className="flood-at">
+                  <span className="flood-at-label">This Area: Census Tract {hazards.at.tract}{hazards.at.county ? `, ${hazards.at.county}` : ''}{hazards.at.state ? `, ${hazards.at.state}` : ''}</span>
+                  <strong>{hazards.at.overall ? `${HAZARD_RATINGS[hazards.at.overall.level]} Expected Loss` : 'No Overall Rating'}</strong>
+                  <p>
+                    {hazards.at.overall && hazards.at.overall.higherThan !== null
+                      ? `All natural hazards together: expected yearly losses here are higher than in ${hazards.at.overall.higherThan}% of U.S. census tracts.`
+                      : 'All natural hazards together, compared with other U.S. census tracts.'}
+                  </p>
+                </div>
+                <div className="field">
+                  <label htmlFor="map-hazard">Shade the Map By</label>
+                  <select id="map-hazard" value={hazardChoice} onChange={(event) => setHazardChoice(event.target.value as HazardChoice)}>
+                    <option value="ALL">{hazardLabel('ALL')}</option>
+                    {hazards.at.hazards.map((hazard) => (
+                      <option key={hazard.key} value={hazard.key}>{hazard.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {hazards.areas.length > 0 ? (
+                  <ul className="map-legend" aria-label="Colors for hazard ratings">
+                    {[...HAZARD_RATINGS].reverse().map((rating, index) => (
+                      <li key={rating}><span className="map-swatch" style={{ background: shades[HAZARD_RATINGS.length - 1 - index] }} aria-hidden="true" />{rating}</li>
+                    ))}
+                    <li><span className="map-swatch map-swatch-empty" aria-hidden="true" />Not rated</li>
+                  </ul>
+                ) : null}
+                {hazards.noMap ? <p className="note">The neighboring areas could not be loaded this time, so the map is not shaded.</p> : null}
+                <h4 className="map-side-title">Hazards Here, Most Serious First</h4>
+                <ul className="hazard-list">
+                  {hazards.at.hazards.map((hazard) => (
+                    <li key={hazard.key}>
+                      <button type="button" className={`hazard-row${hazard.key === hazardChoice ? ' active' : ''}`} onClick={() => setHazardChoice(hazard.key)} title="Shade the map by this hazard">
+                        <span className="map-swatch" style={{ background: shades[hazard.level] }} aria-hidden="true" />
+                        <span className="hazard-name">{hazard.label}</span>
+                        <span className="hazard-rating">{HAZARD_RATINGS[hazard.level]}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {hazards.at.hazards.length === 0 ? <p className="note">FEMA rates no hazards for this area.</p> : null}
+              </>
+            ) : (
+              <p className="note">FEMA&apos;s index has no ratings for this spot.</p>
+            )}
+            <p className="doc-sub">
+              Source: FEMA National Risk Index{hazards.version ? `, ${hazards.version}` : ''}, by census tract. Ratings are of expected yearly
+              loss and are relative to other tracts in the country: they reflect how often a hazard strikes and how much there is in the
+              tract to damage, and are not a forecast for one building. Inland Flooding here is a tract-wide rating; the Flood Zones tab
+              gives the zone at the address. The index&apos;s social vulnerability and community resilience scores are left out on purpose.
             </p>
           </>
         ) : null}

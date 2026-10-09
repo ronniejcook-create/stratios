@@ -544,7 +544,7 @@ work and how data is isolated; this file covers how we work and where things sta
     - **One layer at a time, chosen by tabs** (October 9, late; Ronnie's request; replaces the
       three Show / Hide buttons described above). Above the map is a row of pill tabs
       (`.map-tabs` in `AssetMap.tsx`): **None** (first, the plain map, and the start),
-      **Demographics**, **Flood Zones**, **Schools** (and since, **Transit**). Picking a tab loads that layer for the
+      **Demographics**, **Flood Zones**, **Schools** (and since, **Transit** and **Natural Hazards**). Picking a tab loads that layer for the
       address and shows only it; the side panel holds that layer's details and is gone on
       None, so the map is full width. Layers already loaded are kept, so switching back is
       instant. **Show 1, 3 and 5 Mile Rings** is its own tick box beside the tabs, off to
@@ -583,6 +583,34 @@ work and how data is isolated; this file covers how we work and where things sta
         midtown Manhattan (all answers within about a second), and the real panel and map in
         Chromium with a part of the Knoll Trail answers. As with the other layers, **whether
         Vercel's servers can reach the service is not known**.
+    - **Natural hazards on the map** (October 9, late; no migration; a sixth tab, **Natural
+      Hazards**). `GET /api/hazards?addressId=` -> `lib/hazards.ts`, which asks **FEMA's
+      National Risk Index** by census tract
+      (`services.arcgis.com/XG15cJAlne2vxtgt/.../National_Risk_Index_Census_Tracts`, free, no
+      key; the December 2025 edition when built): the ratings of the tract the address is in,
+      and the ratings and outlines of the tracts within 3 miles. Answers are kept a month.
+      - **Only Expected Annual Loss is read** (`EAL_RATNG`, `EAL_SCORE` and each hazard's
+        `<code>_EALR` / `<code>_EALS`). The index's Risk rating folds in Social Vulnerability
+        and Community Resilience, which are built from who lives in a tract (income, age,
+        race, language), so those three are not requested, stored or shown. Do not add them.
+      - Eighteen hazards (`HAZARDS`; note the index now calls river flooding Inland Flooding,
+        `IFLD`). Ratings are five levels, Very Low to Very High (`HAZARD_RATINGS`); "Not
+        Applicable", "No Expected Annual Losses" and the like are treated as not rated and
+        the hazard is left off the list.
+      - The panel: a This Area box (tract, county, overall rating, and "higher than N% of
+        U.S. census tracts" from the score), Shade the Map By (all hazards together, or one),
+        a color key, and the hazards rated there, most serious first; clicking a hazard shades
+        the map by it. The five levels use the same five graph colors as demographics
+        (`--chart-5` lightest for Very Low to `--chart-1` for Very High).
+      - He was told: ratings are relative to other tracts and reflect how much there is in
+        the tract to damage as well as how often a hazard strikes, so neighbors can differ and
+        it is not a forecast for one building; and the flood rating here is tract-wide, the
+        Flood Zones tab gives the zone at the address.
+      - Checked: the real service through the browser on his computer for Knoll Trail (tract
+        136.20: Relatively Moderate overall, heat wave Very High, hail, cold wave and tornado
+        Relatively High; 57 tracts within 3 miles; a quarter of a second), and the real panel
+        and map in Chromium with a part of those answers. **Whether Vercel's servers can reach
+        the service is not known.**
     - Addresses on units are not listed with these actions or pinned (units show their address
       as a tooltip, as before).
     - Checked for the map: the real component in Chromium with the real Leaflet files and
