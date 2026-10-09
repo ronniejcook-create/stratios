@@ -6,6 +6,7 @@ import type { AreaProfile, TractArea } from '@/lib/demographics'
 import { SCHOOL_KINDS, SCHOOL_LABELS, SCHOOL_YEARS, type School, type SchoolKind, type SchoolProfile } from '@/lib/schools'
 import { isRail, TRANSIT_KINDS, TRANSIT_LABELS, type TransitKind, type TransitProfile } from '@/lib/transit'
 import { HAZARD_CHOICES, HAZARD_RATINGS, hazardLabel, type HazardChoice, type HazardProfile } from '@/lib/hazards'
+import { JOB_SECTORS, type JobsProfile } from '@/lib/jobs'
 import { FLOOD_LABELS, FLOOD_MEANINGS, type FloodKind, type FloodProfile } from '@/lib/floodZones'
 
 /** What the neighborhoods can be shaded by. Each reads one figure from a census tract and says how to write it. */
@@ -69,6 +70,7 @@ const LAYERS = [
   { key: 'none', label: 'None' },
   { key: 'demographics', label: 'Demographics' },
   { key: 'schools', label: 'Schools' },
+  { key: 'jobs', label: 'Jobs and Commuting' },
   { key: 'transit', label: 'Transit' },
   { key: 'flood', label: 'Flood Zones' },
   { key: 'hazards', label: 'Natural Hazards' },
@@ -84,7 +86,7 @@ const DEMOGRAPHIC_MILES = 5
  * what is laid over it around one of them, one thing at a time: nothing,
  * census demographics (neighborhoods shaded by a chosen figure and a table of
  * estimated totals within 1, 3 and 5 miles), FEMA's flood zones, schools,
- * public transit, or FEMA's natural hazard ratings.
+ * jobs and commuting, public transit, or FEMA's natural hazard ratings.
  * The 1, 3 and 5 mile rings are a separate tick box and work with any of them.
  */
 export function AssetMap({ pins }: { pins: MapPin[] }) {
@@ -100,6 +102,7 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   const schoolsWanted = layer === 'schools'
   const transitWanted = layer === 'transit'
   const hazardsWanted = layer === 'hazards'
+  const jobsWanted = layer === 'jobs'
 
   const [floods, setFloods] = useState<Record<string, FloodProfile>>({})
   const [floodLoading, setFloodLoading] = useState(false)
@@ -122,12 +125,32 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   const [hazardsError, setHazardsError] = useState<string | null>(null)
   const [hazardChoice, setHazardChoice] = useState<HazardChoice>('ALL')
 
+  const [jobSets, setJobSets] = useState<Record<string, JobsProfile>>({})
+  const [jobsLoading, setJobsLoading] = useState(false)
+  const [jobsError, setJobsError] = useState<string | null>(null)
+
   const around = pins.find((pin) => pin.id === aroundId) ?? pins[0]
   const profile = around ? profiles[around.id] : undefined
   const flood = around ? floods[around.id] : undefined
   const schools = around ? schoolSets[around.id] : undefined
   const transit = around ? transits[around.id] : undefined
   const hazards = around ? hazardSets[around.id] : undefined
+  const jobs = around ? jobSets[around.id] : undefined
+
+  const loadJobs = async (pin: MapPin) => {
+    setJobsError(null)
+    if (jobSets[pin.id]) return
+    setJobsLoading(true)
+    try {
+      const response = await fetch(`/api/jobs?addressId=${pin.id}`)
+      const result = (await response.json().catch(() => null)) as { ok?: boolean; profile?: JobsProfile; error?: string } | null
+      if (result?.ok && result.profile) setJobSets((current) => ({ ...current, [pin.id]: result.profile! }))
+      else setJobsError(result?.error ?? 'The jobs figures could not be loaded. Try again.')
+    } catch {
+      setJobsError('The jobs figures could not be loaded. Check your connection and try again.')
+    }
+    setJobsLoading(false)
+  }
 
   const loadHazards = async (pin: MapPin) => {
     setHazardsError(null)
@@ -270,9 +293,29 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
       return { id: `hazard-${area.id}`, outline: area.outline, color: level < 0 ? null : shades[level], label: `${area.name}\n${hazardLabel(hazardChoice)}: ${level < 0 ? 'not rated' : HAZARD_RATINGS[level]}` }
     })
   }, [hazardsWanted, hazards, hazardChoice, shades])
+  // Jobs: the block groups nearby shaded by jobs per acre, in up to five groups holding about the same
+  // number of block groups each, like the demographics.
+  const { jobAreas, jobLegend } = useMemo(() => {
+    if (!jobsWanted || !jobs) return { jobAreas: [] as MapArea[], jobLegend: [] as { color: string; text: string }[] }
+    const perAcre = (value: number) => `${value >= 10 ? Math.round(value).toLocaleString('en-US') : value.toFixed(1)} per acre`
+    const values = jobs.areas.map((area) => area.jobsPerAcre).filter((value): value is number => value !== null)
+    const limits = groupLimits(values)
+    const shadeOf = (group: number) => shades[limits.length === 0 ? 2 : Math.round((group * (shades.length - 1)) / limits.length)]
+    const shaded = jobs.areas.map((area): MapArea => ({
+      id: `jobs-${area.id}`,
+      outline: area.outline,
+      color: area.jobsPerAcre === null ? null : shadeOf(limits.filter((limit) => area.jobsPerAcre! >= limit).length),
+      label: `${whole(area.jobs)} jobs located here${area.jobsPerAcre === null ? '' : ` (${perAcre(area.jobsPerAcre)})`}\n${whole(area.workers)} workers live here`,
+    }))
+    const key = values.length === 0 ? [] : [...limits, Number.POSITIVE_INFINITY].map((limit, group) => ({
+      color: shadeOf(group),
+      text: group === 0 ? (limits.length === 0 ? 'All areas' : `Under ${perAcre(limit)}`) : limit === Number.POSITIVE_INFINITY ? `${perAcre(limits[group - 1])} or more` : `${perAcre(limits[group - 1])} to ${perAcre(limit)}`,
+    }))
+    return { jobAreas: shaded, jobLegend: key }
+  }, [jobsWanted, jobs, shades])
   const drawn = useMemo(
-    () => (areas || floodAreas.length > 0 || hazardAreas.length > 0 ? [...(areas ?? []), ...floodAreas, ...hazardAreas] : undefined),
-    [areas, floodAreas, hazardAreas],
+    () => (areas || floodAreas.length > 0 || hazardAreas.length > 0 || jobAreas.length > 0 ? [...(areas ?? []), ...floodAreas, ...hazardAreas, ...jobAreas] : undefined),
+    [areas, floodAreas, hazardAreas, jobAreas],
   )
   // Schools: the kinds ticked in the color key, as dots on the map and a list nearest first.
   const listed = useMemo(() => (schoolsWanted && schools ? schools.schools.filter((school) => !hiddenKinds.includes(school.kind)) : []), [schoolsWanted, schools, hiddenKinds])
@@ -313,7 +356,7 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
   // The transit view is walking distance, widened to bring the nearest rail station into view.
   const transitReach = transit ? Math.min(transit.railMiles, Math.max(transit.walkMiles, (transit.nearestRail?.miles ?? 0) + 0.25)) : 0
   // The map takes in what is being shown around the address.
-  const reachMiles = wanted && profile ? DEMOGRAPHIC_MILES : floodWanted && flood ? flood.miles : schoolsWanted && schools ? schools.miles : transitWanted && transit ? transitReach : hazardsWanted && hazards && hazards.areas.length > 0 ? hazards.miles : 0
+  const reachMiles = wanted && profile ? DEMOGRAPHIC_MILES : floodWanted && flood ? flood.miles : schoolsWanted && schools ? schools.miles : transitWanted && transit ? transitReach : hazardsWanted && hazards && hazards.areas.length > 0 ? hazards.miles : jobsWanted && jobs && jobs.areas.length > 0 ? jobs.miles : 0
   const reach = reachMiles > 0 && around ? { center: [around.latitude, around.longitude] as [number, number], miles: reachMiles } : null
 
   const rings = showRings && around ? { center: [around.latitude, around.longitude] as [number, number], miles: RING_MILES } : null
@@ -327,6 +370,7 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
     if (next === 'schools') void loadSchools(pin)
     if (next === 'transit') void loadTransit(pin)
     if (next === 'hazards') void loadHazards(pin)
+    if (next === 'jobs') void loadJobs(pin)
   }
 
   return (
@@ -683,6 +727,84 @@ export function AssetMap({ pins }: { pins: MapPin[] }) {
               loss and are relative to other tracts in the country: they reflect how often a hazard strikes and how much there is in the
               tract to damage, and are not a forecast for one building. Inland Flooding here is a tract-wide rating; the Flood Zones tab
               gives the zone at the address. The index&apos;s social vulnerability and community resilience scores are left out on purpose.
+            </p>
+          </>
+        ) : null}
+
+        {jobsWanted && jobsLoading ? <p className="note" role="status">Getting the jobs figures. This can take a few seconds…</p> : null}
+        {jobsWanted && jobsError ? (
+          <>
+            <p className="form-error" role="alert">{jobsError}</p>
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => around && void loadJobs(around)}>Try Again</button>
+          </>
+        ) : null}
+        {jobsWanted && jobs ? (
+          <>
+            <div className="flood-at">
+              <span className="flood-at-label">Jobs Nearby ({jobs.jobsYear} counts)</span>
+              <strong>{jobs.rings[0] ? `${whole(jobs.rings[0].jobs)} jobs within ${jobs.rings[0].miles} mile` : jobs.at ? 'Jobs in the surrounding area could not be loaded' : 'No figures for this spot'}</strong>
+              <dl>
+                {jobs.rings.slice(1).map((total) => (
+                  <div key={total.miles}><dt>Jobs Within {total.miles} Miles</dt><dd>{whole(total.jobs)}</dd></div>
+                ))}
+                {jobs.rings.length > 0 ? (
+                  <div><dt>Workers Living Within {jobs.rings[jobs.rings.length - 1].miles} Miles</dt><dd>{whole(jobs.rings[jobs.rings.length - 1].workers)}</dd></div>
+                ) : null}
+                {jobs.at?.jobsByCar != null ? <div><dt>Jobs Within a 45-Minute Drive</dt><dd>{whole(jobs.at.jobsByCar)}</dd></div> : null}
+                {jobs.at?.jobsByTransit != null && jobs.at.jobsByTransit > 0 ? <div><dt>Jobs Within 45 Minutes by Transit</dt><dd>{whole(jobs.at.jobsByTransit)}</dd></div> : null}
+                {jobs.at?.walkability != null ? <div><dt>Walkability</dt><dd>{jobs.at.walkability} of 20, {jobs.at.walkabilityBand}</dd></div> : null}
+              </dl>
+            </div>
+            {jobLegend.length > 0 ? (
+              <ul className="map-legend" aria-label="Colors for jobs per acre">
+                {jobLegend.map((entry) => (
+                  <li key={entry.text}><span className="map-swatch" style={{ background: entry.color }} aria-hidden="true" />{entry.text}</li>
+                ))}
+              </ul>
+            ) : null}
+            {jobs.rings.length > 0 && jobs.rings[jobs.rings.length - 1].jobs > 0 ? (
+              <div className="table-scroll">
+                <table className="map-rings">
+                  <caption>Kinds of Job Within {jobs.rings[jobs.rings.length - 1].miles} Miles</caption>
+                  <tbody>
+                    {[...JOB_SECTORS]
+                      .sort((a, b) => jobs.rings[jobs.rings.length - 1].sectors[b.key] - jobs.rings[jobs.rings.length - 1].sectors[a.key])
+                      .map((sector) => {
+                        const outer = jobs.rings[jobs.rings.length - 1]
+                        return (
+                          <tr key={sector.key}>
+                            <th scope="row">{sector.label}</th>
+                            <td>{whole(outer.sectors[sector.key])}</td>
+                            <td>{percent(outer.sectors[sector.key] / outer.jobs)}</td>
+                          </tr>
+                        )
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            {jobs.commute ? (
+              <div className="table-scroll">
+                <table className="map-rings">
+                  <caption>How People Living Here Get to Work</caption>
+                  <tbody>
+                    <tr><th scope="row">Drive Alone</th><td>{percent(jobs.commute.droveAlone)}</td></tr>
+                    <tr><th scope="row">Carpool</th><td>{percent(jobs.commute.carpooled)}</td></tr>
+                    <tr><th scope="row">Public Transit</th><td>{percent(jobs.commute.transit)}</td></tr>
+                    <tr><th scope="row">Walk or Bicycle</th><td>{percent(jobs.commute.walkedOrBiked)}</td></tr>
+                    <tr><th scope="row">Work from Home</th><td>{percent(jobs.commute.workedFromHome)}</td></tr>
+                    {jobs.commute.other >= 0.005 ? <tr><th scope="row">Other</th><td>{percent(jobs.commute.other)}</td></tr> : null}
+                    {jobs.commute.minutes !== null ? <tr><th scope="row">Average Commute</th><td>{jobs.commute.minutes} minutes</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            {jobs.missing.length > 0 ? <p className="note">Could not be loaded this time: {jobs.missing.join(', ')}.</p> : null}
+            <p className="doc-sub">
+              Sources: jobs, reach and walkability from the EPA Smart Location Database, version 3. Its job counts are the Census
+              Bureau&apos;s for {jobs.jobsYear}, so they predate the pandemic; treat them as the shape of the job market, not today&apos;s
+              count. Each shaded area is a census block group, counted toward a distance when its middle is within it. The 45-minute
+              figures count nearer jobs for more.{jobs.commute ? ` Commuting is for the census tract, from the American Community Survey, ${jobs.commute.survey}.` : ''}
             </p>
           </>
         ) : null}

@@ -611,8 +611,37 @@ work and how data is isolated; this file covers how we work and where things sta
         Relatively High; 57 tracts within 3 miles; a quarter of a second), and the real panel
         and map in Chromium with a part of those answers. **Whether Vercel's servers can reach
         the service is not known.**
-    - **Tab order** (October 9, his request): None, Demographics, Schools, Transit, Flood
-      Zones, Natural Hazards (`LAYERS` in `AssetMap.tsx`).
+    - **Jobs and commuting on the map** (October 9, late; no migration; a tab, **Jobs and
+      Commuting**, between Schools and Transit at his request). `GET /api/jobs?addressId=` ->
+      `lib/jobs.ts`, two sources:
+      - **Jobs: the EPA Smart Location Database, version 3**
+        (`services.arcgis.com/cJ9YHowT8TU7DUyn/.../Smart_Location_Database_`, free, no key),
+        by census block group: jobs located there and by eight kinds, workers living there,
+        jobs within a 45-minute drive and by transit (nearer jobs count for more), and the
+        EPA walkability score (1 to 20, with the EPA's four bands). **Its job counts are the
+        Census Bureau's for 2017**, before the pandemic; the panel says so in its heading and
+        note. The Census Bureau's newer counts (LODES / OnTheMap) come only as bulk files
+        with no lookup service; importing them into the database is the way to fresher
+        figures and was offered, not started.
+      - **Commuting: the American Community Survey** for the tract the address is in (found
+        with TIGERweb), through the Data API with the same `CENSUS_API_KEY` as demographics:
+        shares driving alone, carpooling, on transit, walking or cycling, working from home,
+        and the average minutes (tables B08301, B08303, B08013). It is left out, with a line
+        saying so, when the key is missing or the call fails. **This part has never been run
+        against the real service** (no key here); the reading was tested with a made-up answer.
+      - Not requested on purpose: the database's residents' wages, race and sex.
+      - The panel: Jobs Nearby (jobs within 1 and 3 miles, workers living within 3 miles, the
+        45-minute figures, walkability), a color key, Kinds of Job Within 3 Miles, and How
+        People Living Here Get to Work. The map shades block groups within 3 miles by jobs per
+        acre in five equal-count groups of the graph colors, like demographics. A block group
+        counts toward a distance when its middle is within it.
+      - Checked: the real EPA service through the browser on his computer for Knoll Trail
+        (41,311 jobs within 1 mile and 197,947 within 3 miles in 2017; 459,076 within a
+        45-minute drive; walkability 14 of 20; 121 block groups; a third of a second), and the
+        real panel and map in Chromium with a part of those answers. **Whether Vercel's
+        servers can reach the EPA service is not known.**
+    - **Tab order** (October 9, his request): None, Demographics, Schools, Jobs and
+      Commuting, Transit, Flood Zones, Natural Hazards (`LAYERS` in `AssetMap.tsx`).
     - Addresses on units are not listed with these actions or pinned (units show their address
       as a tooltip, as before).
     - Checked for the map: the real component in Chromium with the real Leaflet files and
