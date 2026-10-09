@@ -670,6 +670,20 @@ work and how data is isolated; this file covers how we work and where things sta
       analyst's reply has an Open Rent Roll button. The tab is shown only to people with
       `access.canAddRecords`, like a document's file, because rents and tenants are not
       covered by field permissions. Rows can't be edited or added by hand yet.
+    - **The tiles show the document's own totals** (October 9, after his first real reading;
+      his rule again: what the page says wins). His rent roll read correctly, 48 rows and a
+      matching total, but the agent marked the amenity lounge, management office, janitor,
+      maintenance and vending rows (3,503 SF, lease dates but no rent) as Not for Lease, while
+      the document counts them in its 67,602 leased SF. Now: total, leased (with percent) and
+      vacant square feet in the tiles are the document's figures whenever it states them, and
+      Not for Lease is the remainder; tenants and rent are still added up from the rows.
+      `reconcileStatuses` in `lib/rentRolls.ts` turns "other" rows that have lease dates into
+      leased when that makes the leased rows equal the document's leased total exactly (run
+      when a rent roll is read, and again when the tab loads, so his existing snapshot shows
+      right without reloading it). The prompt also tells the agent that dated rows without
+      rent are leased and to check its rows against the document's totals. A remaining
+      difference shows as a quiet note, no longer in red. Tenants (25 on his) counts names on
+      leased rows, so it now includes those amenity-type rows; the document states no count.
     - KPIs from a rent roll still come from the reading itself (stage 5: as shown, or
       calculated by the Reading a Rent Roll skill). Nothing recalculates from the stored rows
       yet, and two snapshots can't be compared side by side.

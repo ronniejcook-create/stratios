@@ -237,3 +237,22 @@ export function summarize(rows: Pick<RentRollRowInput, 'status' | 'squareFeet' |
     annualRent: rows.reduce((sum, row) => sum + (row.status === 'leased' ? row.annualRent ?? 0 : 0), 0),
   }
 }
+
+/**
+ * Brings the rows' statuses in line with the document's own leased total.
+ * Rent rolls often count space that has lease dates but no rent (a management
+ * office, an amenity lounge, vending) as leased, and such rows are easy to
+ * mark as "not for lease". When the document shows a leased total, the leased
+ * rows fall short of it, and counting the "other" rows that have lease dates
+ * as leased makes up the difference exactly, those rows are leased. In every
+ * other case the rows are returned as they are. Pure.
+ */
+export function reconcileStatuses<T extends Pick<RentRollRowInput, 'status' | 'squareFeet' | 'leaseStart' | 'leaseEnd'>>(rows: T[], stated: RentRollTotals): T[] {
+  if (stated.leasedSf === null) return rows
+  const sum = (list: T[]) => list.reduce((total, row) => total + (row.squareFeet ?? 0), 0)
+  const leased = sum(rows.filter((row) => row.status === 'leased'))
+  if (Math.abs(leased - stated.leasedSf) < 1) return rows
+  const dated = rows.filter((row) => row.status === 'other' && (row.leaseStart !== null || row.leaseEnd !== null))
+  if (dated.length === 0 || Math.abs(leased + sum(dated) - stated.leasedSf) >= 1) return rows
+  return rows.map((row) => (dated.includes(row) ? { ...row, status: 'leased' as RentRollStatus } : row))
+}

@@ -102,19 +102,27 @@ export function RentRollPanel({
   }
 
   const sums = summarize(rows)
+  // The document's own totals are shown wherever it gives them, so the figures here match the page; the rows fill in the rest.
+  const { stated } = selected
+  const totalSf = stated.totalSf ?? sums.totalSf
+  const leasedSf = stated.leasedSf ?? sums.leasedSf
+  const vacantSf = stated.vacantSf ?? sums.vacantSf
+  const otherSf = stated.totalSf !== null && stated.leasedSf !== null && stated.vacantSf !== null ? Math.max(0, stated.totalSf - stated.leasedSf - stated.vacantSf) : sums.otherSf
+  const leasedPercent = totalSf > 0 ? Math.round((leasedSf / totalSf) * 1000) / 10 : null
+  const anyStated = stated.totalSf !== null || stated.leasedSf !== null || stated.vacantSf !== null
   const tiles: { label: string; value: string }[] = [
-    { label: 'Total Square Feet', value: whole(sums.totalSf) },
-    { label: 'Leased Square Feet', value: `${whole(sums.leasedSf)}${sums.leasedPercent !== null ? ` (${sums.leasedPercent}%)` : ''}` },
-    { label: 'Vacant Square Feet', value: whole(sums.vacantSf) },
-    ...(sums.otherSf > 0 ? [{ label: 'Not for Lease', value: whole(sums.otherSf) }] : []),
+    { label: 'Total Square Feet', value: whole(totalSf) },
+    { label: 'Leased Square Feet', value: `${whole(leasedSf)}${leasedPercent !== null ? ` (${leasedPercent.toFixed(1)}%)` : ''}` },
+    { label: 'Vacant Square Feet', value: whole(vacantSf) },
+    ...(otherSf > 0 ? [{ label: 'Not for Lease', value: whole(otherSf) }] : []),
     { label: 'Tenants', value: String(sums.tenants) },
     { label: 'Annual Base Rent', value: money(sums.annualRent) },
   ]
-  // The document's own totals, where it shows them, are a check on the rows.
+  // Where the rows don't add up to the document's total, say so quietly: the tile keeps the document's figure.
   const checks = [
-    { name: 'total', shown: selected.stated.totalSf, added: sums.totalSf },
-    { name: 'leased', shown: selected.stated.leasedSf, added: sums.leasedSf },
-    { name: 'vacant', shown: selected.stated.vacantSf, added: sums.vacantSf },
+    { name: 'total', shown: stated.totalSf, added: sums.totalSf },
+    { name: 'leased', shown: stated.leasedSf, added: sums.leasedSf },
+    { name: 'vacant', shown: stated.vacantSf, added: sums.vacantSf },
   ].filter((check) => check.shown !== null && Math.abs(check.shown - check.added) >= 1)
 
   const gridRows: GridRow[] = rows.map((row) => ({
@@ -215,10 +223,12 @@ export function RentRollPanel({
           </div>
         ))}
       </div>
-      <p className="doc-sub">These totals are added up from the rows below.</p>
+      <p className="doc-sub">
+        {anyStated ? 'Square feet are the document\'s own totals. Tenants and rent are added up from the rows below.' : 'These totals are added up from the rows below.'}
+      </p>
       {checks.map((check) => (
-        <p key={check.name} className="form-error" role="status">
-          The document shows {whole(check.shown!)} {check.name} square feet, but the rows add up to {whole(check.added)}. Check the rows against the document.
+        <p key={check.name} className="note" role="status">
+          The document&apos;s {check.name} total of {whole(check.shown!)} square feet is shown. The rows marked that way add up to {whole(check.added)}, so one or more rows may be marked differently from how the document counts them.
         </p>
       ))}
 
