@@ -272,6 +272,15 @@ work and how data is isolated; this file covers how we work and where things sta
     - Checked: both migrations on a scratch database, the row-level rules as a non-privileged
       role, and a two-organization test of the layering through to what each organization's
       agents are sent (scripted Claude). The screens were not opened in a browser.
+  - **Navigation names** (October 9, Ronnie's clean-up). Admin Settings: **Users** (was Members;
+    the address is still `/dashboard/members`), Roles and Permissions, **Fields Library** (was
+    Fields and Layout; `/dashboard/fields`), **Layouts** (new, `/dashboard/layouts`: screens,
+    sections and lists, split out of the fields page), **Skills Library** (`/dashboard/skills`),
+    Org Colors. Stratios Admin: Analyst Instructions, Skills Library (`/dashboard/skill-library`),
+    Master Library (standard fields only now), **Master Layouts** (new,
+    `/dashboard/layout-library`; the name was Claude's choice). Both layout pages share
+    `app/dashboard/layouts/LayoutTable.tsx`. Older notes in this file still say "Fields and
+    Layout" and "Members" in places; read them as the new names.
   - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a

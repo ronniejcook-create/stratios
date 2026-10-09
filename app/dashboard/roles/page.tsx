@@ -59,7 +59,7 @@ export default async function RolesPage() {
               <tr>
                 <td>Administrator</td>
                 <td>Full access to everything, always</td>
-                <td>Chosen on the Members page</td>
+                <td>Chosen on the Users page</td>
               </tr>
               {roles.map((role) => (
                 <tr key={role.id}>

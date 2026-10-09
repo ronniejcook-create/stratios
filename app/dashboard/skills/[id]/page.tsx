@@ -37,7 +37,7 @@ export default async function SkillPage({ params }: { params: Promise<{ id: stri
   return (
     <>
       <p className="crumbs">
-        <Link href="/dashboard/skills">Skills</Link>
+        <Link href="/dashboard/skills">Skills Library</Link>
         <span aria-hidden="true"> / </span>
         <span>{skill.name}</span>
       </p>

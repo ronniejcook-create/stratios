@@ -38,7 +38,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <h1>Members</h1>
+      <h1>Users</h1>
       <p className="lede">People join your organization by email invitation only.</p>
 
       {error && ERRORS[error] ? <p className="form-error" role="alert">{ERRORS[error]}</p> : null}
@@ -51,7 +51,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
       ) : null}
 
       <section className="panel">
-        <h2>Members</h2>
+        <h2>Users</h2>
         <div className="table-scroll">
           <table>
             <thead>

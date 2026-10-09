@@ -41,7 +41,7 @@ export default async function SkillsPage() {
         <h2>Changes Here Reach Every Organization</h2>
         <p>
           A change is live for all organizations as soon as it is saved, except for an organization that has its own version of that skill. Each organization can also turn
-          a standard skill off and add skills of its own, under Admin Settings &gt; Skills. To change a skill for the Stratios organization only, use that screen instead.
+          a standard skill off and add skills of its own, under Admin Settings &gt; Skills Library. To change a skill for the Stratios organization only, use that screen instead.
         </p>
         <p>
           When a document is read, the agent first works out what kind of document it is, then follows every skill whose Use When fits. In a conversation, the analyst sees the

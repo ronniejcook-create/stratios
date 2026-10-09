@@ -8,14 +8,13 @@ import { listScreens, type Screen } from '@/lib/layout'
 import { listLists, type ListDefinition } from '@/lib/lists'
 import { RECORD_LABELS, RECORD_TYPES } from '@/lib/records'
 import { isStratiosAdmin } from '@/lib/stratios'
-import { AddFieldForm, AddScreenForm, AddSectionForm } from '../fields/Forms'
-import { addLibraryField, addLibraryScreen, addLibrarySection } from './actions'
+import { AddFieldForm } from '../fields/Forms'
+import { addLibraryField } from './actions'
 
 export const dynamic = 'force-dynamic'
 
 const LEVELS = RECORD_TYPES.map((type) => ({ value: type, label: RECORD_LABELS[type] }))
 const TYPE_LABELS = new Map(DATA_TYPES.map((type) => [type.value as string, type.label]))
-const STYLE_LABELS: Record<string, string> = { form: 'Form', tiles: 'Tiles', list: 'List' }
 
 export default async function LibraryPage() {
   const { orgId, orgRole } = await auth()
@@ -70,12 +69,15 @@ export default async function LibraryPage() {
   return (
     <>
       <h1>Master Library</h1>
-      <p className="lede">The {fields.length} Stratios standard fields and the standard layout that every organization starts from.</p>
+      <p className="lede">
+        The {fields.length} Stratios standard fields that every organization starts from. The standard screens and sections are in{' '}
+        <Link href="/dashboard/layout-library">Master Layouts</Link>.
+      </p>
       <div className="panel notice">
         <h2>Changes Here Reach Every Organization</h2>
         <p>
           A change is live for all organizations as soon as it is saved. The one exception: a setting an organization has modified for itself keeps
-          its value. To change something for the Stratios organization only, use Fields and Layout instead.
+          its value. To change something for the Stratios organization only, use Fields Library under Admin Settings instead.
         </p>
       </div>
 
@@ -125,55 +127,6 @@ export default async function LibraryPage() {
             </div>
           </div>
         ))}
-      </section>
-
-      <section className="panel">
-        <h2>Standard Layout</h2>
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Screen</th>
-                <th scope="col">Section</th>
-                <th scope="col">Belongs To</th>
-                <th scope="col">Shown As</th>
-                <th scope="col">Contains</th>
-              </tr>
-            </thead>
-            <tbody>
-              {screens.flatMap((screen) =>
-                screen.sections.length === 0
-                  ? [
-                      <tr key={screen.id}>
-                        <td>{screen.name}</td>
-                        <td colSpan={4} className="muted">No sections yet</td>
-                      </tr>,
-                    ]
-                  : screen.sections.map((section, index) => {
-                      const sectionLists = lists.filter((list) => list.sectionId === section.id)
-                      const columns = fields.filter((field) => sectionLists.some((list) => list.id === field.listId)).length
-                      return (
-                        <tr key={section.id}>
-                          <td>{index === 0 ? screen.name : ''}</td>
-                          <td>{section.name}</td>
-                          <td>{RECORD_LABELS[section.appliesTo]}</td>
-                          <td>{STYLE_LABELS[section.displayStyle]}</td>
-                          <td>{section.displayStyle === 'list' ? `${columns} ${columns === 1 ? 'column' : 'columns'}` : `${section.fieldIds.length} ${section.fieldIds.length === 1 ? 'field' : 'fields'}`}</td>
-                        </tr>
-                      )
-                    }),
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="start-from">
-          <h3>Add a Standard Section or List</h3>
-          <AddSectionForm action={addLibrarySection} levels={LEVELS} screens={screens.map((screen) => ({ value: screen.id, label: screen.name }))} />
-        </div>
-        <div className="start-from">
-          <h3>Add a Standard Screen</h3>
-          <AddScreenForm action={addLibraryScreen} />
-        </div>
       </section>
     </>
   )

@@ -44,7 +44,7 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
   return (
     <>
       <p className="crumbs">
-        <Link href="/dashboard/fields">Fields and Layout</Link>
+        <Link href="/dashboard/fields">Fields Library</Link>
         <span aria-hidden="true"> / </span>
         <span>{field.name}</span>
       </p>

@@ -72,6 +72,7 @@ export async function addScreen(prev: FormState, formData: FormData): Promise<Fo
   try {
     const result = await withOrg(admin.orgId, (client) => createScreen(client, admin.orgId, text(formData, 'name')))
     if (!result.ok) return { error: result.error, message: null, done: prev.done }
+    revalidatePath('/dashboard/layouts')
     revalidatePath('/dashboard/fields')
     return { error: null, message: 'Screen added.', done: prev.done + 1 }
   } catch (error) {
@@ -93,10 +94,11 @@ export async function addSection(prev: FormState, formData: FormData): Promise<F
         : createSection(client, admin.orgId, { name: text(formData, 'name'), screenId, appliesTo: text(formData, 'appliesTo'), displayStyle: kind }),
     )
     if (!result.ok) return { error: result.error, message: null, done: prev.done }
+    revalidatePath('/dashboard/layouts')
     revalidatePath('/dashboard/fields')
     return {
       error: null,
-      message: kind === 'list' ? 'List added. Add its columns with "Add a Field" and choose the list under Show In.' : 'Section added.',
+      message: kind === 'list' ? 'List added. Add its columns in Fields Library with "Add a Field", choosing the list under Show In.' : 'Section added.',
       done: prev.done + 1,
     }
   } catch (error) {

@@ -28,7 +28,7 @@ export default async function SkillsPage() {
   if (problem !== 'none') {
     return (
       <>
-        <h1>Skills</h1>
+        <h1>Skills Library</h1>
         <div className="panel notice">
           <h2>{problem === 'update' ? 'Database Update Needed' : 'The Skills Could Not Be Loaded'}</h2>
           <p>{problem === 'update' ? 'Run the newest files in db/migrations against the database, then reload this page.' : 'Check the database connection and try again.'}</p>
@@ -39,7 +39,7 @@ export default async function SkillsPage() {
 
   return (
     <>
-      <h1>Skills</h1>
+      <h1>Skills Library</h1>
       <p className="lede">Know-how your organization&apos;s agents pick from: how to read a kind of document, or how to handle a kind of request.</p>
       <div className="panel notice">
         <h2>How Skills Are Used</h2>

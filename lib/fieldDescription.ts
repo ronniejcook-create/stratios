@@ -36,7 +36,7 @@ const clean = (value: unknown, max: number) => String(value ?? '').replace(/\s+/
 
 /**
  * Asks Claude for a plain-words definition of a field, for the Description
- * box in Fields and Layout. Nothing is saved; the admin reviews the text and
+ * box in Fields Library. Nothing is saved; the admin reviews the text and
  * saves it with the rest of the field.
  */
 export async function generateFieldDescription(facts: FieldFacts): Promise<DescriptionResult> {
