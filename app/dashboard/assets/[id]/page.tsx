@@ -8,6 +8,7 @@ import { EMPTY_VALUE } from '@/lib/fieldFormat'
 import { listFields, listSourceTypes, listValues, type FieldDefinition, type FieldValue } from '@/lib/fields'
 import { listScreens, type Screen, type Section } from '@/lib/layout'
 import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from '@/lib/lists'
+import { PropertyMap, type MapPin } from '@/components/PropertyMap'
 import { typeAheadEnabled } from '@/lib/googlePlaces'
 import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
@@ -127,6 +128,20 @@ export default async function AssetPage({
     source: photo.documentName ? `From ${photo.documentName}${photo.page ? `, page ${photo.page}` : ''}` : photo.page ? `From a document that was removed, page ${photo.page}` : 'Uploaded',
   }))
   const mainPhoto = photos.find((photo) => photo.isMain)
+  // Pins for the Map tab: every property and building address that has a location.
+  const places = tree.properties.flatMap((property) => [
+    { title: property.name, subtitle: 'Property', addresses: property.addresses },
+    ...property.buildings.map((building) => ({ title: building.name, subtitle: `Building at ${property.name}`, addresses: building.addresses })),
+  ])
+  const mapPins: MapPin[] = places.flatMap((place) =>
+    place.addresses.flatMap((address) =>
+      address.latitude !== null && address.longitude !== null
+        ? [{ id: address.id, title: place.title, subtitle: place.subtitle, address: formatAddress(address), latitude: address.latitude, longitude: address.longitude }]
+        : [],
+    ),
+  )
+  const unpinned = places.reduce((sum, place) => sum + place.addresses.filter((address) => address.street && (address.latitude === null || address.longitude === null)).length, 0)
+
   // Suggestions while typing an address are on when a Google key is set (lib/googlePlaces.ts).
   const addressTypeAhead = typeAheadEnabled()
 
@@ -451,6 +466,29 @@ export default async function AssetPage({
       <ScreenTabs
         screens={[
           ...screens.map((screen, index) => ({ key: screen.key, name: screen.name, content: screenContent(screen, index === 0) })),
+          {
+            key: '_map',
+            name: 'Map',
+            content: (
+              <section className="panel">
+                <h2>Map</h2>
+                {mapPins.length === 0 ? (
+                  <p className="empty">
+                    No address on this asset has a map location yet.
+                    {access.canAddRecords ? ' Add an address with the lookup, or use Find Location beside an address typed by hand.' : ''}
+                  </p>
+                ) : (
+                  <>
+                    <p className="note">
+                      {mapPins.length === 1 ? 'One address is pinned.' : `${mapPins.length} addresses are pinned.`} Click a pin for its address. Use the + and − buttons to zoom.
+                      {unpinned > 0 ? ` ${unpinned === 1 ? '1 address has' : `${unpinned} addresses have`} no map location yet${access.canAddRecords ? '; use Find Location beside it' : ''}.` : ''}
+                    </p>
+                    <PropertyMap pins={mapPins} />
+                  </>
+                )}
+              </section>
+            ),
+          },
           {
             key: '_photos',
             name: photos.length > 0 ? `Photos (${photos.length})` : 'Photos',

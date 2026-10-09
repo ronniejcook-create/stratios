@@ -427,8 +427,23 @@ work and how data is isolated; this file covers how we work and where things sta
     - `insertAddress` saves coordinates only when the columns exist (`hasCoordinateColumns`), and
       the asset page reads them through `to_jsonb`, so everything works before 015 is run, just
       without locations. An asset created from a document still gets a city-only address.
-    - No map screen yet: this only captures the coordinates. Addresses on units are not listed
-      with these actions (units show their address as a tooltip, as before).
+    - **Map tab** (October 9, later; Ronnie asked for it): every asset has a Map tab (key `_map`,
+      before Photos) with a pin for each property and building address that has coordinates
+      (`components/PropertyMap.tsx`). One pin is shown at street level with its pop-up open;
+      several are all fitted in view. A pin's pop-up has the name, the address and "Open in
+      Google Maps". Drawn with **Leaflet 1.9.4** served as plain files from `public/leaflet/`
+      (downloaded from the official GitHub release; loaded by a script tag, not in package.json)
+      and **OpenStreetMap** street tiles, which need no key. Because tabs render hidden, the map
+      is framed when its box first gets a real size (ResizeObserver). Scroll-wheel zoom is off
+      so the page still scrolls. He was told: OpenStreetMap's free tiles are fine for testing
+      but not meant for heavy commercial traffic, so pick a paid tile source or Google before
+      real customers; there is no portfolio-wide map of all assets yet.
+    - Addresses on units are not listed with these actions or pinned (units show their address
+      as a tooltip, as before).
+    - Checked for the map: the real component in Chromium with the real Leaflet files and
+      stand-in tile pictures (hidden tab then shown, one pin centered at zoom 16, three pins
+      all in view, pop-up text safe from injected HTML). Real map tiles could not be loaded
+      here, so he is the first to see the actual street map.
     - Checked for suggestions: the Google code with scripted answers, and the real form in
       Chromium with stand-in answers (typing, arrow keys, picking, slow answers, failure).
       Never run against Google itself: there is no key here.

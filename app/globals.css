@@ -855,3 +855,14 @@ td.muted { color: var(--dim); }
 .address-suggestion-rest { color: var(--muted); font-size: 13px; }
 .address-suggestions-credit { padding: 4px 8px 2px; text-align: right; font-size: 11px; color: var(--dim); }
 .address-add { margin-top: 10px; }
+
+/* The Map tab: the map box, a pin drawn in the accent color, and the pop-up in the site's colors. */
+.property-map { height: min(62vh, 560px); min-height: 320px; margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); z-index: 0; }
+.map-pin { background: none; border: 0; }
+.map-pin span { display: block; width: 26px; height: 26px; margin-top: 2px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--accent); border: 2px solid #ffffff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5); }
+.map-pin span::after { content: ""; display: block; width: 8px; height: 8px; margin: 7px; border-radius: 50%; background: #ffffff; }
+.property-map .leaflet-popup-content-wrapper, .property-map .leaflet-popup-tip { background: var(--panel); color: var(--text); }
+.property-map .leaflet-popup-content { margin: 10px 14px; font: inherit; font-size: 13px; line-height: 1.45; }
+.map-popup strong { display: block; color: var(--heading); font-size: 14px; }
+.property-map .map-popup a { display: inline-block; margin-top: 6px; color: var(--link); }
+.property-map .leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
