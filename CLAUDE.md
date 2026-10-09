@@ -170,6 +170,16 @@ work and how data is isolated; this file covers how we work and where things sta
     field's Agent Instructions is the skill itself or skills stay separate rules (`field_rules`)
     with levels and versions, and whether simple totals (a property's square feet from its
     buildings) run through a skill or stay built-in sums. Ask before building stage 5.
+  - **Both stage 5 questions are answered** (October 9, Ronnie): (1) a KPI's recipe lives on
+    the field itself, in its Agent Instructions; there is no separate `field_rules` table.
+    (2) Calculation starts from a **trigger event**, such as a rent roll being uploaded. A
+    **skill** tied to that event says *which* values to calculate; the logic for each value is
+    in that field's Agent Instructions. He did not ask for built-in sums, so simple totals go
+    the same way unless he says otherwise. He also confirmed (October 9) that migrations 013 to
+    017 are run, the Census key is in Vercel, and a fresh offering memorandum was read with the
+    new fields, commentary and address. Still open: whether rent roll storage (tenants, leases)
+    is built before the first KPI skill, or the first version calculates straight from the
+    uploaded document.
   - **Stage 4 is built** (October 8, late; `db/migrations/008_documents.sql`): document upload and
     the extraction agent. Not yet tried in a browser or against the real Claude API by anyone.
     - Where: every asset has a **Documents** tab (key `_documents`, added in the asset page beside
