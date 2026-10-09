@@ -22,7 +22,7 @@ const GROUPS: { outcome: Outcome; title: string; note: string }[] = [
   { outcome: 'filled', title: 'Filled In', note: 'These fields were empty, so the document\'s value was filled in.' },
   { outcome: 'replaced', title: 'Replaced', note: 'These fields are set to replace automatically, so the document\'s value took the place of the earlier one. The change is in each field\'s history.' },
   { outcome: 'confirmed', title: 'Confirmed', note: 'The document agrees with what was already recorded. Nothing changed.' },
-  { outcome: 'kept', title: 'Different, but Kept', note: 'These fields are set to never replace, so the recorded value was kept. The difference is shown for your information.' },
+  { outcome: 'kept', title: 'Different, but Kept', note: 'The recorded value was kept, either because the field is set to never replace, or because a larger rent roll for the same date already supplied it. The difference is shown for your information.' },
 ]
 
 function when(iso: string | null): string {

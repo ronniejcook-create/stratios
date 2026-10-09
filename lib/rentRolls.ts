@@ -125,10 +125,10 @@ const HEADER_COLUMNS = `r.id::text as id, r.asset_id::text as asset_id, r.proper
   (select count(*)::int from rent_roll_rows w where w.rent_roll_id = r.id) as row_count, r.created_by,
   to_char(r.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at`
 
-/** An asset's rent rolls, the latest date first. */
+/** An asset's rent rolls, the latest date first; for one date, the one with the most rows first (the main one of a mixed-use building). */
 export async function listRentRolls(client: Queryable, orgId: string, assetId: string): Promise<RentRollHeader[]> {
   const { rows } = await client.query(
-    `select ${HEADER_COLUMNS} from rent_rolls r where r.org_id = $1 and r.asset_id = $2 order by r.as_of_date desc, r.created_at desc`,
+    `select ${HEADER_COLUMNS} from rent_rolls r where r.org_id = $1 and r.asset_id = $2 order by r.as_of_date desc, row_count desc, r.created_at desc`,
     [orgId, assetId],
   )
   return rows.map(toHeader)
@@ -153,6 +153,44 @@ export async function rentRollOfDocument(client: Queryable, orgId: string, docum
   } catch {
     await client.query('rollback to savepoint rent_roll_lookup').catch(() => {})
     return null
+  }
+}
+
+/**
+ * The other rent rolls already saved for a property on one date, split by
+ * whether they have at least as many rows as a rent roll about to be saved
+ * (`rowCount`) or fewer. A mixed-use building can have two rent rolls for one
+ * date, say retail and residential; the one with the most rows is the main
+ * one and supplies the property's values. A date left out means today, as it
+ * will when saved. Empty when rent rolls aren't set up yet.
+ */
+export async function rivalRentRolls(
+  client: Queryable,
+  orgId: string,
+  input: { propertyId: string; asOfDate: string | null; rowCount: number; documentId: string },
+): Promise<{ larger: string[]; smaller: string[] }> {
+  const none = { larger: [], smaller: [] }
+  try {
+    await client.query('savepoint rent_roll_rivals')
+  } catch {
+    return none
+  }
+  try {
+    const { rows } = await client.query(
+      `select r.document_id::text as document_id, (select count(*)::int from rent_roll_rows w where w.rent_roll_id = r.id) as row_count
+       from rent_rolls r
+       where r.org_id = $1 and r.property_id = $2 and r.as_of_date = coalesce($3::date, current_date)
+         and r.document_id is not null and r.document_id <> $4::uuid`,
+      [orgId, input.propertyId, input.asOfDate, input.documentId],
+    )
+    await client.query('release savepoint rent_roll_rivals')
+    return {
+      larger: rows.filter((row) => Number(row.row_count) >= input.rowCount).map((row) => row.document_id as string),
+      smaller: rows.filter((row) => Number(row.row_count) < input.rowCount).map((row) => row.document_id as string),
+    }
+  } catch {
+    await client.query('rollback to savepoint rent_roll_rivals').catch(() => {})
+    return none
   }
 }
 

@@ -697,6 +697,19 @@ work and how data is isolated; this file covers how we work and where things sta
       What a skill cannot change: the answer format, the tiles showing the document's totals,
       and how Tenants is counted. His first snapshot was read before this, so its amenity-type
       rows still say Not for Lease until the rent roll is loaded again.
+    - **Mixed use: the rent roll with the most rows is the main one** (October 9, Ronnie's rule
+      for a building with two rent rolls, say retail and residential). No migration. Two rent
+      rolls for the same property and the same date (no date means the day loaded) are both
+      kept as snapshots. `rivalRentRolls` in `lib/rentRolls.ts` finds the others when one is
+      read, and `applyReading` takes them as `rivals`: where both give a value for the same
+      field, the one with more rows wins whichever was loaded first (the smaller one's value
+      is listed as Different but Kept and not stored as a source value; a larger one arriving
+      second replaces without asking). A tie favors the one already there. A field only one of
+      them mentions is filled as usual, and a rent roll for another date follows the field's
+      normal rules. The tab lists the larger first for a date. The two are **not added
+      together**: the property's values and the tiles are the larger rent roll's alone, there
+      is no Retail / Residential label, and residential columns (unit type, bedrooms, market
+      rent, deposits) are not captured. Tested on the scratch database in both loading orders.
     - KPIs from a rent roll still come from the reading itself (stage 5: as shown, or
       calculated by the Reading a Rent Roll skill). Nothing recalculates from the stored rows
       yet, and two snapshots can't be compared side by side.

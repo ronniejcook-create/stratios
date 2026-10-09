@@ -403,6 +403,36 @@ export function decideOutcome(
 }
 
 /**
+ * Other rent rolls for the same property and date as the document being read,
+ * by document: those with at least as many rows (they outrank this one) and
+ * those with fewer (this one outranks them).
+ */
+export type DocumentRivals = { larger: string[]; smaller: string[] }
+
+/** What a document last said about one field on one record: its value, and which document. Null when none did. */
+async function rivalValue(
+  client: Queryable,
+  orgId: string,
+  target: { recordType: RecordType; recordId: string; field: FieldDefinition; period: string | null },
+): Promise<{ documentId: string; value: StoredValue } | null> {
+  const { rows } = await client.query(
+    `select document_id::text as document_id, ${VALUE_COLUMNS}
+     from field_source_values
+     where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4
+       and period is not distinct from $5::date and row_id is null
+       and source_type in ('documents', 'calculated') and document_id is not null
+     order by received_at desc limit 1`,
+    [orgId, target.recordType, target.recordId, target.field.id, target.period],
+  )
+  const row = rows[0]
+  if (!row) return null
+  return {
+    documentId: row.document_id,
+    value: { text: row.text ?? null, number: row.number === null || row.number === undefined ? null : Number(row.number), date: row.date ?? null, bool: row.bool ?? null },
+  }
+}
+
+/**
  * Records everything the agent found in a document and applies each field's
  * rules. Every value is stored as what Documents says (a source value),
  * whether or not it changes the golden record. Marks the document as read.
@@ -413,6 +443,7 @@ export async function applyReading(
   userId: string,
   document: { id: string; name: string },
   reading: { candidates: Candidate[]; proposals: ProposalInput[]; documentType: string | null; summary: string | null },
+  rivals: DocumentRivals | null = null,
 ): Promise<Record<Outcome, number>> {
   const counts: Record<Outcome, number> = { filled: 0, confirmed: 0, replaced: 0, decision: 0, kept: 0 }
   // A second reading replaces the first one's list; decisions already applied stay in the golden record.
@@ -424,22 +455,41 @@ export async function applyReading(
     const { recordType, recordId, field, period, value: found } = candidate
     if (isEmptyValue(found) || !(await recordExists(client, orgId, recordType, recordId))) continue
     const golden = await readGolden(client, orgId, recordType, recordId, field, period)
-    const { outcome, reason } = decideOutcome(field, golden, found)
+    let { outcome, reason } = decideOutcome(field, golden, found)
+    // Two rent rolls for the same property and date (a mixed-use building): where both give a value for the
+    // same field, the one with more rows wins, whichever was loaded first.
+    let outranked = false
+    if (rivals && (outcome === 'decision' || outcome === 'kept' || outcome === 'replaced') && !isEmptyValue(golden.value)) {
+      const said = await rivalValue(client, orgId, { recordType, recordId, field, period })
+      if (said && sameValue(said.value, golden.value)) {
+        if (rivals.larger.includes(said.documentId)) {
+          outcome = 'kept'
+          reason = null
+          outranked = true
+        } else if (rivals.smaller.includes(said.documentId)) {
+          outcome = 'replaced'
+          reason = null
+        }
+      }
+    }
     // A value the agent worked out is recorded as Calculated, not as what the document says.
     const source = candidate.basis === 'calculated' ? 'calculated' : 'documents'
 
-    await client.query(
-      `delete from field_source_values
-       where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4 and source_type = $6
-         and period is not distinct from $5::date and row_id is null`,
-      [orgId, recordType, recordId, field.id, period, source],
-    )
-    await client.query(
-      `insert into field_source_values
-         (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by, document_id, page)
-       values ($1, $2, $3, $4, $5::date, $13, $6, $7::numeric, $8::date, $9::boolean, $10, $11, $12)`,
-      [orgId, recordType, recordId, field.id, period, found.text, found.number, found.date, found.bool, userId, document.id, candidate.page, source],
-    )
+    // The larger rent roll's value stays on record as what the source says; the smaller one's is only listed for review.
+    if (!outranked) {
+      await client.query(
+        `delete from field_source_values
+         where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4 and source_type = $6
+           and period is not distinct from $5::date and row_id is null`,
+        [orgId, recordType, recordId, field.id, period, source],
+      )
+      await client.query(
+        `insert into field_source_values
+           (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by, document_id, page)
+         values ($1, $2, $3, $4, $5::date, $13, $6, $7::numeric, $8::date, $9::boolean, $10, $11, $12)`,
+        [orgId, recordType, recordId, field.id, period, found.text, found.number, found.date, found.bool, userId, document.id, candidate.page, source],
+      )
+    }
 
     if (outcome === 'filled' || outcome === 'replaced') {
       const note = source === 'calculated' ? calculatedNote(document.name, candidate.page, candidate.quote) : sourceNote(document.name, candidate.page)

@@ -19,7 +19,7 @@ import { extractPhotos } from './photoExtraction'
 import { joinSpreads } from './photoJoin'
 import { planPagesOf, saveDocumentPhotoNotes, savePhotosFromDocument, type PlanPage } from './photos'
 import { getAssetTree, insertAddress, type Queryable } from './records'
-import { saveRentRoll } from './rentRolls'
+import { rivalRentRolls, saveRentRoll } from './rentRolls'
 import { loadSkillsForAgent } from './skills'
 
 export type ReadSuccess = {
@@ -237,7 +237,10 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
 
   try {
     const { counts, listRows, rentRollRows } = await withOrg(orgId, async (client) => {
-      const applied = await applyReading(client, orgId, userId, { id: documentId, name: document.name }, result.reading)
+      // A second rent roll for the same property and date: the one with the most rows supplies the property's values.
+      const rentRoll = result.reading.rentRoll
+      const rivals = rentRoll ? await rivalRentRolls(client, orgId, { propertyId: rentRoll.recordId, asOfDate: rentRoll.asOfDate, rowCount: rentRoll.rows.length, documentId }) : null
+      const applied = await applyReading(client, orgId, userId, { id: documentId, name: document.name }, result.reading, rivals)
       const entries = await addListRows(client, caller, { id: documentId, name: document.name }, result.reading.rows)
       return { counts: applied, listRows: entries, rentRollRows: await addRentRoll(client, caller, tree.id, { id: documentId, name: document.name }, result.reading.rentRoll) }
     })
