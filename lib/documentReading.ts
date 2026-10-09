@@ -19,7 +19,7 @@ import { extractPhotos } from './photoExtraction'
 import { joinSpreads } from './photoJoin'
 import { planPagesOf, saveDocumentPhotoNotes, savePhotosFromDocument, type PlanPage } from './photos'
 import { getAssetTree, insertAddress, type Queryable } from './records'
-import { rivalRentRolls, saveRentRoll } from './rentRolls'
+import { listRentRollsIfAny, rivalRentRolls, saveRentRoll } from './rentRolls'
 import { loadSkillsForAgent } from './skills'
 
 export type ReadSuccess = {
@@ -222,7 +222,8 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       const allFields = await listFields(client, orgId)
       const fields = extractableFields(allFields, sectionByField(await listScreens(client, orgId)), access.fieldLevel)
       const lists = extractableLists(await listLists(client, orgId), allFields, access.sectionLevel)
-      return { ok: true as const, document, tree, file, fields, lists, skills: await loadSkillsForAgent(client, orgId) }
+      const savedRentRolls = await listRentRollsIfAny(client, orgId, tree.id)
+      return { ok: true as const, document, tree, file, fields, lists, savedRentRolls, skills: await loadSkillsForAgent(client, orgId) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)
@@ -232,14 +233,23 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
   const { document, tree } = prepared
   if (!prepared.file) return giveUp(caller, documentId, 'The file for this document is missing. Upload it again.', 500)
 
-  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records: recordsOf(tree), fields: prepared.fields, lists: prepared.lists, skills: prepared.skills, timeoutMs })
+  const records = recordsOf(tree)
+  // The rent rolls already saved for this asset, by the same record addresses the agent is given (the newest 30).
+  const savedRentRolls = prepared.savedRentRolls.slice(0, 30).flatMap((saved) => {
+    const record = records.find((entry) => entry.id === saved.propertyId)
+    return record && saved.documentId !== documentId ? [{ record: record.ref, asOfDate: saved.asOfDate, asOfStated: saved.asOfStated, documentName: saved.documentName, rowCount: saved.rowCount }] : []
+  })
+  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records, fields: prepared.fields, lists: prepared.lists, savedRentRolls, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
 
   try {
     const { counts, listRows, rentRollRows } = await withOrg(orgId, async (client) => {
       // A second rent roll for the same property and date: the one with the most rows supplies the property's values.
       const rentRoll = result.reading.rentRoll
-      const rivals = rentRoll ? await rivalRentRolls(client, orgId, { propertyId: rentRoll.recordId, asOfDate: rentRoll.asOfDate, rowCount: rentRoll.rows.length, documentId }) : null
+      const byRows = rentRoll ? await rivalRentRolls(client, orgId, { propertyId: rentRoll.recordId, asOfDate: rentRoll.asOfDate, rowCount: rentRoll.rows.length, documentId }) : null
+      // Which one is the main rent roll is the agent's answer under the rent roll skill; without one, the most rows.
+      const others = byRows ? [...byRows.larger, ...byRows.smaller] : []
+      const rivals = !byRows ? null : rentRoll?.role === 'main' ? { larger: [], smaller: others } : rentRoll?.role === 'secondary' ? { larger: others, smaller: [] } : byRows
       const applied = await applyReading(client, orgId, userId, { id: documentId, name: document.name }, result.reading, rivals)
       const entries = await addListRows(client, caller, { id: documentId, name: document.name }, result.reading.rows)
       return { counts: applied, listRows: entries, rentRollRows: await addRentRoll(client, caller, tree.id, { id: documentId, name: document.name }, result.reading.rentRoll) }

@@ -736,6 +736,40 @@ td.muted { color: var(--dim); }
 .review-quote { font-style: italic; max-width: 44ch; }
 .review-where { white-space: nowrap; }
 .review-entry { max-width: 64ch; }
+/* Stack Plan tab. Lease-end shading is one blue ramp, darkest for the leases ending soonest; text on each block keeps it readable without the color. */
+.stack-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 20px; }
+.stack-color { flex: 0 0 200px; }
+.stack-key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 12px; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.stack-key li { display: flex; align-items: center; gap: 6px; }
+.stack-swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+.stack-floors { display: flex; flex-direction: column; gap: 3px; }
+.stack-floor { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: stretch; gap: 10px; }
+.stack-floor-name { display: flex; flex-direction: column; justify-content: center; font-size: 12px; color: var(--muted); line-height: 1.35; }
+.stack-floor-name strong { font-size: 13px; color: var(--heading); font-weight: 600; }
+.stack-row { display: flex; gap: 2px; min-width: 0; }
+.stack-suite {
+  display: flex; flex-direction: column; justify-content: center; min-width: 26px; min-height: 54px; padding: 4px 6px; overflow: hidden;
+  border: 1px solid transparent; border-radius: 4px; font: inherit; font-size: 11px; line-height: 1.25; text-align: left; cursor: pointer;
+}
+.stack-suite span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stack-suite-name { font-weight: 700; font-size: 12px; }
+.stack-suite-sf { opacity: 0.85; font-variant-numeric: tabular-nums; }
+.stack-suite:hover, .stack-suite.active { outline: 2px solid var(--heading); outline-offset: -1px; }
+.stack-y0 { background: #0d366b; color: #fff; }
+.stack-y1 { background: #1c5cab; color: #fff; }
+.stack-y2 { background: #3987e5; color: #06182f; }
+.stack-y3 { background: #86b6ef; color: #06182f; }
+.stack-y4 { background: #cde2fb; color: #06182f; }
+.stack-leased { background: #3987e5; color: #06182f; }
+.stack-nodate { background: #8a94a3; color: #0b1220; }
+.stack-vacant { background: transparent; color: var(--text); border: 1px dashed var(--line-strong); }
+.stack-other { background: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--muted) 28%, transparent) 5px 6px); color: var(--muted); border: 1px solid var(--line); }
+.stack-swatch.stack-vacant, .stack-swatch.stack-other { border-width: 1px; }
+.stack-detail { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 14px 0 4px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--bg); }
+.stack-detail div { min-width: 0; }
+.stack-detail dt { font-size: 12px; color: var(--muted); }
+.stack-detail dd { margin: 0; font-size: 14px; font-weight: 600; color: var(--heading); }
+@media (max-width: 700px) { .stack-floor { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
 /* Rent Roll tab */
 .rent-roll-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 20px; margin-top: 6px; }
 .rent-roll-head .field { flex: 0 1 420px; }

@@ -32,6 +32,7 @@ const stamp = (value: string | null) => (value ? Date.parse(`${value}T00:00:00Z`
 
 const COLUMNS: GridColumn[] = [
   { key: 'suite', label: 'Suite' },
+  { key: 'floor', label: 'Floor', numeric: true },
   { key: 'tenant', label: 'Tenant' },
   { key: 'status', label: 'Status', display: 'chip' },
   { key: 'sf', label: 'Square Feet', numeric: true },
@@ -132,6 +133,7 @@ export function RentRollPanel({
     id: row.id,
     cells: {
       suite: row.suite ?? '',
+      floor: row.floor === null || row.floor === undefined ? '' : String(row.floor),
       tenant: row.tenant ?? '',
       status: RENT_ROLL_STATUS_LABELS[row.status],
       sf: row.squareFeet === null ? '' : whole(row.squareFeet),
@@ -145,6 +147,7 @@ export function RentRollPanel({
       note: row.note ?? '',
     },
     order: {
+      floor: row.floor ?? -1000,
       sf: row.squareFeet ?? -1,
       start: stamp(row.leaseStart),
       end: stamp(row.leaseEnd),

@@ -28,6 +28,10 @@ export type RentRollRowInput = {
   note: string | null
   steps: RentStep[]
   page: number | null
+  /** The level the suite is on: 1 is the ground floor, basements are negative. Null when not known. */
+  floor?: number | null
+  /** True when the document does not show the floor and the agent worked it out, for example from the suite number. */
+  floorInferred?: boolean
 }
 
 export type RentRollTotals = { totalSf: number | null; leasedSf: number | null; vacantSf: number | null }
@@ -61,6 +65,11 @@ export async function saveRentRoll(client: Queryable, orgId: string, userId: str
     ],
   )
   const id = created.rows[0].id as string
+  // The floor columns arrive with migration 021; until it is run, rows are saved without a floor.
+  const floors = (
+    await client.query(`select 1 from information_schema.columns where table_schema = current_schema() and table_name = 'rent_roll_rows' and column_name = 'floor'`)
+  ).rows.length > 0
+  const width = floors ? 18 : 16
   // Rows go in a few at a time, as one statement each time, to keep a long rent roll quick to save.
   const BATCH = 40
   for (let start = 0; start < input.rows.length; start += BATCH) {
@@ -71,13 +80,14 @@ export async function saveRentRoll(client: Queryable, orgId: string, userId: str
         orgId, id, start + index + 1, row.suite, row.tenant, row.status, row.squareFeet, row.leaseStart, row.leaseEnd,
         row.rentPerSf, row.annualRent, row.monthlyRent, row.recoveryType, row.note, JSON.stringify(row.steps), row.page,
       )
-      const at = index * 16
-      return `($${at + 1}, $${at + 2}::uuid, $${at + 3}, $${at + 4}, $${at + 5}, $${at + 6}, $${at + 7}::numeric, $${at + 8}::date, $${at + 9}::date, $${at + 10}::numeric, $${at + 11}::numeric, $${at + 12}::numeric, $${at + 13}, $${at + 14}, $${at + 15}::jsonb, $${at + 16})`
+      if (floors) values.push(row.floor ?? null, row.floor != null && row.floorInferred === true)
+      const at = index * width
+      return `($${at + 1}, $${at + 2}::uuid, $${at + 3}, $${at + 4}, $${at + 5}, $${at + 6}, $${at + 7}::numeric, $${at + 8}::date, $${at + 9}::date, $${at + 10}::numeric, $${at + 11}::numeric, $${at + 12}::numeric, $${at + 13}, $${at + 14}, $${at + 15}::jsonb, $${at + 16}${floors ? `, $${at + 17}::int, $${at + 18}::boolean` : ''})`
     })
     await client.query(
       `insert into rent_roll_rows
          (org_id, rent_roll_id, position, suite, tenant, status, square_feet, lease_start, lease_end,
-          rent_per_sf, annual_rent, monthly_rent, recovery_type, note, steps, page)
+          rent_per_sf, annual_rent, monthly_rent, recovery_type, note, steps, page${floors ? ', floor, floor_inferred' : ''})
        values ${groups.join(', ')}`,
       values,
     )
@@ -124,6 +134,23 @@ const HEADER_COLUMNS = `r.id::text as id, r.asset_id::text as asset_id, r.proper
   r.stated_total_sf::float8 as stated_total_sf, r.stated_leased_sf::float8 as stated_leased_sf, r.stated_vacant_sf::float8 as stated_vacant_sf,
   (select count(*)::int from rent_roll_rows w where w.rent_roll_id = r.id) as row_count, r.created_by,
   to_char(r.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at`
+
+/** The same list, or nothing when rent rolls aren't set up yet (migration 019), without spoiling the transaction it runs in. */
+export async function listRentRollsIfAny(client: Queryable, orgId: string, assetId: string): Promise<RentRollHeader[]> {
+  try {
+    await client.query('savepoint rent_roll_list')
+  } catch {
+    return []
+  }
+  try {
+    const found = await listRentRolls(client, orgId, assetId)
+    await client.query('release savepoint rent_roll_list')
+    return found
+  } catch {
+    await client.query('rollback to savepoint rent_roll_list').catch(() => {})
+    return []
+  }
+}
 
 /** An asset's rent rolls, the latest date first; for one date, the one with the most rows first (the main one of a mixed-use building). */
 export async function listRentRolls(client: Queryable, orgId: string, assetId: string): Promise<RentRollHeader[]> {
@@ -202,7 +229,9 @@ export async function listRentRollRows(client: Queryable, orgId: string, rentRol
     `select id::text as id, position, suite, tenant, status, square_feet::float8 as square_feet,
             lease_start::text as lease_start, lease_end::text as lease_end,
             rent_per_sf::float8 as rent_per_sf, annual_rent::float8 as annual_rent, monthly_rent::float8 as monthly_rent,
-            recovery_type, note, steps, page
+            recovery_type, note, steps, page,
+            (to_jsonb(rent_roll_rows) ->> 'floor')::int as floor,
+            coalesce((to_jsonb(rent_roll_rows) ->> 'floor_inferred')::boolean, false) as floor_inferred
      from rent_roll_rows where org_id = $1 and rent_roll_id = $2 order by position`,
     [orgId, rentRollId],
   )
@@ -224,6 +253,8 @@ export async function listRentRollRows(client: Queryable, orgId: string, rentRol
       note: row.note ?? null,
       steps: Array.isArray(steps) ? (steps as RentStep[]) : [],
       page: row.page ?? null,
+      floor: number(row.floor),
+      floorInferred: Boolean(row.floor_inferred),
     }
   })
 }

@@ -17,6 +17,7 @@ import { AddAddressForm, AddChildForm, AddressList } from './AddForms'
 import { AssetMap } from './AssetMap'
 import { listPhotos, listPlanPages, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo, type PlanPage } from '@/lib/photos'
 import { RentRollPanel, type RentRollChoice } from './RentRollPanel'
+import { StackPlan } from './StackPlan'
 import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
 import { PhotosPanel, type PhotoRow } from './PhotosPanel'
 import { FieldGroup, type FieldView, type Target } from './FieldGroup'
@@ -144,6 +145,8 @@ export default async function AssetPage({
         : 'The rent rolls could not be loaded. Try again.'
     }
   }
+
+  const stackChoice = rentRollChoices.find((choice) => choice.id === rentRollSelected) ?? null
 
   // Photos are loaded on their own too, for the same reason.
   let photos: Photo[] = []
@@ -503,6 +506,34 @@ export default async function AssetPage({
                       canEdit={access.canAddRecords}
                       severalProperties={tree.properties.length > 1}
                     />
+                  ),
+                },
+              ]
+            : []),
+          // A stack plan is how office buildings are read, so the tab is there when the asset has an office property.
+          ...(access.canAddRecords && !rentRollError && tree.properties.some((property) => property.propertyType === 'Office')
+            ? [
+                {
+                  key: '_stackplan',
+                  name: 'Stack Plan',
+                  content: (
+                    <section className="panel">
+                      <h2>Stack Plan</h2>
+                      {stackChoice ? (
+                        <>
+                          <p className="note">
+                            Drawn from the rent roll chosen on the Rent Roll tab{stackChoice.documentName ? ` (${stackChoice.documentName})` : ''}. To see another date, choose it there.
+                          </p>
+                          <StackPlan
+                            rows={rentRollRows}
+                            asOfDate={stackChoice.asOfDate}
+                            caption={`As of ${new Date(`${stackChoice.asOfDate}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}${tree.properties.length > 1 ? ` · ${stackChoice.propertyName}` : ''}`}
+                          />
+                        </>
+                      ) : (
+                        <p className="empty">The stack plan is drawn from a rent roll, and none has been loaded for this asset yet. Drop a rent roll (PDF or Excel) on the agent column and ask the analyst to load it.</p>
+                      )}
+                    </section>
                   ),
                 },
               ]

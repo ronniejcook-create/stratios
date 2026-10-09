@@ -710,6 +710,31 @@ work and how data is isolated; this file covers how we work and where things sta
       together**: the property's values and the tiles are the larger rent roll's alone, there
       is no Retail / Residential label, and residential columns (unit type, bedrooms, market
       rent, deposits) are not captured. Tested on the scratch database in both loading orders.
+    - **The main rent roll is the skill's call too** (October 9; Ronnie asked whether the
+      mixed-use rule shouldn't be in the skills; `db/migrations/021_stack_plan.sql`). The agent
+      is now told which rent rolls are already saved for the asset's properties (record, date,
+      rows, document; `savedRentRolls`, "## Rent rolls already saved" in the prompt) and
+      answers `rent_roll.role`: main or secondary. The rule itself ("the one with the most
+      rows is the main one") is a part of the Reading a Rent Roll skill, added by 021. Code
+      only applies the answer to the other rent rolls of the same property and date; when the
+      agent gives no answer (or no skill covers it) the row-count rule above is the fallback.
+    - **Stack Plan tab and floors** (October 9, Ronnie's request; migration 021 adds
+      `rent_roll_rows.floor` and `floor_inferred`). Each rent roll row can carry a floor (1 is
+      the ground floor, basements negative). The agent gives it from the document, or works
+      it out by the "Floors" part of the skill (first digit of a three-digit suite, first two
+      of a four-digit one, empty for JAN / MAINT / VEN); worked-out floors are marked. Rows are
+      saved without floors until 021 is run (`saveRentRoll` checks for the column; reads go
+      through `to_jsonb`). The Rent Roll grid gained a Floor column.
+      The **Stack Plan** tab (key `_stackplan`, after Rent Roll; `StackPlan.tsx`) shows when
+      the asset has a property whose type is Office, to people with `canAddRecords`. It draws
+      the snapshot chosen on the Rent Roll tab: floors top down, each suite a block as wide as
+      its share of the largest floor, with suite, tenant and square feet on it; Color By Lease
+      End Year (one blue ramp, darkest for leases ending in the rent roll's year or earlier,
+      through "four years on or later") or Status; vacant is a dashed outline, not for lease
+      is hatched; a color key; click a suite for its details; rows with no floor sit in a "No
+      Floor" row. Checked in Chromium with rows taken from his rent roll's text (floors from
+      suite numbers); not opened inside the app. A snapshot loaded before 021 has no floors,
+      so its stack plan says to load the rent roll again. There is no way to set a floor by hand.
     - KPIs from a rent roll still come from the reading itself (stage 5: as shown, or
       calculated by the Reading a Rent Roll skill). Nothing recalculates from the stored rows
       yet, and two snapshots can't be compared side by side.
