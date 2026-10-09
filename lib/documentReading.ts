@@ -14,7 +14,7 @@ import { listFields } from './fields'
 import { listScreens } from './layout'
 import { loadAccess } from './permissions'
 import { extractPhotos } from './photoExtraction'
-import { savePhotosFromDocument } from './photos'
+import { planPagesOf, saveDocumentPhotoNotes, savePhotosFromDocument, type PlanPage } from './photos'
 import { getAssetTree } from './records'
 import { loadSkillsForAgent } from './skills'
 
@@ -33,6 +33,8 @@ export type ReadSuccess = {
   skipped: number
   /** Photos copied out of the document onto the asset. */
   photos: number
+  /** Pages the agent marked as plans or maps. The browser draws these as pictures and adds them to the photos. */
+  planPages: PlanPage[]
 }
 export type ReadOutcome = ReadSuccess | { ok: false; error: string; status: number }
 
@@ -47,6 +49,8 @@ const busyMessage = (status: string) =>
  * never fails the reading. Returns how many photos were added.
  */
 async function addPhotos(caller: Caller, assetId: string, documentId: string, file: Buffer, reading: Reading): Promise<number> {
+  // Kept on the document so plan pages can be added later too. On its own, because the column may not exist yet (migration 014).
+  await withOrg(caller.orgId, (client) => saveDocumentPhotoNotes(client, caller.orgId, documentId, reading.photos)).catch((error) => console.error('Saving photo notes failed', error))
   try {
     const photos = await extractPhotos(file)
     if (photos.length === 0) return 0
@@ -116,6 +120,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       proposals: result.reading.proposals.length,
       skipped: result.reading.skipped,
       photos,
+      planPages: planPagesOf(result.reading.photos),
     }
   } catch (error) {
     console.error('Applying a reading failed', error)
@@ -186,6 +191,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         proposals: reading.proposals.length,
         skipped: reading.skipped,
         photos: 0,
+        planPages: planPagesOf(reading.photos),
       }
     })
     return { ...created, photos: await addPhotos(caller, created.assetId, documentId, prepared.file, result.reading) }

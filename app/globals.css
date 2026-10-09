@@ -828,3 +828,4 @@ td.muted { color: var(--dim); }
 .grid-thumb-link { display: inline-flex; align-items: center; gap: 10px; }
 .grid-thumb { width: 48px; height: 36px; flex: none; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); }
 .grid-thumb-empty { display: inline-block; }
+.agent-status { align-self: stretch; margin: 0; font-size: 12px; color: var(--muted); }

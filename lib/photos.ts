@@ -160,6 +160,42 @@ export async function savePhotosFromDocument(
   return added.length
 }
 
+/** A page of a document worth keeping as a picture (a floor plan, site plan or map), as the agent noted it. */
+export type PlanPage = { page: number; caption: string | null }
+
+/** How a page snapshot is told apart from a photo copied out of the file: its file name. */
+const snapshotName = (page: number) => `Page ${page}`
+
+/** Keeps the agent's notes on a document's photographs, for adding pages later. */
+export async function saveDocumentPhotoNotes(client: Queryable, orgId: string, documentId: string, notes: PhotoNote[]): Promise<void> {
+  await client.query('update documents set photo_notes = $3::jsonb where org_id = $1 and id = $2', [orgId, documentId, JSON.stringify(notes)])
+}
+
+/**
+ * For each document on an asset, the pages the agent marked as plans or maps.
+ * Read through to_jsonb so it still works where the photo_notes column has
+ * not been added yet (migration 014): those documents simply have none.
+ */
+export async function listPlanPages(client: Queryable, orgId: string, assetId: string): Promise<Map<string, PlanPage[]>> {
+  const { rows } = await client.query(
+    `select d.id::text as id, to_jsonb(d) -> 'photo_notes' as notes from documents d where d.org_id = $1 and d.asset_id = $2`,
+    [orgId, assetId],
+  )
+  const found = new Map<string, PlanPage[]>()
+  for (const row of rows) found.set(row.id as string, planPagesOf(Array.isArray(row.notes) ? (row.notes as PhotoNote[]) : []))
+  return found
+}
+
+/** The plan and map pages among the agent's notes: one entry per page, in page order, a dozen at most. */
+export function planPagesOf(notes: PhotoNote[]): PlanPage[] {
+  const pages = new Map<number, PlanPage>()
+  for (const note of notes) {
+    if (note?.category !== 'plan' || !Number.isInteger(note.page) || note.page < 1 || pages.has(note.page)) continue
+    pages.set(note.page, { page: note.page, caption: note.caption ? String(note.caption).slice(0, 300) : null })
+  }
+  return [...pages.values()].sort((a, b) => a.page - b.page).slice(0, 12)
+}
+
 export type PhotoResult = { ok: true; id: string } | { ok: false; error: string }
 
 /** Adds a photo a person uploaded. The first photo on an asset becomes its main photo. */
@@ -167,11 +203,31 @@ export async function addUploadedPhoto(
   client: Queryable,
   orgId: string,
   userId: string,
-  input: { assetId: string; data: Buffer; contentType: string; fileName: string | null; width: number | null; height: number | null },
+  input: {
+    assetId: string
+    data: Buffer
+    contentType: string
+    fileName: string | null
+    width: number | null
+    height: number | null
+    /** Set when the picture is a snapshot of a page of one of the asset's documents. */
+    snapshot?: { documentId: string; page: number; caption: string | null }
+  },
 ): Promise<PhotoResult> {
   if (!(PHOTO_TYPES as readonly string[]).includes(input.contentType)) return { ok: false, error: 'Photos must be JPEG, PNG or WebP pictures.' }
   if (input.data.length === 0) return { ok: false, error: 'That photo is empty.' }
   if (input.data.length > MAX_PHOTO_BYTES) return { ok: false, error: 'That photo is too large.' }
+  const snapshot = input.snapshot
+  if (snapshot) {
+    const document = await client.query('select 1 from documents where org_id = $1 and id = $2 and asset_id = $3', [orgId, snapshot.documentId, input.assetId])
+    if (document.rows.length === 0) return { ok: false, error: 'That document does not belong to this asset.' }
+    // Adding the same page twice changes nothing.
+    const already = await client.query(
+      'select id::text as id from asset_photos where org_id = $1 and asset_id = $2 and document_id = $3 and page = $4 and file_name = $5',
+      [orgId, input.assetId, snapshot.documentId, snapshot.page, snapshotName(snapshot.page)],
+    )
+    if (already.rows[0]) return { ok: true, id: already.rows[0].id as string }
+  }
   const existing = await countPhotos(client, orgId, input.assetId)
   if (existing >= MAX_PHOTOS_PER_ASSET) return { ok: false, error: `An asset can hold up to ${MAX_PHOTOS_PER_ASSET} photos. Remove some first.` }
   const id = await insertPhoto(client, orgId, userId, input.assetId, {
@@ -179,13 +235,13 @@ export async function addUploadedPhoto(
     contentType: input.contentType,
     width: input.width,
     height: input.height,
-    documentId: null,
-    page: null,
-    fileName: input.fileName ? input.fileName.replace(/[\\/]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) || null : null,
-    category: 'other',
-    caption: null,
-    // After the photos that came from documents (their order is the page number).
-    sortOrder: 100000,
+    documentId: snapshot?.documentId ?? null,
+    page: snapshot?.page ?? null,
+    fileName: snapshot ? snapshotName(snapshot.page) : input.fileName ? input.fileName.replace(/[\\/]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) || null : null,
+    category: snapshot ? 'plan' : 'other',
+    caption: snapshot?.caption ? snapshot.caption.replace(/\s+/g, ' ').trim().slice(0, 300) || null : null,
+    // Snapshots sit with their document's photos by page; uploads come after them all.
+    sortOrder: snapshot ? snapshot.page : 100000,
   })
   if (!id) return { ok: false, error: 'This asset already has that photo.' }
   if (!(await hasMain(client, orgId, input.assetId))) await client.query('update asset_photos set is_main = true where org_id = $1 and id = $2', [orgId, id])

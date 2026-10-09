@@ -20,7 +20,9 @@ import { loadSkillsForAgent, skillIndex, type Skill } from './skills'
 
 export type AgentTurn = { role: 'user' | 'assistant'; text: string; attachments?: { id: string; name: string }[] }
 export type AgentLink = { label: string; href: string }
-export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean } | { ok: false; error: string }
+/** Pages of a document for the browser to draw as pictures and add to an asset's photos (plans and maps). */
+export type AgentPages = { assetId: string; documentId: string; pages: { page: number; caption: string | null }[] }
+export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[] } | { ok: false; error: string }
 
 const MAX_TURNS = 40
 const MAX_STEPS = 6
@@ -67,7 +69,7 @@ const TOOLS: ToolDefinition[] = [
   },
 ]
 
-type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string>; skills: Skill[] }
+type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string>; skills: Skill[]; pages: AgentPages[] }
 
 const READ_SKILL: ToolDefinition = {
   name: 'read_skill',
@@ -80,6 +82,7 @@ const asText = (value: unknown, max: number) => String(value ?? '').trim().slice
 function describeReading(session: Session, result: ReadOutcome): string {
   if (!result.ok) return JSON.stringify({ ok: false, error: result.error })
   session.changed = true
+  if (result.planPages.length > 0) session.pages.push({ assetId: result.assetId, documentId: result.documentId, pages: result.planPages })
   session.links.push({ label: `Open ${result.assetName}`, href: `/dashboard/assets/${result.assetId}` })
   session.links.push({ label: 'Review What Was Found', href: `/dashboard/assets/${result.assetId}/documents/${result.documentId}` })
   return JSON.stringify({
@@ -97,6 +100,7 @@ function describeReading(session: Session, result: ReadOutcome): string {
     values_kept_because_the_field_never_replaces: result.counts.kept,
     new_fields_proposed: result.proposals,
     photos_added_to_the_asset: result.photos,
+    plan_and_map_pages_being_added_as_pictures: result.planPages.length,
     values_the_agent_returned_that_did_not_fit_a_field: result.skipped,
   })
 }
@@ -211,7 +215,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
   const turns = input.turns.slice(-MAX_TURNS)
   if (turns.length === 0 || turns[turns.length - 1].role !== 'user') return { ok: false, error: 'Type a message first.' }
 
-  const session: Session = { caller, links: [], changed: false, deadline: Date.now() + TIME_BUDGET_MS, documentIds: new Set(), skills: [] }
+  const session: Session = { caller, links: [], changed: false, deadline: Date.now() + TIME_BUDGET_MS, documentIds: new Set(), skills: [], pages: [] }
   const messages: ChatMessage[] = []
   turns.forEach((turn, index) => {
     let content = asText(turn.text, 8000)
@@ -254,7 +258,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
       const said = answer.content.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text').map((block) => block.text).join('\n').trim()
       const requests = answer.content.filter((block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use')
       if (answer.stopReason !== 'tool_use' || requests.length === 0) {
-        return { ok: true, text: said || 'Done.', links: dedupe(session.links), changed: session.changed }
+        return { ok: true, text: said || 'Done.', links: dedupe(session.links), changed: session.changed, pages: session.pages }
       }
       messages.push({ role: 'assistant', content: answer.content })
       const results: ContentBlock[] = []
@@ -264,7 +268,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
       }
       messages.push({ role: 'user', content: results })
     }
-    return { ok: true, text: 'I did part of that but ran out of steps. Tell me what is still missing and I will carry on.', links: dedupe(session.links), changed: session.changed }
+    return { ok: true, text: 'I did part of that but ran out of steps. Tell me what is still missing and I will carry on.', links: dedupe(session.links), changed: session.changed, pages: session.pages }
   } catch (error) {
     // Anything already done (an asset created, a document read) is still done; say so through the buttons.
     const reason =
@@ -272,7 +276,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
       error instanceof Error && error.name === 'TimeoutError' ? 'Claude took too long to answer.' :
       'Stratios could not reach the Claude API.'
     if (!(error instanceof ApiError)) console.error('Agent failed', error)
-    if (session.changed) return { ok: true, text: `The work was done, but I could not write up the result (${reason}) Use the buttons below to see it.`, links: dedupe(session.links), changed: true }
+    if (session.changed) return { ok: true, text: `The work was done, but I could not write up the result (${reason}) Use the buttons below to see it.`, links: dedupe(session.links), changed: true, pages: session.pages }
     return { ok: false, error: reason }
   }
 }

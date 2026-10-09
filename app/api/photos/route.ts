@@ -32,6 +32,12 @@ export async function POST(request: Request) {
   if (!isUuid(assetId)) return fail('That asset could not be found.', 404)
   if (Number(request.headers.get('content-length') ?? 0) > MAX_PHOTO_BYTES) return fail('That photo is too large.', 413)
 
+  // A snapshot of a page of one of the asset's documents says which document and page it is.
+  const documentId = url.searchParams.get('documentId')
+  const page = size(url.searchParams.get('page'))
+  if (documentId !== null && (!isUuid(documentId) || page === null)) return fail('That document page could not be found.', 400)
+  const snapshot = documentId !== null && page !== null ? { documentId, page, caption: url.searchParams.get('caption') } : undefined
+
   const data = Buffer.from(await request.arrayBuffer())
   if (data.length > MAX_PHOTO_BYTES) return fail('That photo is too large.', 413)
   const contentType = sniff(data)
@@ -49,6 +55,7 @@ export async function POST(request: Request) {
         fileName: url.searchParams.get('name'),
         width: size(url.searchParams.get('width')),
         height: size(url.searchParams.get('height')),
+        snapshot,
       })
       return added.ok ? added : { ...added, status: 400 }
     })

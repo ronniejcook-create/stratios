@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { askAgent, uploadDocument, type AgentLink } from '@/lib/documentClient'
+import { askAgent, uploadDocument, type AgentLink, type AgentPages } from '@/lib/documentClient'
+import { addDocumentPages } from '@/lib/pagePictures'
 import { toHtml } from '@/lib/richText'
 import { useAgentReferences } from './AgentContext'
 import { AiIcon } from './AiIcon'
@@ -29,6 +30,7 @@ export function AgentPanel() {
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<Pending[]>([])
   const [working, setWorking] = useState(false)
+  const [planStatus, setPlanStatus] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const end = useRef<HTMLDivElement>(null)
@@ -88,6 +90,20 @@ export function AgentPanel() {
     }
     setMessages((current) => [...current, { role: 'assistant', text: answer.text, links: answer.links }])
     if (answer.changed) router.refresh()
+    if (answer.pages && answer.pages.length > 0) void addPlanPages(answer.pages)
+  }
+
+  // Plan and map pages are drawn as pictures here in the browser, after the
+  // agent has answered, and added to the asset's photos. It runs on its own:
+  // the person can keep chatting, and a failure only means those pages are
+  // missing (they can be added from the asset's Photos tab).
+  const addPlanPages = async (jobs: AgentPages[]) => {
+    const total = jobs.reduce((sum, job) => sum + job.pages.length, 0)
+    setPlanStatus(total === 1 ? 'Adding 1 plan or map page to the photos…' : `Adding ${total} plan and map pages to the photos…`)
+    let added = 0
+    for (const job of jobs) added += (await addDocumentPages(job.assetId, job.documentId, job.pages)).added
+    setPlanStatus(added === 0 ? null : added === 1 ? '1 plan or map page was added to the photos.' : `${added} plan and map pages were added to the photos.`)
+    if (added > 0) router.refresh()
   }
 
   const hasAttachment = ready.length > 0 || uploading
@@ -154,6 +170,7 @@ export function AgentPanel() {
             <span>{hasAttachmentIn(messages) ? 'Working. Reading a document can take a few minutes; keep this page open.' : 'Working…'}</span>
           </div>
         ) : null}
+        {planStatus ? <p className="agent-status" role="status">{planStatus}</p> : null}
         <div ref={end} />
       </div>
 

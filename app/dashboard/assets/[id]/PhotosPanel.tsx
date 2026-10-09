@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition, type DragEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { Modal } from '@/components/DataGrid'
+import { addDocumentPages, MAX_PAGES_AT_ONCE, parsePages } from '@/lib/pagePictures'
 import { deletePhoto, makeMainPhoto, pullPhotosFromDocuments, savePhotoDetails } from './actions'
 
 export type PhotoRow = {
@@ -16,6 +17,14 @@ export type PhotoRow = {
 }
 
 export type CategoryOption = { value: string; label: string }
+
+/** A document on the asset whose pages can be added as pictures. */
+export type PageSource = {
+  id: string
+  name: string
+  /** Pages the agent marked as plans or maps that are not among the photos yet. */
+  suggested: { page: number; caption: string | null }[]
+}
 
 /** Photos are shrunk to this many pixels on the long side before they are sent. */
 const MAX_SIDE = 2000
@@ -55,6 +64,7 @@ export function PhotosPanel({
   canEdit,
   categories,
   documentCount,
+  pageSources,
   problem,
 }: {
   assetId: string
@@ -63,6 +73,8 @@ export function PhotosPanel({
   categories: CategoryOption[]
   /** How many documents the asset has, for offering to pull their photos. */
   documentCount: number
+  /** The asset's documents, for people who may open them; empty for everyone else. */
+  pageSources: PageSource[]
   /** Set when the photos could not be loaded, for example before the database update. */
   problem: string | null
 }) {
@@ -129,6 +141,57 @@ export function PhotosPanel({
     })
   }
 
+  // Add Pages from a Document: which document, which pages, and how far along it is.
+  const [pagesOpen, setPagesOpen] = useState(false)
+  const [sourceId, setSourceId] = useState('')
+  const [pageText, setPageText] = useState('')
+  const [pagesError, setPagesError] = useState<string | null>(null)
+  const [drawing, setDrawing] = useState<string | null>(null)
+  const source = pageSources.find((candidate) => candidate.id === sourceId)
+  const suggestedCount = pageSources.reduce((sum, candidate) => sum + candidate.suggested.length, 0)
+
+  const choose = (id: string) => {
+    setSourceId(id)
+    setPageText((pageSources.find((candidate) => candidate.id === id)?.suggested ?? []).map((entry) => entry.page).join(', '))
+    setPagesError(null)
+  }
+  const openPages = () => {
+    setError(null)
+    setMessage(null)
+    // Start on the document with pages waiting, if there is one.
+    choose((pageSources.find((candidate) => candidate.suggested.length > 0) ?? pageSources[0])?.id ?? '')
+    setPagesOpen(true)
+  }
+  const addPages = async () => {
+    if (!source) return
+    const pages = parsePages(pageText)
+    if (!pages || pages.length === 0) {
+      setPagesError('Enter page numbers separated by commas, for example 18, 19, 28-30.')
+      return
+    }
+    if (pages.length > MAX_PAGES_AT_ONCE) {
+      setPagesError(`Add up to ${MAX_PAGES_AT_ONCE} pages at a time.`)
+      return
+    }
+    setPagesError(null)
+    setDrawing('Opening the document…')
+    const captions = new Map(source.suggested.map((entry) => [entry.page, entry.caption]))
+    const result = await addDocumentPages(
+      assetId,
+      source.id,
+      pages.map((page) => ({ page, caption: captions.get(page) ?? null })),
+      (done, total) => setDrawing(done < total ? `Adding page ${done + 1} of ${total}…` : 'Finishing…'),
+    )
+    setDrawing(null)
+    if (result.added > 0) router.refresh()
+    if (result.problems.length > 0) {
+      setPagesError(`${result.added > 0 ? `${result.added === 1 ? '1 page was' : `${result.added} pages were`} added. ` : ''}${result.problems.join(' ')}`)
+      return
+    }
+    setMessage(result.added === 1 ? '1 page was added under Plan or Map.' : `${result.added} pages were added under Plan or Map.`)
+    setPagesOpen(false)
+  }
+
   const pull = () => {
     setError(null)
     setMessage(null)
@@ -190,6 +253,11 @@ export function PhotosPanel({
             {documentCount > 0 ? (
               <button type="button" className="btn btn-ghost btn-small" disabled={busy || uploading !== null} onClick={pull} title="Copies the photographs out of the documents already on this asset">
                 {busy ? 'Working…' : 'Get Photos from Documents'}
+              </button>
+            ) : null}
+            {pageSources.length > 0 ? (
+              <button type="button" className="btn btn-ghost btn-small" disabled={busy || uploading !== null} onClick={openPages} title="Adds whole pages of a document, such as floor plans and maps, as pictures">
+                Add Pages from a Document{suggestedCount > 0 ? ` (${suggestedCount})` : ''}
               </button>
             ) : null}
             <span className="note">{uploading ?? 'Or drag pictures onto this panel. JPEG, PNG or WebP.'}</span>
@@ -271,6 +339,37 @@ export function PhotosPanel({
           ))}
         </ul>
       )}
+
+      <Modal open={pagesOpen} title="Add Pages from a Document" onClose={() => { if (!drawing) setPagesOpen(false) }}>
+        <p className="modal-text">
+          Floor plans, stacking plans and maps are usually drawings, so they can&apos;t be copied out like photos. This adds the whole page as a picture, under Plan or Map.
+        </p>
+        <div className="form-row">
+          <div className="field">
+            <label htmlFor="pages-document">Document</label>
+            <select id="pages-document" value={sourceId} disabled={drawing !== null} onChange={(event) => choose(event.target.value)}>
+              {pageSources.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="pages-list">Pages</label>
+            <input id="pages-list" type="text" inputMode="numeric" placeholder="18, 19, 28-30" value={pageText} disabled={drawing !== null} onChange={(event) => setPageText(event.target.value)} />
+          </div>
+        </div>
+        <p className="note">
+          {source && source.suggested.length > 0
+            ? `The agent marked ${source.suggested.length === 1 ? 'this page' : 'these pages'} as plans or maps. Change the list if you want different pages.`
+            : 'Enter the page numbers as the PDF viewer counts them, starting at 1.'}
+        </p>
+        {pagesError ? <p className="form-error" role="alert">{pagesError}</p> : null}
+        {drawing ? <p className="form-ok" role="status">{drawing} Keep this page open.</p> : null}
+        <div className="button-row modal-actions">
+          <button type="button" className="btn btn-ghost btn-small" disabled={drawing !== null} onClick={() => setPagesOpen(false)}>Cancel</button>
+          <button type="button" className="btn btn-primary btn-small" disabled={drawing !== null || !source} onClick={() => void addPages()}>{drawing ? 'Adding…' : 'Add Pages'}</button>
+        </div>
+      </Modal>
 
       <Modal open={viewing !== null} title={viewing?.caption ?? viewing?.categoryLabel ?? 'Photo'} onClose={() => setViewing(null)} wide>
         {viewing ? (

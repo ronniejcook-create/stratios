@@ -332,8 +332,8 @@ work and how data is isolated; this file covers how we work and where things sta
       start; `package.json` only, the lock file could not be updated here because npm is
       unreachable, Vercel's install resolves it). It copies out pictures stored as plain JPEG,
       at least 600 x 400, not banners, not print (CMYK) color, up to 40 per document. Logos and
-      icons fall away by size. Maps and floor plans stored another way are **not** captured, and
-      a flattened brochure yields little.
+      icons fall away by size. Maps and floor plans are not pictures in the file, so they come in as page
+      pictures instead (below); a flattened brochure yields little by this route.
     - Labels: the reading's answer format gained `photos` (page, category, caption) and
       `main_photo_page` (`lib/extraction.ts`); pictures are matched to the agent's notes by page.
       Categories: exterior, interior, aerial, area, plan, other. Two-page spreads arrive as two
@@ -352,9 +352,29 @@ work and how data is isolated; this file covers how we work and where things sta
       (no agent call, so no captions). The main photo shows beside the asset's title and as a
       thumbnail in the Assets list (`DataGrid` `thumbnails`). Photos are served by
       `GET /api/photos/[id]` to signed-in members of the organization.
+    - **Plan and map pages** (October 9, later; `db/migrations/014_document_photo_notes.sql`):
+      floor plans, stacking plans and maps are drawings inside a PDF, not pictures that can be
+      copied out, so the whole page is drawn and saved as a JPEG under Plan or Map. The drawing
+      happens **in the browser** (`lib/pagePictures.ts`) with PDF.js served as plain files from
+      `public/pdfjs/` (legacy build 6.2.108, loaded by a small module script so it stays out of
+      the bundle; not in package.json). Drawing on the server with a native canvas was tried in
+      the workspace and dropped as too fragile to ship untested. Each picture goes to
+      `POST /api/photos` with `documentId` and `page`; a page added twice is one photo
+      (`file_name` "Page N" marks a page picture).
+      - The agent's notes are kept on the document (`documents.photo_notes`, migration 014; read
+        through `to_jsonb` so pages work before it is run). `planPagesOf` picks the plan pages.
+      - Chat: the reply carries `pages` and `AgentPanel` adds them in the background, with a
+        status line. Photos tab: **Add Pages from a Document** (document, page list such as
+        "18, 19, 28-30", prefilled with the agent's plan pages not yet added). That button also
+        covers flattened memorandums and documents read before notes were kept. Reading from
+        the Documents tab does not add plan pages by itself; the button shows them as waiting.
+      - Needs `access.canAddRecords` (it opens the document file).
     - Permissions: everyone in the organization sees photos; adding, editing and removing need
       `access.canAddRecords`, like documents. Deleting an asset deletes its photos (cascade);
       removing a document keeps the photos that came from it.
+    - Checked for page pictures: 014 twice, notes and page-picture storage on the scratch
+      database, and the real `lib/pagePictures.ts` in Chromium against a stand-in server with
+      his memorandum (pages 18, 19 and 28 drawn and sent). Not run inside the app.
     - Checked: the migration twice on the scratch database, and extraction, labels, main photo
       choice, duplicates, upload, edit, remove and organization isolation through `lib/photos.ts`
       with his real memorandum (all passed). The screens were checked as a mock; the routes and

@@ -11,7 +11,7 @@ import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from
 import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
 import { AddAddressForm, AddChildForm } from './AddForms'
-import { listPhotos, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo } from '@/lib/photos'
+import { listPhotos, listPlanPages, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo, type PlanPage } from '@/lib/photos'
 import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
 import { PhotosPanel, type PhotoRow } from './PhotosPanel'
 import { FieldGroup, type FieldView, type Target } from './FieldGroup'
@@ -133,6 +133,16 @@ export default async function AssetPage({
     source: photo.documentName ? `From ${photo.documentName}${photo.page ? `, page ${photo.page}` : ''}` : photo.page ? `From a document that was removed, page ${photo.page}` : 'Uploaded',
   }))
   const mainPhoto = photos.find((photo) => photo.isMain)
+
+  // Pages the agent marked as plans or maps, for the Photos tab to offer. Missing notes are not an error.
+  let planPages = new Map<string, PlanPage[]>()
+  if (access.canAddRecords && !photosError) {
+    try {
+      planPages = await withOrg(orgId, (client) => listPlanPages(client, orgId, tree.id))
+    } catch (error) {
+      console.error('Listing plan pages failed', error)
+    }
+  }
 
   // Documents are loaded on their own, so the asset still opens if their tables aren't there yet.
   let documents: DocumentSummary[] = []
@@ -455,6 +465,18 @@ export default async function AssetPage({
                 canEdit={access.canAddRecords}
                 categories={PHOTO_CATEGORIES.map((value) => ({ value, label: PHOTO_CATEGORY_LABELS[value] }))}
                 documentCount={documents.length}
+                pageSources={
+                  access.canAddRecords
+                    ? documents.map((document) => ({
+                        id: document.id,
+                        name: document.name,
+                        // Leave out pages that are already among the photos as a page picture.
+                        suggested: (planPages.get(document.id) ?? []).filter(
+                          (entry) => !photos.some((photo) => photo.documentId === document.id && photo.page === entry.page && photo.fileName !== null),
+                        ),
+                      }))
+                    : []
+                }
                 problem={photosError}
               />
             ),
