@@ -41,9 +41,18 @@ export const GRAPH_PRESETS: { name: string; colors: string[] }[] = [
   { name: 'Nordic', colors: ['#4c6a92', '#a3be8c', '#bf616a', '#88c0d0', '#d08770', '#5e81ac', '#ebcb8b', '#b48ead'] },
   { name: 'Tropical', colors: ['#ff6b6b', '#ffd166', '#1a936f', '#06d6a0', '#ef476f', '#118ab2', '#f78c6b', '#8338ec'] },
   { name: 'Finance', colors: ['#1d3557', '#2a9d8f', '#e9c46a', '#6c757d', '#90be6d', '#457b9d', '#a8dadc', '#b5651d'] },
-  // One blue from dark to light, the shading the stack plan was first drawn in. As a ramp it reads best where
-  // order matters (sooner to later); in a pie, neighbouring slices are closer than in the other palettes.
-  { name: 'Blues', colors: ['#0d366b', '#1c5cab', '#3987e5', '#86b6ef', '#cde2fb', '#5f9fe9', '#2a71c8', '#a9cdf5'] },
+  // One color each, in eight shades from darkest to lightest. The Blues are the shading the stack plan was first
+  // drawn in; the others follow the same steps of lightness and strength in their own hue. A ramp reads best
+  // where order matters (sooner to later); in a pie, neighbouring slices are closer than in the other palettes.
+  { name: 'Blues', colors: ['#184076', '#1c5cab', '#2a71c8', '#3987e5', '#5f9fe9', '#86b6ef', '#a9cdf5', '#c0daf9'] },
+  { name: 'Reds', colors: ['#6d2621', '#9e342e', '#ba463e', '#d7584f', '#e07a70', '#ea9a91', '#f3b9b1', '#f7cbc5'] },
+  { name: 'Oranges', colors: ['#672f00', '#924500', '#af5504', '#cf6503', '#d9834b', '#e4a178', '#eebda1', '#f3ceb8'] },
+  { name: 'Golds', colors: ['#543d00', '#775800', '#906b01', '#aa7f01', '#be9534', '#cdae6c', '#ddc799', '#e6d5b3'] },
+  { name: 'Greens', colors: ['#094f1e', '#03712b', '#148839', '#2ba04a', '#5fb16d', '#87c48f', '#acd6b1', '#c1e1c4'] },
+  { name: 'Teals', colors: ['#034b4b', '#016b6c', '#008283', '#079a9a', '#00b2b2', '#5dc6c5', '#94d8d7', '#b0e2e1'] },
+  { name: 'Purples', colors: ['#4a326f', '#6b46a0', '#8058bc', '#976cd8', '#a888df', '#bca4e7', '#d0c0f0', '#dcd0f4'] },
+  { name: 'Pinks', colors: ['#682547', '#963366', '#b1447b', '#cc5791', '#d778a4', '#e399b9', '#edb7ce', '#f3cada'] },
+  { name: 'Greys', colors: ['#414141', '#5d5d5d', '#727272', '#878787', '#9c9c9c', '#b2b2b2', '#c9c9c9', '#d7d7d7'] },
   // One basic color in four shades, mixed with black and greys; ordered so
   // neighbouring slices differ as much as possible.
   { name: 'Red & Greys', colors: ['#d73431', '#1b1b1b', '#808080', '#febab2', '#94020d', '#fd7468', '#484848', '#bebebe'] },
