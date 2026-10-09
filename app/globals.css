@@ -740,7 +740,9 @@ td.muted { color: var(--dim); }
 .rent-roll-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 20px; margin-top: 6px; }
 .rent-roll-head .field { flex: 0 1 420px; }
 .rent-roll-date { font-size: 15px; font-weight: 600; color: var(--heading); }
-.rent-roll-actions { display: flex; gap: 14px; padding-bottom: 6px; }
+.rent-roll-actions { display: flex; gap: 8px; }
+.modal-check { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; font-size: 14px; cursor: pointer; }
+.modal-check input { margin-top: 3px; accent-color: var(--accent); }
 .field-list.tiles.rent-roll-tiles { margin: 12px 0 4px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
 .rent-roll-tile, .field-list.tiles .rent-roll-tile:hover { cursor: default; border-color: var(--line); }
 .review-entry > div + div { margin-top: 2px; }

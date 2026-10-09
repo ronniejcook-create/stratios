@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { DataGrid, type GridColumn, type GridRow, type GridTone } from '@/components/DataGrid'
+import { DataGrid, Modal, type GridColumn, type GridRow, type GridTone } from '@/components/DataGrid'
 import { RENT_ROLL_STATUS_LABELS, summarize, type RentRollRow, type RentRollStatus } from '@/lib/rentRolls'
 import { changeRentRollDate, removeRentRoll } from './actions'
 
@@ -70,6 +70,8 @@ export function RentRollPanel({
   const [busy, start] = useTransition()
   const [mode, setMode] = useState<'view' | 'date' | 'remove'>('view')
   const [date, setDate] = useState('')
+  const [withDocument, setWithDocument] = useState(true)
+  const [done, setDone] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const selected = choices.find((choice) => choice.id === selectedId) ?? null
 
@@ -77,6 +79,7 @@ export function RentRollPanel({
     return (
       <section className="panel">
         <h2>Rent Roll</h2>
+        {done ? <p className="form-ok" role="status">{done}</p> : null}
         <p className="empty">
           No rent roll has been loaded for this asset yet.
           {canEdit ? ' Drop a rent roll (PDF or Excel) on the agent column and ask the analyst to load it, or upload it on the Documents tab. Each one is kept as its own dated snapshot.' : ''}
@@ -170,8 +173,8 @@ export function RentRollPanel({
         )}
         {canEdit && mode === 'view' ? (
           <span className="rent-roll-actions">
-            <button type="button" className="link-button" onClick={() => { setDate(selected.asOfDate); setError(null); setMode('date') }}>Change Date</button>
-            <button type="button" className="link-button danger" onClick={() => { setError(null); setMode('remove') }}>Remove Rent Roll</button>
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => { setDate(selected.asOfDate); setError(null); setMode('date') }}>Change Date</button>
+            <button type="button" className="btn btn-ghost btn-small danger" onClick={() => { setError(null); setWithDocument(true); setMode('remove') }}>Delete Rent Roll</button>
           </span>
         ) : null}
       </div>
@@ -194,14 +197,46 @@ export function RentRollPanel({
           </div>
         </form>
       ) : null}
-      {mode === 'remove' ? (
-        <p className="review-actions">
-          <span className="note">This removes this snapshot and its {selected.rowCount} rows. The document it came from, and any values filled in from it, stay.</span>
-          <button type="button" className="btn btn-ghost btn-small danger" disabled={busy} onClick={() => act(() => removeRentRoll({ rentRollId: selected.id }), () => router.push(`/dashboard/assets/${assetId}?screen=_rentroll`))}>Confirm Remove</button>
-          <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setMode('view')}>Cancel</button>
+      <Modal open={mode === 'remove'} title="Delete This Rent Roll?" onClose={() => { if (!busy) setMode('view') }}>
+        <p className="modal-text">
+          The rent roll <strong>as of {day(selected.asOfDate)}</strong> and its {selected.rowCount} {selected.rowCount === 1 ? 'row' : 'rows'} will be permanently deleted. Other rent rolls on this asset are not touched, and values already filled in from the document stay.
         </p>
-      ) : null}
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+        {selected.documentId ? (
+          <label className="modal-check">
+            <input type="checkbox" checked={withDocument} onChange={(event) => setWithDocument(event.target.checked)} />
+            <span>Also delete the document it came from ({selected.documentName}), so the same file can be loaded again from scratch.</span>
+          </label>
+        ) : null}
+        <p className="modal-text modal-warning">This cannot be undone. Are you sure?</p>
+        {mode === 'remove' && error ? <p className="form-error" role="alert">{error}</p> : null}
+        <div className="button-row modal-actions">
+          <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setMode('view')}>Cancel</button>
+          <button
+            type="button"
+            className="btn btn-small btn-danger"
+            disabled={busy}
+            onClick={() => {
+              setError(null)
+              start(async () => {
+                const result = await removeRentRoll({ rentRollId: selected.id, withDocument: withDocument && selected.documentId !== null })
+                if (!result.ok) {
+                  setError(result.error)
+                  return
+                }
+                setMode('view')
+                setDone(result.message)
+                // Back to the tab without the deleted snapshot in the address, then load what is left.
+                router.replace(`/dashboard/assets/${assetId}?screen=_rentroll`)
+                router.refresh()
+              })
+            }}
+          >
+            {busy ? 'Deleting…' : 'Yes, Delete Rent Roll'}
+          </button>
+        </div>
+      </Modal>
+      {mode !== 'remove' && error ? <p className="form-error" role="alert">{error}</p> : null}
+      {done ? <p className="form-ok" role="status">{done}</p> : null}
 
       <p className="note">
         {selected.documentName ? (

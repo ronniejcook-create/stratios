@@ -664,7 +664,10 @@ work and how data is isolated; this file covers how we work and where things sta
       replaces its snapshot. The answer limit is now 28,000 tokens.
     - Screen: a **Rent Roll** tab on the asset (key `_rentroll`, before Map;
       `RentRollPanel.tsx`): snapshot picker (`?rentRoll=<id>`, latest date first), Change Date,
-      Remove Rent Roll, tiles added up from the rows (total, leased with percent, vacant, not
+      **Delete Rent Roll** (a button with an "are you sure" pop-up and a ticked-by-default box
+      to delete the document it came from too, so the file can be loaded again; the first
+      version was a small red "Remove Rent Roll" link, and Ronnie reported he had no way to
+      delete one), tiles added up from the rows (total, leased with percent, vacant, not
       for lease, tenants, annual base rent), a warning when the document's own total differs
       from the rows, and the rows in `DataGrid`. The review page links to the snapshot, and the
       analyst's reply has an Open Rent Roll button. The tab is shown only to people with

@@ -7,7 +7,7 @@ import { isMissingSchema, withOrg } from '@/lib/db'
 import { listHistory, saveManualValue, type HistoryEntry } from '@/lib/fields'
 import { removeListRow, saveListRow } from '@/lib/lists'
 import { loadAccess, sectionOfField } from '@/lib/permissions'
-import { listDocuments, readDocumentFile } from '@/lib/documents'
+import { getDocument, listDocuments, readDocumentFile, removeDocument } from '@/lib/documents'
 import { extractPhotos } from '@/lib/photoExtraction'
 import { joinSpreads } from '@/lib/photoJoin'
 import { isPhotoCategory, removePhoto, savePhotosFromDocument, setMainPhoto, updatePhoto } from '@/lib/photos'
@@ -505,7 +505,39 @@ export async function changeRentRollDate(input: { rentRollId: string; date: stri
   return changeRentRoll(input.rentRollId, (client, orgId) => setRentRollDate(client, orgId, input.rentRollId, date))
 }
 
-/** Removes one rent roll snapshot and its rows. */
-export async function removeRentRoll(input: { rentRollId: string }): Promise<SaveFieldResult> {
-  return changeRentRoll(input.rentRollId, (client, orgId) => deleteRentRoll(client, orgId, input.rentRollId))
+/**
+ * Deletes one rent roll snapshot and its rows, for good. With `withDocument`
+ * the document it came from is deleted too (by an administrator or the person
+ * who uploaded it, as on the document's own page), so the file can be loaded
+ * again from scratch.
+ */
+export async function removeRentRoll(input: { rentRollId: string; withDocument?: boolean }): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  const { userId, orgId, orgRole } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (!isUuid(input.rentRollId)) return { ok: false, error: 'That rent roll could not be found.' }
+  try {
+    const result = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      if (!access.canAddRecords) return { ok: false as const, error: NO_PERMISSION }
+      const rentRoll = await getRentRoll(client, orgId, input.rentRollId)
+      if (!rentRoll || !(await deleteRentRoll(client, orgId, input.rentRollId))) return { ok: false as const, error: 'That rent roll could not be found. It may already have been deleted; reload the page.' }
+      let message = 'The rent roll was deleted.'
+      if (input.withDocument === true && rentRoll.documentId) {
+        const document = await getDocument(client, orgId, rentRoll.documentId)
+        if (document && (orgRole === 'org:admin' || document.uploadedBy === userId)) {
+          await removeDocument(client, orgId, document.id)
+          message = 'The rent roll and its document were deleted. You can load the file again.'
+        } else if (document) {
+          message = 'The rent roll was deleted. Its document was kept: only an administrator or the person who uploaded it can delete a document.'
+        }
+      }
+      return { ok: true as const, assetId: rentRoll.assetId, message }
+    })
+    if (!result.ok) return result
+    revalidatePath(`/dashboard/assets/${result.assetId}`)
+    return { ok: true, message: result.message }
+  } catch (error) {
+    console.error('Deleting a rent roll failed', error)
+    return { ok: false, error: 'The rent roll could not be deleted. Try again.' }
+  }
 }

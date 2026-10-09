@@ -496,7 +496,6 @@ export default async function AssetPage({
                     </section>
                   ) : (
                     <RentRollPanel
-                      key={rentRollSelected ?? 'none'}
                       assetId={tree.id}
                       choices={rentRollChoices}
                       selectedId={rentRollSelected}
