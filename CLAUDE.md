@@ -978,32 +978,58 @@ work and how data is isolated; this file covers how we work and where things sta
   Settings storage: `lib/orgSettings.ts` (`organization_settings` table; falls back to Clerk
   metadata without a database).
 
-## Where we left off (October 8, 2026)
+## Where we left off (end of October 9, 2026)
 
-Stages 1 to 3 of the data design's build order are built, deployed and confirmed by Ronnie as
-visible (stage 4 is described below): the asset hierarchy and fields, screens/sections/lists with click-to-reference, the
-Fields and Layout admin, roles and field permissions, and the Master Library. Migrations 003 to
-007 have been run on Supabase. He chose to spend time trying what is built before going further.
+Everything described above is committed, pushed to `main`, built by Vercel and copied to his
+folder. The last commit of the day is "Jobs and commuting on the asset map". Nothing is half
+done.
 
-Stage 4 (document upload and the extraction agent) and the chat in the agent column were built
-late on October 8 and pushed. Ronnie needs to run `008_documents.sql` and `009_agent_documents.sql`
-on Supabase and then try it with a real PDF, by dropping it on the agent column; expect fixes, since
-the upload routes, the screens and the Claude call were not run before delivery. Next after that:
-stage 5 AI skills that calculate and store KPIs (two open questions in the design document must be
-answered first), then stage 6 tenants, leases, rent roll, cash flow and feeds.
+**The day's last stretch was the Map tab.** It now has a row of tabs, one layer at a time: None,
+Demographics, Schools, Jobs and Commuting, Transit, Flood Zones, Natural Hazards, plus a separate
+"Show 1, 3 and 5 Mile Rings" tick box. Each layer is described under "Address lookup and map
+coordinates" above. None of the five new layers needed a migration or a new key.
 
-Things not yet verified or still owed:
+**What Ronnie has not yet told us, so ask or expect it first thing:**
 
-- None of the stage 1 to 3 screens were seen in a browser by Claude; Ronnie has only confirmed
-  they appear. Expect small layout or behavior fixes as he uses them.
-- Signing in as a non-administrator (to see hidden and view-only fields) has not been tried.
-- The Member role defaults to view, so non-admins can't edit until given a role. This follows
-  the design document; he was told and can change the Member default to edit.
-- Agents must follow field permissions, and a KPI built from a hidden field must be hidden, once
-  the analyst and formulas exist.
+- Whether the new layers load on dev.stratios.app. Flood Zones, Schools, Transit, Natural
+  Hazards and Jobs each ask a federal map service from Vercel's servers, and that could not be
+  tested from the cloud workspace. Each was checked against the real service only through the
+  browser on his computer. If one says "could not be reached", move its questions to the
+  browser: the reading code in each `lib/` file is browser-safe above its last function.
+- Whether the commuting table (inside Jobs and Commuting) works. It uses the Census key and has
+  never run against the real service.
+- Whether readings work again after the answer-format fix, and whether migration 021 is run
+  (floors and the stack plan need it; a rent roll loaded before it must be loaded again).
+
+**How the federal services were checked:** the cloud workspace can't reach them, so questions
+were run in the built-in browser on his computer (he allowed hazards.fema.gov, nces.ed.gov and
+services.arcgis.com for it), and the answers were fed to the real components in Chromium here.
+The same route works for checking any new public service.
+
+**Offered and not started:**
+
+- More map layers he asked about: crime (city by city only; Dallas publishes incidents),
+  traffic counts (state by state; Texas has them), Opportunity Zones, EPA environmental sites.
+- Saving what the layers find onto the property as fields (flood zone, school district,
+  nearest rail station, hazard ratings, jobs within 3 miles), so they show on Overview and in
+  the Assets list. Today every layer is looked up when its tab is opened and nothing is stored.
+- Fresher job counts by importing the Census Bureau's yearly bulk job files into the database
+  (the EPA figures in the Jobs tab are from 2017).
+- A portfolio-wide map of all assets.
+- Rent rolls: a check against loading the same one twice, a history view across dates, editing
+  a floor by hand, combining a mixed-use building's two rent rolls, residential columns.
+- Before customers: a paid map tile source in place of OpenStreetMap's free tiles, and a word
+  with counsel about showing neighborhood demographics.
+
+**Still owed from earlier:**
+
+- Most screens have been checked only as test pages, not inside the signed-in app; expect small
+  layout or behavior fixes as he uses them.
+- Signing in as a non-administrator (hidden and view-only fields) has not been tried.
+- Agents must follow field permissions, and a KPI built from a hidden field must be hidden.
 - Organizations can't rename, reorder or hide standard sections and screens yet.
-- The design document's build-order section notes that steps 1 to 3 are built; update it as
-  later stages land.
+- The design document "Stratios Data Design" is behind: its build order and Starter Fields tab
+  do not yet cover stages 4 to 6, the 22 fields from migration 017, or rent rolls.
 
 ## Ideas offered but not started
 
