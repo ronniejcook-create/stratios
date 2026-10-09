@@ -441,6 +441,31 @@ work and how data is isolated; this file covers how we work and where things sta
       fills the height left on the screen below it (`fill` in the component, minimum 320 px). He was told: OpenStreetMap's free tiles are fine for testing
       but not meant for heavy commercial traffic, so pick a paid tile source or Google before
       real customers; there is no portfolio-wide map of all assets yet.
+    - **Demographics on the map** (October 9, later; Ronnie asked for overlays and chose Census
+      demographics with 1, 3 and 5 mile rings first). Beside the map, **Show Demographics**
+      (`AssetMap.tsx`) loads `GET /api/demographics?addressId=` (takes an address of the
+      organization, never raw coordinates) -> `lib/demographics.ts`:
+      - TIGERweb (no key) gives the census tracts within five miles with simplified outlines;
+        the **Census Data API** gives each tract's American Community Survey 5-year figures.
+        The Data API now refuses every request without a key, so it needs a free key in
+        **`CENSUS_API_KEY`** (Vercel and `.env.local`; signup at
+        api.census.gov/data/key_signup.html). Without it the panel says so. It asks for the
+        2024 survey and falls back to 2023. Answers are kept for a month by Next's fetch cache.
+      - The map shades tracts by a chosen figure (median household income, population density,
+        median age, share of homes rented, share of adults with a bachelor's degree or more) in
+        five equal-count groups of one blue ramp, with a color key and a hover label per tract,
+        and draws dashed rings. A table gives estimated population, households, average
+        household income, renters and degrees within each ring. Ring totals apportion each
+        tract by the share of its land inside the ring (`sharesWithin`, a 28 x 28 sample grid;
+        within half a percent on a known shape). Medians can't be added up, which is why the
+        rings show average income and the shading shows median income.
+      - Nothing is stored on the property yet; he was told saving these as fields is the more
+        useful next step, and that neighborhood demographics are sensitive where they bear on
+        leasing or lending decisions (worth a word with counsel before customers see it).
+        Crime, flood zones, traffic and other overlays he asked about are not started.
+      - Checked: the arithmetic and the Census calls with scripted answers, and the real panel
+        and map in Chromium with made-up figures. Never run against the real Data API (no key
+        here); TIGERweb's field names were confirmed against a live answer.
     - Addresses on units are not listed with these actions or pinned (units show their address
       as a tooltip, as before).
     - Checked for the map: the real component in Chromium with the real Leaflet files and

@@ -8,11 +8,12 @@ import { EMPTY_VALUE } from '@/lib/fieldFormat'
 import { listFields, listSourceTypes, listValues, type FieldDefinition, type FieldValue } from '@/lib/fields'
 import { listScreens, type Screen, type Section } from '@/lib/layout'
 import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from '@/lib/lists'
-import { PropertyMap, type MapPin } from '@/components/PropertyMap'
+import type { MapPin } from '@/components/PropertyMap'
 import { typeAheadEnabled } from '@/lib/googlePlaces'
 import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
 import { AddAddressForm, AddChildForm, AddressList } from './AddForms'
+import { AssetMap } from './AssetMap'
 import { listPhotos, listPlanPages, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo, type PlanPage } from '@/lib/photos'
 import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
 import { PhotosPanel, type PhotoRow } from './PhotosPanel'
@@ -483,7 +484,7 @@ export default async function AssetPage({
                       {mapPins.length === 1 ? 'One address is pinned.' : `${mapPins.length} addresses are pinned.`} Click a pin for its address. Scroll or use the + and − buttons to zoom.
                       {unpinned > 0 ? ` ${unpinned === 1 ? '1 address has' : `${unpinned} addresses have`} no map location yet${access.canAddRecords ? '; use Find Location beside it' : ''}.` : ''}
                     </p>
-                    <PropertyMap pins={mapPins} />
+                    <AssetMap pins={mapPins} />
                   </>
                 )}
               </section>

@@ -866,3 +866,29 @@ td.muted { color: var(--dim); }
 .map-popup strong { display: block; color: var(--heading); font-size: 14px; }
 .property-map .map-popup a { display: inline-block; margin-top: 6px; color: var(--link); }
 .property-map .leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
+
+/* Map tab with demographics: the map beside a panel of controls, a color key and the ring table. */
+.map-layout { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
+.map-main { flex: 1 1 420px; min-width: 0; }
+.map-main .property-map { margin-top: 0; }
+.map-side { flex: 0 1 300px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.map-side h3 { font-size: 14px; }
+.map-side .field { width: 100%; flex: none; }
+.shell-main .map-side .note, .shell-main .map-side .form-error { margin-top: 0; }
+.map-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; color: var(--text); }
+.map-legend li { display: flex; align-items: center; gap: 8px; }
+.map-swatch { width: 18px; height: 12px; flex: none; border-radius: 2px; border: 1px solid rgba(255, 255, 255, 0.35); }
+.map-swatch-empty { background: transparent; border-style: dashed; }
+.map-check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.map-check input { width: 15px; height: 15px; accent-color: var(--accent); }
+.map-side .table-scroll { width: 100%; margin-top: 0; }
+.shell-main .map-rings { min-width: 0; font-size: 13px; }
+.map-rings caption { padding-bottom: 4px; text-align: left; font-weight: 600; color: var(--heading); }
+.shell-main .map-rings th, .shell-main .map-rings td { padding: 5px 6px; }
+.map-rings td, .map-rings thead th { text-align: right; white-space: nowrap; }
+.map-rings tbody th { font-weight: 400; color: var(--text); font-size: 13px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.map-ring-label { background: none; border: 0; }
+.map-ring-label span { display: block; padding: 0 4px; border-radius: 999px; background: #1f2937; color: #ffffff; font-size: 11px; line-height: 20px; text-align: center; white-space: nowrap; }
+.leaflet-tooltip.map-tip { background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); font: inherit; font-size: 12px; line-height: 1.45; }
+.leaflet-tooltip.map-tip::before { display: none; }

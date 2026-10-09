@@ -5,12 +5,21 @@ import { useEffect, useRef, useState } from 'react'
 /** One pin: a place with a name, the address shown under it, and where it is. */
 export type MapPin = { id: string; title: string; subtitle: string; address: string; latitude: number; longitude: number }
 
+/** A shaded area laid over the map: its shape (rings of [latitude, longitude]), its color, and what hovering it says. */
+export type MapArea = { id: string; outline: [number, number][][]; color: string | null; label: string }
+/** Circles drawn around a point, each so many miles out. */
+export type MapRings = { center: [number, number]; miles: readonly number[] }
+
 // The little of Leaflet that is used here. Leaflet is loaded as plain files
 // from /leaflet (see public/leaflet/README.txt), so it brings no types.
+type Bounds = [number, number][]
+type LeafletLayer = { addTo(target: LeafletMap | LeafletGroup): LeafletLayer; bindTooltip(text: string, options: Record<string, unknown>): LeafletLayer; getBounds(): { pad(ratio: number): unknown } }
+type LeafletGroup = { addTo(map: LeafletMap): LeafletGroup; clearLayers(): void; remove(): void }
 type LeafletMap = {
   setView(center: [number, number], zoom: number): LeafletMap
-  fitBounds(bounds: [number, number][], options: { padding: [number, number]; maxZoom: number }): LeafletMap
+  fitBounds(bounds: Bounds | unknown, options: { padding: [number, number]; maxZoom: number }): LeafletMap
   invalidateSize(): void
+  closePopup(): void
   remove(): void
 }
 type LeafletMarker = { addTo(map: LeafletMap): LeafletMarker; bindPopup(content: HTMLElement): LeafletMarker; openPopup(): LeafletMarker }
@@ -18,7 +27,10 @@ type Leaflet = {
   map(element: HTMLElement, options: { scrollWheelZoom: boolean }): LeafletMap
   tileLayer(url: string, options: { maxZoom: number; attribution: string }): { addTo(map: LeafletMap): unknown }
   marker(position: [number, number], options: { icon: unknown; title: string; alt: string }): LeafletMarker
-  divIcon(options: { className: string; html: string; iconSize: [number, number]; iconAnchor: [number, number]; popupAnchor: [number, number] }): unknown
+  divIcon(options: { className: string; html: string; iconSize: [number, number]; iconAnchor: [number, number]; popupAnchor?: [number, number] }): unknown
+  layerGroup(): LeafletGroup
+  polygon(outline: [number, number][][], options: Record<string, unknown>): LeafletLayer
+  circle(center: [number, number], options: Record<string, unknown>): LeafletLayer
 }
 
 /** Street-map pictures come from OpenStreetMap, which asks for this credit on the map. */
@@ -29,6 +41,7 @@ const ONE_PIN_ZOOM = 16
 const MIN_HEIGHT = 320
 /** Room left under the map for the panel's edge and the page's bottom margin. */
 const BOTTOM_GAP = 40
+const METERS_PER_MILE = 1609.344
 
 let loading: Promise<Leaflet> | null = null
 
@@ -78,15 +91,24 @@ function popup(pin: MapPin): HTMLElement {
   return box
 }
 
+/** Leaflet shows tooltip text as HTML, so anything from data is made safe first. */
+const safe = (text: string) => text.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`)
+
 /**
  * A street map with a pin for each place. One pin is shown close up; several
  * are all fitted in view. The map sits in a tab that starts hidden, so it is
  * only sized and centered once its box has a real size. It fills the height
  * left on the screen, and the scroll wheel zooms it.
+ *
+ * `areas` and `rings` lay information over the map (shaded neighborhoods,
+ * distance circles). They are drawn under the pins and can change without the
+ * map starting over; when rings appear the view widens to take them in.
  */
-export function PropertyMap({ pins }: { pins: MapPin[] }) {
+export function PropertyMap({ pins, areas, rings }: { pins: MapPin[]; areas?: MapArea[]; rings?: MapRings | null }) {
   const box = useRef<HTMLDivElement>(null)
   const [problem, setProblem] = useState<string | null>(null)
+  // The live map and Leaflet itself, once ready, for the overlay to draw on.
+  const [ready, setReady] = useState<{ leaflet: Leaflet; map: LeafletMap } | null>(null)
   // Redraw only when the pins themselves change, not on every page refresh.
   const signature = pins.map((pin) => `${pin.id}:${pin.latitude},${pin.longitude}:${pin.title}:${pin.address}`).join('|')
 
@@ -125,6 +147,7 @@ export function PropertyMap({ pins }: { pins: MapPin[] }) {
         // Framed again the first time the box has a real size (the tab being opened), and kept in step with resizing after that.
         let framed = element.clientWidth > 0
         if (framed && pins.length === 1) markers[0].openPopup()
+        if (framed) setReady({ leaflet, map })
         observer = new ResizeObserver(() => {
           if (!map || element.clientWidth === 0) return
           if (framed) {
@@ -134,6 +157,7 @@ export function PropertyMap({ pins }: { pins: MapPin[] }) {
           framed = true
           frame()
           if (pins.length === 1) markers[0].openPopup()
+          setReady({ leaflet, map })
         })
         observer.observe(element)
         onResize = () => {
@@ -149,12 +173,50 @@ export function PropertyMap({ pins }: { pins: MapPin[] }) {
 
     return () => {
       cancelled = true
+      setReady(null)
       observer?.disconnect()
       if (onResize) window.removeEventListener('resize', onResize)
       map?.remove()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature])
+
+  // The overlay: shaded areas first, then the distance circles on top of them. Pins stay above both.
+  const ringKey = rings ? `${rings.center.join(',')}:${rings.miles.join(',')}` : ''
+  useEffect(() => {
+    if (!ready) return
+    const { leaflet, map } = ready
+    const group = leaflet.layerGroup().addTo(map)
+    // The pin's pop-up would sit on top of what is being shown, so it steps aside; clicking the pin brings it back.
+    if ((areas && areas.length > 0) || rings) map.closePopup()
+    for (const area of areas ?? []) {
+      leaflet
+        .polygon(area.outline, {
+          // A thin light edge keeps neighboring areas apart; an area with no figure is left clear.
+          color: '#ffffff', weight: 1, opacity: area.color ? 0.9 : 0.5,
+          fillColor: area.color ?? '#000000', fillOpacity: area.color ? 0.62 : 0, fillRule: 'evenodd',
+        })
+        .bindTooltip(safe(area.label).replace(/\n/g, '<br>'), { sticky: true, direction: 'top', className: 'map-tip' })
+        .addTo(group)
+    }
+    if (rings) {
+      let outer: LeafletLayer | null = null
+      for (const miles of [...rings.miles].sort((a, b) => a - b)) {
+        outer = leaflet.circle(rings.center, { radius: miles * METERS_PER_MILE, color: '#1f2937', weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(group)
+        // Each circle is named where it crosses due north of the point.
+        const north: [number, number] = [rings.center[0] + (miles * METERS_PER_MILE) / 111320, rings.center[1]]
+        leaflet
+          .marker(north, { icon: leaflet.divIcon({ className: 'map-ring-label', html: `<span>${miles} mi</span>`, iconSize: [44, 20], iconAnchor: [22, 10] }), title: `${miles} mile ring`, alt: `${miles} mile ring` })
+          .addTo(group as unknown as LeafletMap)
+      }
+      if (outer) map.fitBounds(outer.getBounds().pad(0.04), { padding: [10, 10], maxZoom: ONE_PIN_ZOOM })
+    }
+    return () => {
+      group.clearLayers()
+      group.remove()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, areas, ringKey])
 
   if (problem) return <p className="form-error" role="alert">{problem}</p>
   return <div ref={box} className="property-map" role="region" aria-label="Map of this asset's addresses" />
