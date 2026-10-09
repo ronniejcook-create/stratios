@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { PROPERTY_TYPES } from '@/lib/assets'
 import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
+import { listDocuments, MAX_DOCUMENT_BYTES, type DocumentSummary } from '@/lib/documents'
 import { EMPTY_VALUE } from '@/lib/fieldFormat'
 import { listFields, listSourceTypes, listValues, type FieldDefinition, type FieldValue } from '@/lib/fields'
 import { listScreens, type Screen, type Section } from '@/lib/layout'
@@ -10,6 +11,7 @@ import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from
 import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
 import { AddAddressForm, AddChildForm } from './AddForms'
+import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
 import { FieldGroup, type FieldView, type Target } from './FieldGroup'
 import { ListSection } from './ListSection'
 import { ScreenTabs } from './ScreenTabs'
@@ -97,6 +99,38 @@ export default async function AssetPage({
   }
   if (!loaded) notFound()
   const { tree, fields, values, sourceNames, screens, lists, rows, access } = loaded
+
+  // Documents are loaded on their own, so the asset still opens if their tables aren't there yet.
+  let documents: DocumentSummary[] = []
+  let documentsError: string | null = null
+  try {
+    documents = await withOrg(orgId, (client) => listDocuments(client, orgId, tree.id))
+  } catch (error) {
+    console.error('Listing documents failed', error)
+    documentsError = isMissingSchema(error)
+      ? 'Documents need a database update: run db/migrations/008_documents.sql, then reload this page.'
+      : 'The documents could not be loaded. Check the database connection and try again.'
+  }
+  const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
+  const documentRows: DocumentRow[] = documents.map((document) => ({
+    id: document.id,
+    name: document.name,
+    size: document.sizeBytes >= 1024 * 1024 ? `${(document.sizeBytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(document.sizeBytes / 1024))} KB`,
+    uploaded: new Date(document.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    status: document.status === 'uploading' ? 'uploaded' : document.status,
+    stalled: document.stalled,
+    error: document.error,
+    documentType: document.documentType,
+    found:
+      [
+        document.counts.filled > 0 ? `${document.counts.filled} filled in` : '',
+        document.counts.replaced > 0 ? `${document.counts.replaced} replaced` : '',
+        document.counts.confirmed > 0 ? `${document.counts.confirmed} confirmed` : '',
+        document.counts.kept > 0 ? `${document.counts.kept} kept` : '',
+        document.proposals > 0 && access.canAddRecords ? plural(document.proposals, 'proposed field', 'proposed fields') : '',
+      ].filter(Boolean).join(' · ') || 'No values found',
+    undecided: document.undecided,
+  }))
 
   // "Made By" on a new comment starts as the signed-in person's name.
   const user = await currentUser()
@@ -368,7 +402,21 @@ export default async function AssetPage({
       </p>
 
       <ScreenTabs
-        screens={screens.map((screen, index) => ({ key: screen.key, name: screen.name, content: screenContent(screen, index === 0) }))}
+        screens={[
+          ...screens.map((screen, index) => ({ key: screen.key, name: screen.name, content: screenContent(screen, index === 0) })),
+          {
+            key: '_documents',
+            name: 'Documents',
+            content: documentsError ? (
+              <section className="panel notice">
+                <h2>Documents</h2>
+                <p>{documentsError}</p>
+              </section>
+            ) : (
+              <DocumentsPanel assetId={tree.id} documents={documentRows} canUpload={access.canAddRecords} maxMb={MAX_DOCUMENT_BYTES / 1024 / 1024} />
+            ),
+          },
+        ]}
         initialKey={screenKey ?? ''}
         basePath={`/dashboard/assets/${tree.id}`}
       />

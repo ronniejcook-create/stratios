@@ -168,7 +168,42 @@ work and how data is isolated; this file covers how we work and where things sta
     field's Agent Instructions is the skill itself or skills stay separate rules (`field_rules`)
     with levels and versions, and whether simple totals (a property's square feet from its
     buildings) run through a skill or stay built-in sums. Ask before building stage 5.
-  - Not built yet (later stages): documents and extraction, formulas
+  - **Stage 4 is built** (October 8, late; `db/migrations/008_documents.sql`): document upload and
+    the extraction agent. Not yet tried in a browser or against the real Claude API by anyone.
+    - Where: every asset has a **Documents** tab (key `_documents`, added in the asset page beside
+      the configured screens; `DocumentsPanel.tsx`). Each document has a review page at
+      `/dashboard/assets/[id]/documents/[docId]`.
+    - Upload: PDF only, up to 20 MB (`MAX_DOCUMENT_BYTES`). The browser sends the file in 3 MB
+      pieces (`documents/requests.ts` -> `app/api/documents/...`), because Vercel caps one request
+      at about 4.5 MB. The file is stored **in Postgres** (`document_chunks`), not Supabase
+      Storage, so nothing new had to be configured; all storage goes through `lib/documents.ts`
+      so it can move later. Watch database size if many large files are uploaded.
+    - Reading: `POST /api/documents/[id]/read` (`maxDuration` 300). Three steps so no transaction
+      is held during the Claude call: claim the document (`startReading`), `readDocument` in
+      `lib/extraction.ts` (PDF as a base64 document block + the dictionary, structured output,
+      16,000 max tokens, 270 s timeout), then `applyReading`. Claude's limits: 32 MB per request
+      and 100 pages. A reading stuck for 6 minutes can be retried.
+    - Permissions: the agent is given only fields the uploader may **edit**
+      (`extractableFields`); names, list columns and calculated fields are never offered. Upload,
+      open-file, the summary and proposed fields need `access.canAddRecords`; the review list
+      drops findings for fields the viewer can't see; accepting needs edit on that field.
+    - Rules (`decideOutcome`, pure): empty + fill -> filled; empty + ask -> decision; same ->
+      confirmed; different + never -> kept; different + hand-entered value that stays -> decision;
+      different + replace -> replaced; otherwise decision. Every value is stored in
+      `field_source_values` with `document_id` and `page`. Source priority in Agent Instructions is
+      sent to the agent as context but is **not** applied by code; it starts to matter with feeds.
+    - Review list (`document_findings`): Needs a Decision (Use Document's Value / Keep Current),
+      Proposed New Fields (administrators: Add Field / Dismiss; adding creates an organization
+      field and fills it), Filled In, Replaced, Confirmed, Different but Kept, Already Decided.
+      Proposed fields always wait for an administrator; the per-organization "add automatically"
+      setting from the design is not built.
+    - Not built: list rows (comments, critical dates) from documents, Word/Excel files, reading a
+      document a second time after it has been read, and showing which document a value came from
+      on the asset page (the history note says "From <file>, page N").
+    - Checked here: migrations on a scratch database, and upload, rules, decisions and proposed
+      fields through `lib/documents.ts` with a psql stand-in client (all passed). The API routes,
+      the screens and the Claude call itself could not be run here.
+  - Not built yet (later stages): formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
     single list cell yet (the history is stored).
@@ -193,19 +228,15 @@ work and how data is isolated; this file covers how we work and where things sta
 ## Where we left off (October 8, 2026)
 
 Stages 1 to 3 of the data design's build order are built, deployed and confirmed by Ronnie as
-visible: the asset hierarchy and fields, screens/sections/lists with click-to-reference, the
+visible (stage 4 is described below): the asset hierarchy and fields, screens/sections/lists with click-to-reference, the
 Fields and Layout admin, roles and field permissions, and the Master Library. Migrations 003 to
 007 have been run on Supabase. He chose to spend time trying what is built before going further.
 
-Next up, when he is ready: **stage 4, document upload and the extraction agent** (upload an
-Offering Memorandum to an asset, the agent finds values for the dictionary's fields using each
-field's Description and Agent Instructions, then a review list of what was filled,
-confirmed, needs a decision, and proposed as new fields). It needs file storage (Supabase Storage
-was the idea), writes values with source type `documents` into `field_source_values`, and is the
-first place the per-field rules (when empty, when different, manual override) and the source
-priority written in Agent Instructions actually take effect. After that: stage 5 AI skills that
-calculate and store KPIs, stage 6 tenants, leases, rent
-roll, cash flow and feeds.
+Stage 4 (document upload and the extraction agent) was built late on October 8 and pushed. Ronnie
+needs to run `008_documents.sql` on Supabase and then try it with a real PDF; expect fixes, since
+the upload routes, the screens and the Claude call were not run before delivery. Next after that:
+stage 5 AI skills that calculate and store KPIs (two open questions in the design document must be
+answered first), then stage 6 tenants, leases, rent roll, cash flow and feeds.
 
 Things not yet verified or still owed:
 
@@ -223,7 +254,7 @@ Things not yet verified or still owed:
 ## Ideas offered but not started
 
 - Wire up the Portfolio Analyst agent.
-- Document uploads (Supabase Storage) and a richer asset model (properties, leases, financials).
+- Move document files from Postgres to Supabase Storage if they grow.
 - A read-only member list for non-admins.
 - Before real customer data: a restricted database role without BYPASSRLS, production Clerk and
   Supabase projects, and a paid Vercel plan.

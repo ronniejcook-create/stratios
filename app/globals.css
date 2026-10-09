@@ -12,7 +12,7 @@
   --accent: #2ccbe8;
   --accent-ink: #06202b;
   --danger: #ff9d8a;
-  --success: var(--success);
+  --success: #8fe3b0;
   --link: #2ccbe8; /* accent used as text; the theme swaps it when the accent is too faint to read */
   --link-hover: color-mix(in srgb, var(--link) 75%, var(--heading));
   --border-hover: color-mix(in srgb, var(--line-strong) 50%, var(--heading));
@@ -668,3 +668,29 @@ td.muted { color: var(--dim); }
 .rule-fields ul { margin: 2px 0 0; padding: 0 0 0 12px; list-style: none; border-left: 2px solid var(--line); }
 .rule-fields .rule-name { font-weight: 400; color: var(--text); font-size: 13px; }
 .rule-fields .rule-line { min-height: 34px; }
+
+/* Documents and the review list */
+.doc-upload { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.doc-upload .note { margin: 0; }
+.doc-progress { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; max-width: 560px; font-size: 14px; color: var(--text); }
+.doc-reading { display: inline-flex; align-items: center; gap: 8px; }
+.doc-reading .ai-icon { flex: none; color: var(--link); }
+.doc-bar { display: block; height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.doc-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--link); transition: width 0.2s ease; }
+.doc-bar-busy > span { width: 35%; animation: doc-busy 1.6s ease-in-out infinite; }
+@keyframes doc-busy { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .doc-bar-busy > span { animation: none; width: 100%; opacity: 0.5; } }
+.doc-sub { margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.chip-failed { border-color: var(--danger); color: var(--danger); }
+.chip-high { border-color: var(--success); color: var(--heading); }
+.chip-low { border-color: var(--danger); color: var(--heading); }
+.review-table td { vertical-align: top; }
+.review-field { font-weight: 500; color: var(--heading); }
+.review-value { color: var(--heading); font-variant-numeric: tabular-nums; }
+.review-quote { font-style: italic; max-width: 44ch; }
+.review-where { white-space: nowrap; }
+.review-where .chip { display: block; width: fit-content; margin-top: 4px; }
+.review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 6px; }
+.review-actions .form-error, .review-actions .form-ok, .review-actions .note { margin: 0; flex-basis: 100%; }
+.shell-main .review-actions .btn { min-height: 30px; padding: 0 12px; font-size: 13px; }
+.muted { color: var(--dim); }

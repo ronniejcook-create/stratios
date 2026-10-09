@@ -1,0 +1,592 @@
+// Documents: uploaded files linked to an asset, what the extraction agent
+// found in them, and the review list.
+//
+// The file is stored in the database in pieces (document_chunks), because the
+// web host limits how much one request can carry and this needs no storage
+// service to be set up. Everything goes through this file, so the pieces can
+// later move to a storage service without touching the rest of the app.
+//
+// Every function takes the database client of a transaction scoped to one
+// organization (see withOrg in lib/db.ts).
+
+import { EMPTY_VALUE, isEmptyValue, sameValue, type StoredValue } from './fieldFormat'
+import type { FieldDefinition } from './fields'
+import { recordExists, tableFor, type Queryable, type RecordType } from './records'
+
+/** The largest file that can be uploaded. Claude accepts about 32 MB per request, and a PDF grows by a third when sent. */
+export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
+/** The size of one upload piece: under the web host's limit of about 4.5 MB per request. */
+export const CHUNK_BYTES = 3 * 1024 * 1024
+export const DOCUMENT_TYPE = 'application/pdf'
+
+export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string }
+
+export type DocumentStatus = 'uploading' | 'uploaded' | 'reading' | 'read' | 'failed'
+
+export type DocumentRecord = {
+  id: string
+  assetId: string
+  name: string
+  sizeBytes: number
+  chunkCount: number
+  status: DocumentStatus
+  error: string | null
+  documentType: string | null
+  summary: string | null
+  uploadedBy: string
+  uploadedAt: string
+  readAt: string | null
+  /** True when a reading was started long enough ago that it must have stopped without finishing. */
+  stalled: boolean
+}
+
+const DOCUMENT_COLUMNS = `id::text as id, asset_id::text as asset_id, name, size_bytes::float8 as size_bytes, chunk_count, status, error,
+  document_type, summary, uploaded_by,
+  to_char(uploaded_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as uploaded_at,
+  to_char(read_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as read_at,
+  (status = 'reading' and read_started_at < now() - interval '6 minutes') as stalled`
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toDocument(row: any): DocumentRecord {
+  return {
+    id: row.id,
+    assetId: row.asset_id,
+    name: row.name,
+    sizeBytes: Number(row.size_bytes),
+    chunkCount: Number(row.chunk_count),
+    status: row.status,
+    error: row.error ?? null,
+    documentType: row.document_type ?? null,
+    summary: row.summary ?? null,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: row.uploaded_at,
+    readAt: row.read_at ?? null,
+    stalled: Boolean(row.stalled),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Uploading and storing
+// ---------------------------------------------------------------------------
+
+/** Starts an upload: records the document and says how many pieces to send. */
+export async function createDocument(
+  client: Queryable,
+  orgId: string,
+  userId: string,
+  input: { assetId: string; name: string; sizeBytes: number; contentType: string },
+): Promise<Result<{ id: string; chunkCount: number }>> {
+  const name = input.name.replace(/[\\/]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+  if (!name) return { ok: false, error: 'The file needs a name.' }
+  if (input.contentType !== DOCUMENT_TYPE && !/\.pdf$/i.test(name)) return { ok: false, error: 'Only PDF files can be uploaded for now.' }
+  if (!Number.isInteger(input.sizeBytes) || input.sizeBytes <= 0) return { ok: false, error: 'That file is empty.' }
+  if (input.sizeBytes > MAX_DOCUMENT_BYTES) return { ok: false, error: `That file is too large. The limit is ${MAX_DOCUMENT_BYTES / 1024 / 1024} MB.` }
+  if (!(await recordExists(client, orgId, 'asset', input.assetId))) return { ok: false, error: 'That asset could not be found.' }
+  const chunkCount = Math.ceil(input.sizeBytes / CHUNK_BYTES)
+  const { rows } = await client.query(
+    `insert into documents (org_id, asset_id, name, content_type, size_bytes, chunk_count, uploaded_by)
+     values ($1, $2, $3, $4, $5, $6, $7) returning id::text as id`,
+    [orgId, input.assetId, name, DOCUMENT_TYPE, input.sizeBytes, chunkCount, userId],
+  )
+  return { ok: true, id: rows[0].id, chunkCount }
+}
+
+/** Stores one piece of a file that is still uploading. Only the person who started the upload may add to it. */
+export async function saveChunk(client: Queryable, orgId: string, userId: string, documentId: string, index: number, data: Buffer): Promise<Result> {
+  const { rows } = await client.query(
+    `select chunk_count, size_bytes::float8 as size_bytes from documents
+     where id = $1 and org_id = $2 and uploaded_by = $3 and status = 'uploading'`,
+    [documentId, orgId, userId],
+  )
+  if (rows.length === 0) return { ok: false, error: 'That upload could not be found.' }
+  const chunkCount = Number(rows[0].chunk_count)
+  if (!Number.isInteger(index) || index < 0 || index >= chunkCount) return { ok: false, error: 'That piece does not belong to this upload.' }
+  // Every piece is full size except the last, which holds the remainder.
+  const expected = index === chunkCount - 1 ? Number(rows[0].size_bytes) - CHUNK_BYTES * (chunkCount - 1) : CHUNK_BYTES
+  if (data.length !== expected) return { ok: false, error: 'That piece is the wrong size.' }
+  await client.query(
+    `insert into document_chunks (document_id, org_id, chunk_index, data) values ($1, $2, $3, $4)
+     on conflict (document_id, chunk_index) do update set data = excluded.data`,
+    [documentId, orgId, index, data],
+  )
+  return { ok: true }
+}
+
+/** Finishes an upload once every piece has arrived and the file is a real PDF. */
+export async function completeUpload(client: Queryable, orgId: string, userId: string, documentId: string): Promise<Result> {
+  const { rows } = await client.query(
+    `select d.chunk_count, d.size_bytes::float8 as size_bytes,
+            (select count(*)::int from document_chunks c where c.document_id = d.id) as chunks,
+            (select coalesce(sum(length(c.data)), 0)::float8 from document_chunks c where c.document_id = d.id) as bytes,
+            (select encode(substring(c.data from 1 for 5), 'escape') from document_chunks c where c.document_id = d.id and c.chunk_index = 0) as head
+     from documents d
+     where d.id = $1 and d.org_id = $2 and d.uploaded_by = $3 and d.status = 'uploading'`,
+    [documentId, orgId, userId],
+  )
+  if (rows.length === 0) return { ok: false, error: 'That upload could not be found.' }
+  const row = rows[0]
+  if (Number(row.chunks) !== Number(row.chunk_count) || Number(row.bytes) !== Number(row.size_bytes)) {
+    return { ok: false, error: 'The upload did not finish. Try uploading the file again.' }
+  }
+  if (!String(row.head ?? '').startsWith('%PDF')) {
+    await client.query('delete from documents where id = $1 and org_id = $2', [documentId, orgId])
+    return { ok: false, error: 'That file is not a PDF.' }
+  }
+  await client.query(`update documents set status = 'uploaded' where id = $1 and org_id = $2`, [documentId, orgId])
+  return { ok: true }
+}
+
+export async function getDocument(client: Queryable, orgId: string, documentId: string): Promise<DocumentRecord | null> {
+  const { rows } = await client.query(`select ${DOCUMENT_COLUMNS} from documents where id = $1 and org_id = $2`, [documentId, orgId])
+  return rows.length > 0 ? toDocument(rows[0]) : null
+}
+
+export type DocumentSummary = DocumentRecord & { counts: Record<Outcome, number>; undecided: number; proposals: number }
+
+/** An asset's documents, newest first, with a count of what the agent found in each. Unfinished uploads are left out. */
+export async function listDocuments(client: Queryable, orgId: string, assetId: string): Promise<DocumentSummary[]> {
+  const { rows } = await client.query(
+    `select ${DOCUMENT_COLUMNS} from documents where org_id = $1 and asset_id = $2 and status <> 'uploading' order by uploaded_at desc`,
+    [orgId, assetId],
+  )
+  const documents = rows.map(toDocument)
+  if (documents.length === 0) return []
+  const ids = documents.map((document) => document.id)
+  const findings = await client.query(
+    `select document_id::text as document_id, outcome, count(*)::int as total,
+            count(*) filter (where outcome = 'decision' and decision is null)::int as undecided
+     from document_findings where org_id = $1 and document_id = any($2::uuid[]) group by document_id, outcome`,
+    [orgId, ids],
+  )
+  const proposals = await client.query(
+    `select document_id::text as document_id, count(*)::int as total
+     from field_proposals where org_id = $1 and document_id = any($2::uuid[]) and status = 'proposed' group by document_id`,
+    [orgId, ids],
+  )
+  return documents.map((document) => {
+    const counts: Record<Outcome, number> = { filled: 0, confirmed: 0, replaced: 0, decision: 0, kept: 0 }
+    let undecided = 0
+    for (const row of findings.rows) {
+      if (row.document_id !== document.id) continue
+      counts[row.outcome as Outcome] = Number(row.total)
+      undecided += Number(row.undecided)
+    }
+    return { ...document, counts, undecided, proposals: Number(proposals.rows.find((row) => row.document_id === document.id)?.total ?? 0) }
+  })
+}
+
+/** The whole file, put back together from its pieces. */
+export async function readDocumentFile(client: Queryable, orgId: string, documentId: string): Promise<Buffer | null> {
+  const { rows } = await client.query(
+    'select data from document_chunks where document_id = $1 and org_id = $2 order by chunk_index',
+    [documentId, orgId],
+  )
+  if (rows.length === 0) return null
+  return Buffer.concat(rows.map((row) => row.data as Buffer))
+}
+
+/**
+ * Removes a document, its file and its review list. Values it already filled
+ * in stay in the golden record and its history.
+ */
+export async function removeDocument(client: Queryable, orgId: string, documentId: string): Promise<boolean> {
+  const { rows } = await client.query('delete from documents where id = $1 and org_id = $2 returning id::text as id', [documentId, orgId])
+  return rows.length > 0
+}
+
+// ---------------------------------------------------------------------------
+// Reading: status, and applying what the agent found
+// ---------------------------------------------------------------------------
+
+/**
+ * Marks a document as being read. Returns false when it is already being
+ * read, or has been read, so two readings can't run at once.
+ */
+export async function startReading(client: Queryable, orgId: string, userId: string, documentId: string): Promise<boolean> {
+  const { rows } = await client.query(
+    `update documents
+     set status = 'reading', error = null, read_started_at = now(), read_by = $3
+     where id = $1 and org_id = $2
+       and (status in ('uploaded', 'failed') or (status = 'reading' and read_started_at < now() - interval '6 minutes'))
+     returning id::text as id`,
+    [documentId, orgId, userId],
+  )
+  return rows.length > 0
+}
+
+export async function failReading(client: Queryable, orgId: string, documentId: string, error: string): Promise<void> {
+  await client.query(`update documents set status = 'failed', error = $3 where id = $1 and org_id = $2 and status = 'reading'`, [
+    documentId, orgId, error.slice(0, 500),
+  ])
+}
+
+export type Outcome = 'filled' | 'confirmed' | 'replaced' | 'decision' | 'kept'
+export type Confidence = 'high' | 'medium' | 'low'
+const CONFIDENCE_SCORE: Record<Confidence, number> = { high: 0.9, medium: 0.6, low: 0.3 }
+
+/** One value the agent found, already checked against the dictionary and parsed for its field's type. */
+export type Candidate = {
+  recordType: RecordType
+  recordId: string
+  field: FieldDefinition
+  /** First day of the month for a monthly field, otherwise null. */
+  period: string | null
+  value: StoredValue
+  page: number | null
+  confidence: Confidence
+  quote: string | null
+}
+
+export type ProposalInput = {
+  recordType: 'asset' | 'property' | 'building'
+  recordId: string
+  name: string
+  dataType: 'text' | 'number' | 'money' | 'percent' | 'date' | 'boolean'
+  value: string
+  page: number | null
+  reason: string | null
+}
+
+type Golden = { rowId: string | null; value: StoredValue; sourceType: string | null; manualOverride: boolean }
+
+const VALUE_COLUMNS = `value_text as text, value_number::float8 as number, value_date::text as date, value_bool as bool`
+
+/** The golden record for one field on one record (locked, so two writers can't cross). */
+async function readGolden(client: Queryable, orgId: string, recordType: RecordType, recordId: string, field: FieldDefinition, period: string | null): Promise<Golden> {
+  const { rows } = await client.query(
+    `select id::text as id, ${VALUE_COLUMNS}, source_type, manual_override
+     from field_values
+     where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4
+       and period is not distinct from $5::date and row_id is null
+     for update`,
+    [orgId, recordType, recordId, field.id, period],
+  )
+  if (rows.length > 0) {
+    const row = rows[0]
+    return {
+      rowId: row.id,
+      value: {
+        text: row.text ?? null,
+        number: row.number === null || row.number === undefined ? null : Number(row.number),
+        date: row.date ?? null,
+        bool: row.bool ?? null,
+      },
+      sourceType: row.source_type,
+      manualOverride: Boolean(row.manual_override),
+    }
+  }
+  if (field.coreColumn) {
+    // Name and property type also live in a fixed column; start from that.
+    const core = await client.query(`select ${field.coreColumn} as value from ${tableFor(recordType)} where id = $1 and org_id = $2`, [recordId, orgId])
+    const text = core.rows[0]?.value ?? null
+    return { rowId: null, value: { ...EMPTY_VALUE, text }, sourceType: text ? 'manual' : null, manualOverride: Boolean(text) }
+  }
+  return { rowId: null, value: { ...EMPTY_VALUE }, sourceType: null, manualOverride: false }
+}
+
+/** Makes a document's value the golden record and adds the history row. */
+async function writeGolden(
+  client: Queryable,
+  orgId: string,
+  userId: string,
+  target: { recordType: RecordType; recordId: string; field: FieldDefinition; period: string | null },
+  golden: Golden,
+  next: StoredValue,
+  confidence: Confidence | null,
+  note: string,
+): Promise<void> {
+  const { recordType, recordId, field, period } = target
+  const score = confidence ? CONFIDENCE_SCORE[confidence] : null
+  if (golden.rowId) {
+    await client.query(
+      `update field_values
+       set value_text = $2, value_number = $3::numeric, value_date = $4::date, value_bool = $5::boolean,
+           source_type = 'documents', manual_override = false, status = 'approved', confidence = $6::numeric,
+           note = $7, updated_by = $8, updated_at = now()
+       where id = $1 and org_id = $9`,
+      [golden.rowId, next.text, next.number, next.date, next.bool, score, note, userId, orgId],
+    )
+  } else {
+    await client.query(
+      `insert into field_values
+         (org_id, record_type, record_id, field_id, period, value_text, value_number, value_date, value_bool,
+          source_type, manual_override, status, confidence, note, updated_by)
+       values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, 'documents', false, 'approved', $10::numeric, $11, $12)`,
+      [orgId, recordType, recordId, field.id, period, next.text, next.number, next.date, next.bool, score, note, userId],
+    )
+  }
+  await client.query(
+    `insert into field_value_history
+       (org_id, record_type, record_id, field_id, period,
+        old_text, old_number, old_date, old_bool, new_text, new_number, new_date, new_bool, source_type, note, changed_by)
+     values ($1, $2, $3, $4, $5::date, $6, $7::numeric, $8::date, $9::boolean, $10, $11::numeric, $12::date, $13::boolean, 'documents', $14, $15)`,
+    [
+      orgId, recordType, recordId, field.id, period,
+      golden.value.text, golden.value.number, golden.value.date, golden.value.bool,
+      next.text, next.number, next.date, next.bool, note, userId,
+    ],
+  )
+  if (field.coreColumn) {
+    await client.query(`update ${tableFor(recordType)} set ${field.coreColumn} = $1 where id = $2 and org_id = $3`, [next.text, recordId, orgId])
+  }
+}
+
+const sourceNote = (documentName: string, page: number | null) => `From "${documentName}"${page ? `, page ${page}` : ''}`
+
+/**
+ * What should happen to a value found in a document, given the golden record
+ * and the field's rules. Pure, so it can be reasoned about and tested alone.
+ *
+ *   empty field          When the Field Is Empty: fill automatically, or ask
+ *   same value           confirmed; nothing changes
+ *   different value      Never Replace: kept
+ *                        a hand-entered value that Stays Until Someone Changes It: ask
+ *                        Replace Automatically: replaced
+ *                        otherwise: ask
+ */
+export function decideOutcome(
+  field: Pick<FieldDefinition, 'whenEmpty' | 'whenDifferent' | 'manualOverride'>,
+  golden: { value: StoredValue; manualOverride: boolean },
+  found: StoredValue,
+): { outcome: Outcome; reason: 'empty' | 'different' | 'manual' | null } {
+  if (isEmptyValue(golden.value)) {
+    return field.whenEmpty === 'fill' ? { outcome: 'filled', reason: null } : { outcome: 'decision', reason: 'empty' }
+  }
+  if (sameValue(golden.value, found)) return { outcome: 'confirmed', reason: null }
+  if (field.whenDifferent === 'never') return { outcome: 'kept', reason: null }
+  if (golden.manualOverride && field.manualOverride === 'stays') return { outcome: 'decision', reason: 'manual' }
+  if (field.whenDifferent === 'replace') return { outcome: 'replaced', reason: null }
+  return { outcome: 'decision', reason: 'different' }
+}
+
+/**
+ * Records everything the agent found in a document and applies each field's
+ * rules. Every value is stored as what Documents says (a source value),
+ * whether or not it changes the golden record. Marks the document as read.
+ */
+export async function applyReading(
+  client: Queryable,
+  orgId: string,
+  userId: string,
+  document: { id: string; name: string },
+  reading: { candidates: Candidate[]; proposals: ProposalInput[]; documentType: string | null; summary: string | null },
+): Promise<Record<Outcome, number>> {
+  const counts: Record<Outcome, number> = { filled: 0, confirmed: 0, replaced: 0, decision: 0, kept: 0 }
+  // A second reading replaces the first one's list; decisions already applied stay in the golden record.
+  await client.query('delete from document_findings where org_id = $1 and document_id = $2', [orgId, document.id])
+  await client.query(`delete from field_proposals where org_id = $1 and document_id = $2 and status = 'proposed'`, [orgId, document.id])
+
+  for (const candidate of reading.candidates) {
+    const { recordType, recordId, field, period, value: found } = candidate
+    if (isEmptyValue(found) || !(await recordExists(client, orgId, recordType, recordId))) continue
+    const golden = await readGolden(client, orgId, recordType, recordId, field, period)
+    const { outcome, reason } = decideOutcome(field, golden, found)
+
+    await client.query(
+      `delete from field_source_values
+       where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4 and source_type = 'documents'
+         and period is not distinct from $5::date and row_id is null`,
+      [orgId, recordType, recordId, field.id, period],
+    )
+    await client.query(
+      `insert into field_source_values
+         (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by, document_id, page)
+       values ($1, $2, $3, $4, $5::date, 'documents', $6, $7::numeric, $8::date, $9::boolean, $10, $11, $12)`,
+      [orgId, recordType, recordId, field.id, period, found.text, found.number, found.date, found.bool, userId, document.id, candidate.page],
+    )
+
+    if (outcome === 'filled' || outcome === 'replaced') {
+      await writeGolden(client, orgId, userId, { recordType, recordId, field, period }, golden, found, candidate.confidence, sourceNote(document.name, candidate.page))
+    }
+    await client.query(
+      `insert into document_findings
+         (org_id, document_id, record_type, record_id, field_id, period, value_text, value_number, value_date, value_bool,
+          page, confidence, quote, outcome, reason, current_text, current_number, current_date_value, current_bool, current_source)
+       values ($1, $2, $3, $4, $5, $6::date, $7, $8::numeric, $9::date, $10::boolean, $11, $12, $13, $14, $15, $16, $17::numeric, $18::date, $19::boolean, $20)`,
+      [
+        orgId, document.id, recordType, recordId, field.id, period, found.text, found.number, found.date, found.bool,
+        candidate.page, candidate.confidence, candidate.quote?.slice(0, 500) ?? null, outcome, reason,
+        golden.value.text, golden.value.number, golden.value.date, golden.value.bool, golden.sourceType,
+      ],
+    )
+    counts[outcome] += 1
+  }
+
+  for (const proposal of reading.proposals) {
+    if (!(await recordExists(client, orgId, proposal.recordType, proposal.recordId))) continue
+    await client.query(
+      `insert into field_proposals (org_id, document_id, record_type, record_id, name, data_type, value, page, reason)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [orgId, document.id, proposal.recordType, proposal.recordId, proposal.name.slice(0, 100), proposal.dataType, proposal.value.slice(0, 500), proposal.page, proposal.reason?.slice(0, 500) ?? null],
+    )
+  }
+
+  await client.query(
+    `update documents set status = 'read', error = null, read_at = now(), document_type = $3, summary = $4 where id = $1 and org_id = $2`,
+    [document.id, orgId, reading.documentType?.slice(0, 100) ?? null, reading.summary?.slice(0, 2000) ?? null],
+  )
+  return counts
+}
+
+// ---------------------------------------------------------------------------
+// The review list
+// ---------------------------------------------------------------------------
+
+export type Finding = {
+  id: string
+  recordType: RecordType
+  recordId: string
+  fieldId: string
+  period: string | null
+  value: StoredValue
+  page: number | null
+  confidence: Confidence | null
+  quote: string | null
+  outcome: Outcome
+  reason: 'empty' | 'different' | 'manual' | null
+  current: StoredValue
+  currentSource: string | null
+  decision: 'accepted' | 'rejected' | null
+}
+
+export async function listFindings(client: Queryable, orgId: string, documentId: string): Promise<Finding[]> {
+  const { rows } = await client.query(
+    `select id::text as id, record_type, record_id::text as record_id, field_id::text as field_id, period::text as period,
+            ${VALUE_COLUMNS}, page, confidence, quote, outcome, reason,
+            current_text, current_number::float8 as current_number, current_date_value::text as current_date, current_bool, current_source, decision
+     from document_findings where org_id = $1 and document_id = $2 order by created_at, id`,
+    [orgId, documentId],
+  )
+  const number = (value: unknown) => (value === null || value === undefined ? null : Number(value))
+  return rows.map((row) => ({
+    id: row.id,
+    recordType: row.record_type,
+    recordId: row.record_id,
+    fieldId: row.field_id,
+    period: row.period ?? null,
+    value: { text: row.text ?? null, number: number(row.number), date: row.date ?? null, bool: row.bool ?? null },
+    page: row.page ?? null,
+    confidence: row.confidence ?? null,
+    quote: row.quote ?? null,
+    outcome: row.outcome,
+    reason: row.reason ?? null,
+    current: { text: row.current_text ?? null, number: number(row.current_number), date: row.current_date ?? null, bool: row.current_bool ?? null },
+    currentSource: row.current_source ?? null,
+    decision: row.decision ?? null,
+  }))
+}
+
+export type Proposal = ProposalInput & { id: string; status: 'proposed' | 'added' | 'dismissed'; fieldId: string | null }
+
+export async function listProposals(client: Queryable, orgId: string, documentId: string): Promise<Proposal[]> {
+  const { rows } = await client.query(
+    `select id::text as id, record_type, record_id::text as record_id, name, data_type, value, page, reason, status, field_id::text as field_id
+     from field_proposals where org_id = $1 and document_id = $2 order by created_at, id`,
+    [orgId, documentId],
+  )
+  return rows.map((row) => ({
+    id: row.id,
+    recordType: row.record_type,
+    recordId: row.record_id,
+    name: row.name,
+    dataType: row.data_type,
+    value: row.value,
+    page: row.page ?? null,
+    reason: row.reason ?? null,
+    status: row.status,
+    fieldId: row.field_id ?? null,
+  }))
+}
+
+/** One finding that is waiting for a decision, with its document's name. Null when it isn't waiting. */
+export async function getOpenFinding(client: Queryable, orgId: string, findingId: string): Promise<(Finding & { documentId: string; documentName: string; assetId: string }) | null> {
+  const { rows } = await client.query(
+    `select f.document_id::text as document_id, d.name as document_name, d.asset_id::text as asset_id
+     from document_findings f join documents d on d.id = f.document_id
+     where f.id = $1 and f.org_id = $2 and f.outcome = 'decision' and f.decision is null
+     for update of f`,
+    [findingId, orgId],
+  )
+  if (rows.length === 0) return null
+  const finding = (await listFindings(client, orgId, rows[0].document_id)).find((candidate) => candidate.id === findingId)
+  return finding ? { ...finding, documentId: rows[0].document_id, documentName: rows[0].document_name, assetId: rows[0].asset_id } : null
+}
+
+/**
+ * Settles a finding that was waiting for a person: use the document's value
+ * (it becomes the golden record, with a history row), or keep the current one.
+ * `field` is the finding's field as the organization sees it now.
+ */
+export async function decideFinding(
+  client: Queryable,
+  orgId: string,
+  userId: string,
+  finding: Finding & { documentName: string },
+  field: FieldDefinition,
+  accept: boolean,
+): Promise<Result> {
+  if (accept) {
+    const golden = await readGolden(client, orgId, finding.recordType, finding.recordId, field, finding.period)
+    if (!sameValue(golden.value, finding.value)) {
+      await writeGolden(
+        client, orgId, userId,
+        { recordType: finding.recordType, recordId: finding.recordId, field, period: finding.period },
+        golden, finding.value, finding.confidence, `${sourceNote(finding.documentName, finding.page)}; chosen in review`,
+      )
+    }
+  }
+  await client.query(
+    `update document_findings set decision = $3, decided_by = $4, decided_at = now() where id = $1 and org_id = $2`,
+    [finding.id, orgId, accept ? 'accepted' : 'rejected', userId],
+  )
+  return { ok: true }
+}
+
+/** One proposed field that is still waiting, with its document. */
+export async function getOpenProposal(client: Queryable, orgId: string, proposalId: string): Promise<(Proposal & { documentId: string; documentName: string; assetId: string }) | null> {
+  const { rows } = await client.query(
+    `select p.document_id::text as document_id, d.name as document_name, d.asset_id::text as asset_id
+     from field_proposals p join documents d on d.id = p.document_id
+     where p.id = $1 and p.org_id = $2 and p.status = 'proposed'
+     for update of p`,
+    [proposalId, orgId],
+  )
+  if (rows.length === 0) return null
+  const proposal = (await listProposals(client, orgId, rows[0].document_id)).find((candidate) => candidate.id === proposalId)
+  return proposal ? { ...proposal, documentId: rows[0].document_id, documentName: rows[0].document_name, assetId: rows[0].asset_id } : null
+}
+
+/** Marks a proposed field as added (with the field made from it) or dismissed. */
+export async function settleProposal(client: Queryable, orgId: string, userId: string, proposalId: string, fieldId: string | null): Promise<void> {
+  await client.query(
+    `update field_proposals set status = $3, field_id = $4, decided_by = $5, decided_at = now() where id = $1 and org_id = $2`,
+    [proposalId, orgId, fieldId ? 'added' : 'dismissed', fieldId, userId],
+  )
+}
+
+/**
+ * Writes the first value of a field that was just added from a proposal, as
+ * the golden record with Documents as its source.
+ */
+export async function fillFromProposal(
+  client: Queryable,
+  orgId: string,
+  userId: string,
+  proposal: Proposal & { documentId: string; documentName: string },
+  field: FieldDefinition,
+  value: StoredValue,
+): Promise<void> {
+  if (isEmptyValue(value)) return
+  const golden = await readGolden(client, orgId, proposal.recordType, proposal.recordId, field, null)
+  await client.query(
+    `insert into field_source_values
+       (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by, document_id, page)
+     values ($1, $2, $3, $4, null, 'documents', $5, $6::numeric, $7::date, $8::boolean, $9, $10, $11)`,
+    [orgId, proposal.recordType, proposal.recordId, field.id, value.text, value.number, value.date, value.bool, userId, proposal.documentId, proposal.page],
+  )
+  await writeGolden(
+    client, orgId, userId,
+    { recordType: proposal.recordType, recordId: proposal.recordId, field, period: null },
+    golden, value, null, `${sourceNote(proposal.documentName, proposal.page)}; field added from the review list`,
+  )
+}

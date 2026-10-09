@@ -19,6 +19,7 @@ function describeApiError(status: number, body: string): string {
     status === 402 || /credit balance/i.test(detail) ? 'The API account has no credit available.' :
     status === 403 ? 'The API key does not have permission for this request.' :
     status === 404 ? 'The AI model was not found for this account.' :
+    status === 413 ? 'The request was too large for Claude to read.' :
     status === 429 ? 'Too many requests; wait a minute and try again.' :
     status >= 500 ? 'The Claude API had a temporary problem; try again shortly.' :
     'The Claude API rejected the request.'
@@ -27,11 +28,22 @@ function describeApiError(status: number, body: string): string {
 
 export class ApiError extends Error {}
 
-/** Sends one prompt to Claude and returns its JSON answer, shaped by `schema`. */
-export async function askClaude(apiKey: string, prompt: string, schema: object): Promise<Record<string, unknown>> {
+type Answer = Record<string, unknown>
+
+/**
+ * Sends one message to Claude and returns its JSON answer, shaped by `schema`.
+ * `content` is the message: plain text, or a list of content blocks (for
+ * example a PDF followed by the question about it).
+ */
+export async function askClaudeWith(
+  apiKey: string,
+  content: string | object[],
+  schema: object,
+  options: { maxTokens?: number; timeoutMs?: number } = {},
+): Promise<Answer> {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(options.timeoutMs ?? 30000),
     headers: {
       'content-type': 'application/json',
       'x-api-key': apiKey,
@@ -41,8 +53,8 @@ export async function askClaude(apiKey: string, prompt: string, schema: object):
     },
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
-      max_tokens: 512,
-      messages: [{ role: 'user', content: prompt }],
+      max_tokens: options.maxTokens ?? 512,
+      messages: [{ role: 'user', content }],
       output_config: { format: { type: 'json_schema', schema } },
     }),
   })
@@ -52,7 +64,14 @@ export async function askClaude(apiKey: string, prompt: string, schema: object):
     throw new ApiError(error)
   }
   const data = (await response.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string }
+  if (data.stop_reason === 'max_tokens') throw new ApiError('Claude\'s answer was cut off because it was too long.')
+  if (data.stop_reason === 'refusal') throw new ApiError('Claude declined to answer this request.')
   const text = data.content?.find((block) => block.type === 'text')?.text
   if (!text) throw new ApiError(`Claude returned no answer (stop reason: ${data.stop_reason ?? 'unknown'}).`)
-  return JSON.parse(text) as Record<string, unknown>
+  return JSON.parse(text) as Answer
+}
+
+/** Sends one prompt to Claude and returns its JSON answer, shaped by `schema`. */
+export async function askClaude(apiKey: string, prompt: string, schema: object): Promise<Answer> {
+  return askClaudeWith(apiKey, prompt, schema)
 }
