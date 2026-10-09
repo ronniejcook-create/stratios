@@ -998,8 +998,9 @@ coordinates" above. None of the five new layers needed a migration or a new key.
   browser: the reading code in each `lib/` file is browser-safe above its last function.
 - Whether the commuting table (inside Jobs and Commuting) works. It uses the Census key and has
   never run against the real service.
-- Whether readings work again after the answer-format fix, and whether migration 021 is run
-  (floors and the stack plan need it; a rent roll loaded before it must be loaded again).
+- Whether readings work again after the answer-format fix. He confirmed migration 021 is run
+  (October 9), so every migration through 021 is on Supabase; a rent roll loaded before 021
+  must be loaded again to get floors and the stack plan.
 
 **How the federal services were checked:** the cloud workspace can't reach them, so questions
 were run in the built-in browser on his computer (he allowed hazards.fema.gov, nces.ed.gov and
