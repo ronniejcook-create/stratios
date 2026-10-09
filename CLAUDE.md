@@ -749,15 +749,16 @@ work and how data is isolated; this file covers how we work and where things sta
       to `GRAPH_PRESETS` so he can pick it under Org Colors > Graph Colors; as a single-hue
       ramp it separates pie slices less well than the other palettes. Checked in Chromium with
       his rent roll's rows under two palettes; not opened inside the app.
-    - **Single-color palettes, darkest to lightest** (October 9, his request): `GRAPH_PRESETS`
-      has Blues, Reds, Oranges, Golds, Greens, Teals, Purples, Pinks and Greys, eight shades
-      each in order from darkest to lightest (Blues was reordered; the others copy its steps
-      of lightness and strength in their own hue, worked out in OKLCH). The stack plan's five
-      lease-end groups now use graph colors 1, 2, 4, 6 and 8 so such a palette runs its full
-      range (Leased in Status mode is color 4); no end date is a fixed grey. The darkest and
-      lightest shades were pulled in a little from the first Blues so `fitToSurface` leaves
-      them alone on a dark panel and on white (it would otherwise nudge them out of order). An organization that saved the earlier Blues keeps
-      those saved colors until it picks Blues again.
+    - **Single-color palettes** (October 9, his request): `GRAPH_PRESETS` has Blues, Reds,
+      Oranges, Golds, Greens, Teals, Purples, Pinks and Greys, eight shades each (the others
+      copy the Blues' steps of lightness and strength in their own hue, worked out in OKLCH).
+      **Order: the first five run darkest to lightest, the last three are the in-between
+      shades.** He asked for a strict darkest-to-lightest order, saw it, and asked to go back
+      to this one. The stack plan's five lease-end groups use graph colors 1 to 5 (Leased in
+      Status mode is color 3); no end date is a fixed grey. The darkest and lightest shades
+      are a little less extreme than the very first Blues so `fitToSurface` leaves them alone
+      on a dark panel and on white. An organization that saved Blues in an earlier order
+      keeps those saved colors until it picks Blues again.
     - **The answer format has a size limit at Claude's end** (October 9). Right after the
       stack plan shipped, every reading failed; the analyst relayed it as "the reader's setup
       is too large". Cause: the required answer format (the JSON schema sent as

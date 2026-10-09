@@ -32,11 +32,11 @@ function groupOf(row: RentRollRow, colorBy: ColorBy, baseYear: number): { key: s
 }
 const GROUP_ORDER = ['y0', 'y1', 'y2', 'y3', 'y4', 'leased', 'nodate', 'vacant', 'other']
 /**
- * Which graph color (--chart-1 to --chart-8) each group is filled with. The five lease-end groups are spread
- * across the eight colors, so a dark-to-light palette such as Blues runs from its darkest to its lightest shade.
+ * Which graph color (--chart-1 to --chart-8) each group is filled with: the first five, in order, for the five
+ * lease-end groups. In the single-color palettes (Blues, Greens ...) those five run from darkest to lightest.
  * Leases with no end date are a plain grey; vacant and not-for-lease space is drawn without a fill.
  */
-const GROUP_SLOT: Record<string, number> = { y0: 1, y1: 2, y2: 4, y3: 6, y4: 8, leased: 4 }
+const GROUP_SLOT: Record<string, number> = { y0: 1, y1: 2, y2: 3, y3: 4, y4: 5, leased: 3 }
 
 /** Dark or light lettering, whichever reads better on a fill. */
 function letteringFor(color: string): string | undefined {
