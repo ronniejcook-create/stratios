@@ -159,7 +159,15 @@ work and how data is isolated; this file covers how we work and where things sta
       while no values exist (`fieldHasValues`); standard fields and the Master Library show it locked.
     - `listFields` reads `agent_instructions` through `to_jsonb(...)` so pages still load on a
       database where 007 has not been run; saving a field there fails until it is.
-    - The design document still describes the three separate settings; update it when he confirms.
+    - Migration 007 has been run on Supabase. The design document was updated the same evening
+      (dictionary table, source priority paragraphs, Calculated Fields and Skills, the tables list,
+      a second decisions table and the build order).
+  - Decision (October 8): **agents calculate and store KPI values by following AI skills**, not
+    formulas. Ronnie chose this over the earlier recommendation; he was told numbers from an agent
+    are less repeatable than formulas. Two questions are open in the design document: whether a
+    field's Agent Instructions is the skill itself or skills stay separate rules (`field_rules`)
+    with levels and versions, and whether simple totals (a property's square feet from its
+    buildings) run through a skill or stay built-in sums. Ask before building stage 5.
   - Not built yet (later stages): documents and extraction, formulas
     (calculated fields show "Calculated later"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
@@ -187,15 +195,16 @@ work and how data is isolated; this file covers how we work and where things sta
 Stages 1 to 3 of the data design's build order are built, deployed and confirmed by Ronnie as
 visible: the asset hierarchy and fields, screens/sections/lists with click-to-reference, the
 Fields and Layout admin, roles and field permissions, and the Master Library. Migrations 003 to
-006 have been run on Supabase. He chose to spend time trying what is built before going further.
+007 have been run on Supabase. He chose to spend time trying what is built before going further.
 
 Next up, when he is ready: **stage 4, document upload and the extraction agent** (upload an
 Offering Memorandum to an asset, the agent finds values for the dictionary's fields using each
-field's AI description, other names and extraction hints, then a review list of what was filled,
+field's Description and Agent Instructions, then a review list of what was filled,
 confirmed, needs a decision, and proposed as new fields). It needs file storage (Supabase Storage
 was the idea), writes values with source type `documents` into `field_source_values`, and is the
-first place the per-field rules (when empty, when different, manual override, source priority)
-actually take effect. After that: stage 5 formulas and AI skills, stage 6 tenants, leases, rent
+first place the per-field rules (when empty, when different, manual override) and the source
+priority written in Agent Instructions actually take effect. After that: stage 5 AI skills that
+calculate and store KPIs, stage 6 tenants, leases, rent
 roll, cash flow and feeds.
 
 Things not yet verified or still owed:
