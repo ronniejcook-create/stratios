@@ -735,6 +735,20 @@ work and how data is isolated; this file covers how we work and where things sta
       Floor" row. Checked in Chromium with rows taken from his rent roll's text (floors from
       suite numbers); not opened inside the app. A snapshot loaded before 021 has no floors,
       so its stack plan says to load the rent roll again. There is no way to set a floor by hand.
+    - **The stack plan moved onto the Rent Roll tab** (October 9, Ronnie liked it and asked for
+      changes; no migration). The separate Stack Plan tab is gone. `RentRollPanel` draws
+      `StackPlan` under the tiles when the snapshot's property is of type Office
+      (`RentRollChoice.propertyType`). Suites run left to right in suite-number order
+      (`bySuite`, natural sort), and every floor is the full width, each suite sized by its
+      share of its own floor (floors are no longer scaled to the largest). Fills are the
+      organization's graph colors, `--chart-1` to `--chart-5` for lease end years soonest
+      first, `--chart-3` for Leased in Status mode, `--chart-6` for no end date; the lettering
+      is set dark or light per fill after the colors are read in the browser (`letteringFor`).
+      With a many-colored palette the "darker is sooner" reading is lost and the key carries
+      it; he was told. A **Blues** palette (the original ramp plus three more blues) was added
+      to `GRAPH_PRESETS` so he can pick it under Org Colors > Graph Colors; as a single-hue
+      ramp it separates pie slices less well than the other palettes. Checked in Chromium with
+      his rent roll's rows under two palettes; not opened inside the app.
     - **The answer format has a size limit at Claude's end** (October 9). Right after the
       stack plan shipped, every reading failed; the analyst relayed it as "the reader's setup
       is too large". Cause: the required answer format (the JSON schema sent as

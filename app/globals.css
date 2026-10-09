@@ -736,8 +736,11 @@ td.muted { color: var(--dim); }
 .review-quote { font-style: italic; max-width: 44ch; }
 .review-where { white-space: nowrap; }
 .review-entry { max-width: 64ch; }
-/* Stack Plan tab. Lease-end shading is one blue ramp, darkest for the leases ending soonest; text on each block keeps it readable without the color. */
+/* Stack plan, on the Rent Roll tab of an office property. Fills are the organization's graph colors (--chart-1 to --chart-6), the first for
+   the leases ending soonest; the lettering color is set in StackPlan.tsx to suit each fill, and the text on each block keeps it readable without the color. */
+.stack-plan { margin: 18px 0 20px; padding-top: 14px; border-top: 1px solid var(--line); }
 .stack-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 20px; }
+.stack-head h3 { font-size: 15px; }
 .stack-color { flex: 0 0 200px; }
 .stack-key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 12px; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
 .stack-key li { display: flex; align-items: center; gap: 6px; }
@@ -755,13 +758,13 @@ td.muted { color: var(--dim); }
 .stack-suite-name { font-weight: 700; font-size: 12px; }
 .stack-suite-sf { opacity: 0.85; font-variant-numeric: tabular-nums; }
 .stack-suite:hover, .stack-suite.active { outline: 2px solid var(--heading); outline-offset: -1px; }
-.stack-y0 { background: #0d366b; color: #fff; }
-.stack-y1 { background: #1c5cab; color: #fff; }
-.stack-y2 { background: #3987e5; color: #06182f; }
-.stack-y3 { background: #86b6ef; color: #06182f; }
-.stack-y4 { background: #cde2fb; color: #06182f; }
-.stack-leased { background: #3987e5; color: #06182f; }
-.stack-nodate { background: #8a94a3; color: #0b1220; }
+.stack-y0 { background: var(--chart-1, #0d366b); color: #fff; }
+.stack-y1 { background: var(--chart-2, #1c5cab); color: #fff; }
+.stack-y2 { background: var(--chart-3, #3987e5); color: #06182f; }
+.stack-y3 { background: var(--chart-4, #86b6ef); color: #06182f; }
+.stack-y4 { background: var(--chart-5, #cde2fb); color: #06182f; }
+.stack-leased { background: var(--chart-3, #3987e5); color: #06182f; }
+.stack-nodate { background: var(--chart-6, #8a94a3); color: #0b1220; }
 .stack-vacant { background: transparent; color: var(--text); border: 1px dashed var(--line-strong); }
 .stack-other { background: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--muted) 28%, transparent) 5px 6px); color: var(--muted); border: 1px solid var(--line); }
 .stack-swatch.stack-vacant, .stack-swatch.stack-other { border-width: 1px; }

@@ -41,6 +41,9 @@ export const GRAPH_PRESETS: { name: string; colors: string[] }[] = [
   { name: 'Nordic', colors: ['#4c6a92', '#a3be8c', '#bf616a', '#88c0d0', '#d08770', '#5e81ac', '#ebcb8b', '#b48ead'] },
   { name: 'Tropical', colors: ['#ff6b6b', '#ffd166', '#1a936f', '#06d6a0', '#ef476f', '#118ab2', '#f78c6b', '#8338ec'] },
   { name: 'Finance', colors: ['#1d3557', '#2a9d8f', '#e9c46a', '#6c757d', '#90be6d', '#457b9d', '#a8dadc', '#b5651d'] },
+  // One blue from dark to light, the shading the stack plan was first drawn in. As a ramp it reads best where
+  // order matters (sooner to later); in a pie, neighbouring slices are closer than in the other palettes.
+  { name: 'Blues', colors: ['#0d366b', '#1c5cab', '#3987e5', '#86b6ef', '#cde2fb', '#5f9fe9', '#2a71c8', '#a9cdf5'] },
   // One basic color in four shades, mixed with black and greys; ordered so
   // neighbouring slices differ as much as possible.
   { name: 'Red & Greys', colors: ['#d73431', '#1b1b1b', '#808080', '#febab2', '#94020d', '#fd7468', '#484848', '#bebebe'] },

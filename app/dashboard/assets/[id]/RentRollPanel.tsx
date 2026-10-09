@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { DataGrid, Modal, type GridColumn, type GridRow, type GridTone } from '@/components/DataGrid'
 import { RENT_ROLL_STATUS_LABELS, summarize, type RentRollRow, type RentRollStatus } from '@/lib/rentRolls'
 import { changeRentRollDate, removeRentRoll } from './actions'
+import { StackPlan } from './StackPlan'
 
 export type RentRollChoice = {
   id: string
@@ -12,6 +13,8 @@ export type RentRollChoice = {
   /** False when the document gave no date and the day it was loaded was used. */
   asOfStated: boolean
   propertyName: string
+  /** The type of the property the rent roll is for; an office property gets a stack plan under the totals. */
+  propertyType: string | null
   documentId: string | null
   documentName: string | null
   rowCount: number
@@ -266,9 +269,11 @@ export function RentRollPanel({
       </p>
       {checks.map((check) => (
         <p key={check.name} className="note" role="status">
-          The document&apos;s {check.name} total of {whole(check.shown!)} square feet is shown. The rows marked that way add up to {whole(check.added)}, so one or more rows are marked differently from how the document counts them. How rows are marked is set by the Reading a Rent Roll skill in the Skills Library.
+          The document&apos;s {check.name === 'total' ? 'total' : `${check.name} total`} of {whole(check.shown!)} square feet is shown. {check.name === 'total' ? 'The rows' : 'The rows marked that way'} add up to {whole(check.added)}, so one or more rows are marked differently from how the document counts them. How rows are marked is set by the Reading a Rent Roll skill in the Skills Library.
         </p>
       ))}
+
+      {selected.propertyType === 'Office' ? <StackPlan key={selected.id} rows={rows} asOfDate={selected.asOfDate} /> : null}
 
       <DataGrid
         columns={COLUMNS}
