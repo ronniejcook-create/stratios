@@ -5,7 +5,7 @@
 // Each reading takes three steps, so no database transaction is held open
 // while Claude reads: claim the document, read it, then apply what was found.
 
-import { listTenantQuestions, syncRentRoll, tenantsReady } from './tenants'
+import { listTenantNames, listTenantQuestions, syncRentRoll, tenantsReady } from './tenants'
 import { followAddressChange, pointOfProperty, type Point } from './locationFacts'
 import { createAssetWithDefaults, fallbackPropertyType, propertyTypesOf } from './assets'
 import { withOrg } from './db'
@@ -128,6 +128,8 @@ async function addRentRoll(client: Queryable, caller: Caller, assetId: string, d
       asOfDate: rentRoll.asOfDate,
       stated: rentRoll.stated,
       rows: rentRoll.rows,
+      tenantsDecided: rentRoll.tenantsDecided,
+      leaseMatch: rentRoll.leaseMatch,
     })
     await client.query('release savepoint rent_roll')
     return rentRoll.rows.length
@@ -253,7 +255,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       const fields = extractableFields(allFields, sectionByField(await listScreens(client, orgId)), access.fieldLevel)
       const lists = extractableLists(await listLists(client, orgId), allFields, access.sectionLevel)
       const savedRentRolls = await listRentRollsIfAny(client, orgId, tree.id)
-      return { ok: true as const, document, tree, file, fields, lists, savedRentRolls, skills: await loadSkillsForAgent(client, orgId) }
+      return { ok: true as const, document, tree, file, fields, lists, savedRentRolls, tenants: await listTenantNames(client, orgId), skills: await loadSkillsForAgent(client, orgId) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)
@@ -269,7 +271,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
     const record = records.find((entry) => entry.id === saved.propertyId)
     return record && saved.documentId !== documentId ? [{ record: record.ref, asOfDate: saved.asOfDate, asOfStated: saved.asOfStated, documentName: saved.documentName, rowCount: saved.rowCount }] : []
   })
-  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records, fields: prepared.fields, lists: prepared.lists, savedRentRolls, skills: prepared.skills, timeoutMs })
+  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records, fields: prepared.fields, lists: prepared.lists, savedRentRolls, tenants: prepared.tenants, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
 
   try {
@@ -334,7 +336,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
       const allFields = await listFields(client, orgId)
       const fields = extractableFields(allFields, sectionByField(await listScreens(client, orgId)), access.fieldLevel)
       const lists = extractableLists(await listLists(client, orgId), allFields, access.sectionLevel)
-      return { ok: true as const, document, file, fields, lists, propertyTypes: propertyTypesOf(allFields), skills: await loadSkillsForAgent(client, orgId) }
+      return { ok: true as const, document, file, fields, lists, propertyTypes: propertyTypesOf(allFields), tenants: await listTenantNames(client, orgId), skills: await loadSkillsForAgent(client, orgId) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)
@@ -344,7 +346,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
   const { document } = prepared
   if (!prepared.file) return giveUp(caller, documentId, 'The file for this document is missing. Upload it again.', 500)
 
-  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records: newAssetRecords(), fields: prepared.fields, lists: prepared.lists, newAsset: true, propertyTypes: prepared.propertyTypes, skills: prepared.skills, timeoutMs })
+  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records: newAssetRecords(), fields: prepared.fields, lists: prepared.lists, newAsset: true, propertyTypes: prepared.propertyTypes, tenants: prepared.tenants, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
   const described = result.newAsset
   const name = (described?.name || document.name.replace(/\.(pdf|xlsx|xlsm)$/i, '')).slice(0, 200)

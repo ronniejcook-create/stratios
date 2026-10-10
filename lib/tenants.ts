@@ -21,7 +21,7 @@
 // organization (see withOrg in lib/db.ts).
 
 import { slugify, type Queryable } from './records'
-import type { RentStep } from './rentRolls'
+import type { LeaseMatch, RentStep } from './rentRolls'
 
 // ---------------------------------------------------------------------------
 // Comparing names (pure)
@@ -111,6 +111,27 @@ export async function tenantsReady(client: Queryable): Promise<boolean> {
     `select 1 from information_schema.columns where table_schema = current_schema() and table_name = 'rent_roll_rows' and column_name = 'lease_id'`,
   )
   return rows.length > 0
+}
+
+/**
+ * The organization's tenants as the reading agent is shown them: "Acme Corp
+ * (also: Acme Corporation)". Empty when tenants aren't set up yet, without
+ * spoiling the transaction it runs in.
+ */
+export async function listTenantNames(client: Queryable, orgId: string): Promise<string[]> {
+  try {
+    await client.query('savepoint tenant_names')
+  } catch {
+    return []
+  }
+  try {
+    const tenants = (await tenantsReady(client)) ? await listTenantRefs(client, orgId) : []
+    await client.query('release savepoint tenant_names')
+    return tenants.map((tenant) => (tenant.aliases.length > 0 ? `${tenant.name} (also: ${tenant.aliases.join('; ')})` : tenant.name)).sort((a, b) => a.localeCompare(b))
+  } catch {
+    await client.query('rollback to savepoint tenant_names').catch(() => {})
+    return []
+  }
 }
 
 async function listTenantRefs(client: Queryable, orgId: string): Promise<TenantRef[]> {
@@ -275,6 +296,16 @@ export async function listTenantQuestions(client: Queryable, orgId: string, asse
 
 // ---------------------------------------------------------------------------
 // Building units, tenants and leases from a rent roll
+//
+// Three judgment calls belong to the Reading a Rent Roll skill, which an
+// organization can edit: which rows are tenants, which names look like a
+// tenant on file (and whether to ask a person), and what makes a row the same
+// lease as one on file. The agent makes them while it reads the rent roll and
+// they are saved on the rent roll and its rows (migration 025); this code only
+// applies them. A rent roll with no saved decisions (loaded earlier, or read
+// when no skill covers it) falls back on the built-in rules below: a leased
+// row with no rent is not a tenant where most tenants show rent, a look-alike
+// name (lookAlike) is asked about, and a lease is a tenant, unit and start.
 // ---------------------------------------------------------------------------
 
 const UNASSIGNED_FLOOR = 'Unassigned'
@@ -297,18 +328,25 @@ export type SyncResult = { units: number; tenants: number; leases: number; quest
  * to them. Safe to run again at any time: it only adds what is missing, and
  * the property's leases are rebuilt from every rent roll's rows.
  *
- * A leased row counts as a tenant when it names one. Where most of the rent
- * roll's tenants show a rent, a leased row with no rent at all (a management
- * office, an amenity room) is not treated as a tenant; its unit is still made.
+ * Which leased rows are tenants and which names are asked about follow the
+ * agent's saved decisions when the rent roll has them, and the built-in rules
+ * otherwise (see above). A row that is not a tenant still gets its unit.
  */
 export async function syncRentRoll(client: Queryable, orgId: string, userId: string, rentRollId: string): Promise<SyncResult> {
   const result: SyncResult = { units: 0, tenants: 0, leases: 0, questions: 0 }
-  const header = await client.query('select property_id::text as property_id from rent_rolls where org_id = $1 and id = $2', [orgId, rentRollId])
+  // The decision columns are read this way so everything works before migration 025 is run.
+  const header = await client.query(
+    `select property_id::text as property_id, coalesce((to_jsonb(rent_rolls) ->> 'tenants_decided')::boolean, false) as decided from rent_rolls where org_id = $1 and id = $2`,
+    [orgId, rentRollId],
+  )
   if (header.rows.length === 0) return result
   const propertyId = header.rows[0].property_id as string
+  const decided = header.rows[0].decided === true
   const { rows } = await client.query(
     `select id::text as id, suite, tenant, status, floor, rent_per_sf::float8 as rent_per_sf, annual_rent::float8 as annual_rent, monthly_rent::float8 as monthly_rent,
-            unit_id::text as unit_id, tenant_id::text as tenant_id
+            unit_id::text as unit_id, tenant_id::text as tenant_id,
+            to_jsonb(rent_roll_rows) ->> 'tenant_call' as tenant_call, to_jsonb(rent_roll_rows) ->> 'tenant_like' as tenant_like,
+            coalesce((to_jsonb(rent_roll_rows) ->> 'tenant_like_sure')::boolean, false) as tenant_like_sure
      from rent_roll_rows where org_id = $1 and rent_roll_id = $2 order by position`,
     [orgId, rentRollId],
   )
@@ -390,27 +428,44 @@ export async function syncRentRoll(client: Queryable, orgId: string, userId: str
   const tenantOf = new Map<string, string | null>()
   for (const row of rows) {
     const written = String(row.tenant ?? '').replace(/\s+/g, ' ').trim().slice(0, 200)
-    if (row.status !== 'leased' || !nameKey(written) || (rentsShown && !paying(row))) {
+    // Is the row a tenant at all? The agent's call when it made one; with no decisions saved, the built-in rent rule.
+    const notTenant = row.tenant_call === 'not_tenant' || (row.tenant_call !== 'tenant' && !decided && rentsShown && !paying(row))
+    if (row.status !== 'leased' || !nameKey(written) || notTenant) {
       tenantOf.set(row.id, null)
       continue
     }
-    const match = matchTenant(tenants, written)
-    if (match.kind === 'same') {
-      tenantOf.set(row.id, match.tenant.id)
+    // The same spelling is always the same tenant.
+    const exact = matchTenant(tenants, written)
+    if (exact.kind === 'same') {
+      tenantOf.set(row.id, exact.tenant.id)
       continue
     }
     const key = nameKey(written)
-    if (match.kind === 'ask') {
-      // Waits for a person, unless they already said it is a different tenant (then it is made below).
-      if (asked.get(key) !== 'different') {
-        if (!asked.has(key)) {
-          await client.query('insert into tenant_questions (org_id, written_name, name_key, suggested_tenant_id) values ($1, $2, $3, $4) on conflict (org_id, name_key) do nothing', [orgId, written, key, match.tenant.id])
-          asked.set(key, 'pending')
-          result.questions += 1
-        }
-        tenantOf.set(row.id, null)
+    // Which tenant on file the name looks like: the agent's saved answer, or the built-in comparison when it gave none.
+    const named = row.tenant_like ? matchTenant(tenants, String(row.tenant_like)) : null
+    const like = named?.kind === 'same' ? named.tenant : !decided && exact.kind === 'ask' ? exact.tenant : null
+    if (like && asked.get(key) !== 'different') {
+      if (decided && row.tenant_like_sure === true && asked.get(key) !== 'pending') {
+        // The skill lets the agent match this one itself: the spelling is kept as another name of the tenant, and the match is on record.
+        like.aliases.push(written)
+        await client.query('update tenants set aliases = $3::jsonb where org_id = $1 and id = $2', [orgId, like.id, JSON.stringify(like.aliases.slice(-50))])
+        await client.query(
+          `insert into tenant_questions (org_id, written_name, name_key, suggested_tenant_id, status, decided_by, decided_at)
+           values ($1, $2, $3, $4, 'same', 'agent', now()) on conflict (org_id, name_key) do nothing`,
+          [orgId, written, key, like.id],
+        )
+        asked.set(key, 'same')
+        tenantOf.set(row.id, like.id)
         continue
       }
+      // Waits for a person to say whether it is the same tenant.
+      if (!asked.has(key)) {
+        await client.query('insert into tenant_questions (org_id, written_name, name_key, suggested_tenant_id) values ($1, $2, $3, $4) on conflict (org_id, name_key) do nothing', [orgId, written, key, like.id])
+        asked.set(key, 'pending')
+        result.questions += 1
+      }
+      tenantOf.set(row.id, null)
+      continue
     }
     const created = await client.query(
       'insert into tenants (org_id, key, name, created_by) values ($1, $2, $3, $4) returning id::text as id',
@@ -461,11 +516,20 @@ export async function refreshLeases(client: Queryable, orgId: string, propertyId
     [orgId, propertyId],
   )
   const latest = (await client.query('select max(as_of_date)::text as latest from rent_rolls where org_id = $1 and property_id = $2', [orgId, propertyId])).rows[0]?.latest ?? null
+  // What makes two rows the same lease is the skill's call, saved with each rent roll; the latest one that has it decides.
+  const chosen = await client.query(
+    `select to_jsonb(r) ->> 'lease_match' as lease_match from rent_rolls r
+     where r.org_id = $1 and r.property_id = $2 and (to_jsonb(r) ->> 'lease_match') is not null
+     order by r.as_of_date desc, r.created_at desc limit 1`,
+    [orgId, propertyId],
+  )
+  const match: LeaseMatch = chosen.rows[0]?.lease_match === 'tenant_unit' ? 'tenant_unit' : 'tenant_unit_start'
   const existing = await client.query(
     `select id::text as id, tenant_id::text as tenant_id, unit_id::text as unit_id, unit_name, start_date::text as start_date from leases where org_id = $1 and property_id = $2`,
     [orgId, propertyId],
   )
-  const identity = (tenantId: string, unitId: string | null, unitName: string | null, start: string | null) => `${tenantId}|${unitId ?? `name:${nameKey(unitName ?? '')}`}|${start ?? ''}`
+  const identity = (tenantId: string, unitId: string | null, unitName: string | null, start: string | null) =>
+    `${tenantId}|${unitId ?? `name:${nameKey(unitName ?? '')}`}|${match === 'tenant_unit' ? '' : start ?? ''}`
   const leaseByIdentity = new Map<string, string>(existing.rows.map((lease) => [identity(lease.tenant_id, lease.unit_id ?? null, lease.unit_name ?? null, lease.start_date ?? null), lease.id as string]))
 
   // Rows are in date order, so the last one of a group is the latest rent roll to show the lease.
@@ -490,9 +554,9 @@ export async function refreshLeases(client: Queryable, orgId: string, propertyId
       await client.query(
         `update leases set end_date = $3::date, square_feet = $4::numeric, rent_per_sf = $5::numeric, annual_rent = $6::numeric, monthly_rent = $7::numeric,
                 recovery_type = $8, steps = $9::jsonb, status = $10, first_seen = $11::date, last_seen = $12::date, last_rent_roll_id = $13::uuid,
-                unit_name = $14, unit_id = $15::uuid
+                unit_name = $14, unit_id = $15::uuid, start_date = $16::date
          where org_id = $1 and id = $2`,
-        [orgId, leaseId, ...terms],
+        [orgId, leaseId, ...terms, last.lease_start ?? null],
       )
     } else {
       const created = await client.query(

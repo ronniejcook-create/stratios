@@ -133,8 +133,8 @@ export function LeasesPanel({
           {update}
         </div>
         <p className="note">
-          Built from this asset&apos;s rent rolls. A lease is active while the latest rent roll{latestDate ? ` (${day(latestDate)})` : ''} shows it, and past once it no longer does. A leased
-          space that shows no rent, such as a management office, is not counted as a tenant.
+          Built from this asset&apos;s rent rolls. A lease is active while the latest rent roll{latestDate ? ` (${day(latestDate)})` : ''} shows it, and past once it no longer does. Which
+          rows count as tenants, which names are asked about and what makes a row the same lease are set by the Reading a Rent Roll skill in the Skills Library.
         </p>
         {notice}
 

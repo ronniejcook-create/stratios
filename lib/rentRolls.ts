@@ -32,7 +32,15 @@ export type RentRollRowInput = {
   floor?: number | null
   /** True when the document does not show the floor and the agent worked it out, for example from the suite number. */
   floorInferred?: boolean
+  /** The agent's call, under the rent roll skill, on whether this row is a tenant; null or left out when it made none. */
+  tenantCall?: 'tenant' | 'not_tenant' | null
+  /** The tenant on file the agent says this name looks like, and whether the skill lets it be matched without asking a person. */
+  tenantLike?: string | null
+  tenantLikeSure?: boolean
 }
+
+/** What makes a row the same lease as one on file: the same tenant, unit and lease start, or the same tenant and unit (a renewal carries the lease on). */
+export type LeaseMatch = 'tenant_unit_start' | 'tenant_unit'
 
 export type RentRollTotals = { totalSf: number | null; leasedSf: number | null; vacantSf: number | null }
 
@@ -45,6 +53,9 @@ export type RentRollInput = {
   /** The totals the document itself shows, when it shows them. */
   stated: RentRollTotals
   rows: RentRollRowInput[]
+  /** True when the agent gave its decisions about tenants and leases, so they are used in place of the built-in rules. */
+  tenantsDecided?: boolean
+  leaseMatch?: LeaseMatch | null
 }
 
 /**
@@ -65,11 +76,21 @@ export async function saveRentRoll(client: Queryable, orgId: string, userId: str
     ],
   )
   const id = created.rows[0].id as string
-  // The floor columns arrive with migration 021; until it is run, rows are saved without a floor.
-  const floors = (
-    await client.query(`select 1 from information_schema.columns where table_schema = current_schema() and table_name = 'rent_roll_rows' and column_name = 'floor'`)
-  ).rows.length > 0
-  const width = floors ? 18 : 16
+  // The floor columns arrive with migration 021 and the tenant decisions with 025; until each is run, rows are saved without them.
+  const present = new Set(
+    (
+      await client.query(
+        `select column_name from information_schema.columns
+         where table_schema = current_schema() and table_name = 'rent_roll_rows' and column_name in ('floor', 'tenant_call')`,
+      )
+    ).rows.map((row) => String(row.column_name)),
+  )
+  const floors = present.has('floor')
+  const calls = present.has('tenant_call')
+  if (calls) {
+    await client.query('update rent_rolls set tenants_decided = $3::boolean, lease_match = $4 where org_id = $1 and id = $2', [orgId, id, input.tenantsDecided === true, input.leaseMatch ?? null])
+  }
+  const width = 16 + (floors ? 2 : 0) + (calls ? 3 : 0)
   // Rows go in a few at a time, as one statement each time, to keep a long rent roll quick to save.
   const BATCH = 40
   for (let start = 0; start < input.rows.length; start += BATCH) {
@@ -81,13 +102,19 @@ export async function saveRentRoll(client: Queryable, orgId: string, userId: str
         row.rentPerSf, row.annualRent, row.monthlyRent, row.recoveryType, row.note, JSON.stringify(row.steps), row.page,
       )
       if (floors) values.push(row.floor ?? null, row.floor != null && row.floorInferred === true)
+      if (calls) values.push(row.tenantCall ?? null, row.tenantLike?.slice(0, 200) ?? null, row.tenantLike ? row.tenantLikeSure === true : false)
       const at = index * width
-      return `($${at + 1}, $${at + 2}::uuid, $${at + 3}, $${at + 4}, $${at + 5}, $${at + 6}, $${at + 7}::numeric, $${at + 8}::date, $${at + 9}::date, $${at + 10}::numeric, $${at + 11}::numeric, $${at + 12}::numeric, $${at + 13}, $${at + 14}, $${at + 15}::jsonb, $${at + 16}${floors ? `, $${at + 17}::int, $${at + 18}::boolean` : ''})`
+      let next = at + 16
+      const extra = [
+        ...(floors ? [`$${(next += 1)}::int`, `$${(next += 1)}::boolean`] : []),
+        ...(calls ? [`$${(next += 1)}`, `$${(next += 1)}`, `$${(next += 1)}::boolean`] : []),
+      ]
+      return `($${at + 1}, $${at + 2}::uuid, $${at + 3}, $${at + 4}, $${at + 5}, $${at + 6}, $${at + 7}::numeric, $${at + 8}::date, $${at + 9}::date, $${at + 10}::numeric, $${at + 11}::numeric, $${at + 12}::numeric, $${at + 13}, $${at + 14}, $${at + 15}::jsonb, $${at + 16}${extra.map((slot) => `, ${slot}`).join('')})`
     })
     await client.query(
       `insert into rent_roll_rows
          (org_id, rent_roll_id, position, suite, tenant, status, square_feet, lease_start, lease_end,
-          rent_per_sf, annual_rent, monthly_rent, recovery_type, note, steps, page${floors ? ', floor, floor_inferred' : ''})
+          rent_per_sf, annual_rent, monthly_rent, recovery_type, note, steps, page${floors ? ', floor, floor_inferred' : ''}${calls ? ', tenant_call, tenant_like, tenant_like_sure' : ''})
        values ${groups.join(', ')}`,
       values,
     )

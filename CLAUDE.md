@@ -1149,6 +1149,38 @@ work and how data is isolated; this file covers how we work and where things sta
       rent rolls over time, both answers, re-dating, deleting, another organization, deleting
       the asset); the Leases tab clicked through in Chromium with stand-in data. **Not opened
       inside the app**; the Tenants pages were type-checked only.
+  - **The tenant and lease rules moved into the skill** (October 9, night;
+    `db/migrations/025_tenant_rules_in_skill.sql`; Ronnie: "shouldn't that logic reside in the
+    skill?"). The standard **Reading a Rent Roll** skill gained **Tenants** (what is not a
+    tenant; which names look like a tenant on file; ask, never match without asking) and
+    **Leases** (lease match: tenant, unit and start date). An organization can edit both.
+    - The agent decides while reading and its decisions are saved, so code applies them later
+      without asking it again (the pattern of row status and floors). The answer format's
+      `rent_roll.role` was **replaced by one text cell, `decisions`**, so the format did not
+      grow: one decision per line, `subject => decision` (`role => main`, `lease match =>
+      tenant and unit`, `<name> => not a tenant`, `<name> => tenant`, `<name> => same as
+      <tenant on file>, ask` or `, sure`). `readRentRollDecisions` in `lib/extraction.ts`
+      reads it; the agent is shown "## Tenants already on file" (`listTenantNames`, 400 at most).
+    - Saved as `rent_rolls.tenants_decided` and `lease_match`, and
+      `rent_roll_rows.tenant_call`, `tenant_like`, `tenant_like_sure` (025; `saveRentRoll`
+      writes them only when the columns exist, reads go through `to_jsonb`).
+    - `syncRentRoll`: with decisions saved, **the agent's calls are the rule**: a no-rent row
+      it did not rule out is a tenant, a look-alike it did not flag is a new tenant, `ask`
+      becomes a question, and `sure` (only if an organization edits the skill to allow it) is
+      matched at once, the spelling kept as an alias and the match recorded in
+      `tenant_questions` with `decided_by` 'agent'. The same spelling is always the same
+      tenant. **With no decisions saved** (a rent roll loaded before 025, an organization
+      whose edited skill lacks the new parts, or no skill at all) the built-in rules in
+      `lib/tenants.ts` apply as before. `refreshLeases` uses the lease match of the
+      property's latest rent roll that has one.
+    - Still in code on purpose: the confirm step, rebuilding leases when a rent roll is
+      deleted or re-dated, active or past, permissions. He was told: the agent's matching is
+      less repeatable than the fixed rule, a missed look-alike becomes a second tenant (there
+      is no merge yet), and rent rolls already loaded keep the built-in rules until reloaded.
+    - Checked: 025 twice; reading the decisions text, the prompt, and on the scratch database
+      every decision kind plus the "tenant and unit" lease match; the fallback suite again.
+      **Not run against the real Claude API**, so how well the agent writes `decisions` and
+      spots look-alikes shows on his next rent roll.
   - Not built yet (later stages): stored formulas
     (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
@@ -1173,8 +1205,8 @@ work and how data is isolated; this file covers how we work and where things sta
 
 ## Where we left off (October 9, 2026, evening)
 
-Everything described above is committed, pushed to `main` and copied to his folder. Nothing is half done. The latest piece is "Stage 6, second part: tenants, leases
-and units from rent rolls". **He needs to run migrations 022, 023 and 024** in Supabase, in
+Everything described above is committed, pushed to `main` and copied to his folder. Nothing is half done. The latest pieces are "Stage 6, second part: tenants, leases
+and units from rent rolls" and "The tenant and lease rules moved into the skill". **He needs to run migrations 022, 023, 024 and 025** in Supabase, in
 that order, then on Knoll Trail press Refresh Location (Overview) and Update From Rent Rolls
 (Leases tab); none of that is confirmed yet. **Agreed next step:** KPIs calculated from the
 stored leases, with a Recalculate button, then cash flow, then outside feeds.
