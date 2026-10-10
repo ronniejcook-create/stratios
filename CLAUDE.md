@@ -1362,9 +1362,11 @@ work and how data is isolated; this file covers how we work and where things sta
       analyst to call `read_lease_document` with the same document. `readIntoLease` reads a
       document again when it was already read as an ordinary document and belongs to no
       lease (`reopenForLease`); list entries are not added twice.
-    - Lease page: under Lease Documents, **Already loaded on this asset?** lists the asset's
-      documents tied to no lease, with Read Into This Lease. That is how his Keeks document,
-      read before this fix, gets onto its lease.
+    - The lease page once had an **Already loaded on this asset?** drop-down with Read Into
+      This Lease, for documents on the asset tied to no lease. Ronnie had it removed
+      (October 10); only Load Lease Document is left. A lease that was read into the asset by
+      mistake gets onto its lease through the analyst (`read_lease_document`) or by loading
+      the file again on the lease page.
     - 029: the Reading a Lease skill now lets the agent work out an expiration date (or a
       notice deadline) from a fixed commencement date and a stated term, at medium
       confidence, saying so; dates that hang on something not yet happened stay empty. His

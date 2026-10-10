@@ -29,14 +29,11 @@ export function LeaseDocuments({
   leaseId,
   assetId,
   documents,
-  assetDocuments,
   maxMb,
 }: {
   leaseId: string
   assetId: string
   documents: LeaseDocumentRow[]
-  /** Documents already on the asset that belong to no lease, for a lease that was first loaded there or through the analyst. */
-  assetDocuments: { id: string; name: string }[]
   maxMb: number
 }) {
   const router = useRouter()
@@ -44,7 +41,6 @@ export function LeaseDocuments({
   const [progress, setProgress] = useState<Progress>(null)
   const [message, setMessage] = useState<{ text: string; error: boolean; reviewId?: string } | null>(null)
   const busy = progress !== null
-  const [picked, setPicked] = useState('')
 
   const read = async (id: string, name: string) => {
     setMessage(null)
@@ -106,28 +102,6 @@ export function LeaseDocuments({
         Load the lease agreement, then each amendment, commencement letter or guaranty, oldest first. The agent reads each one into the fields below, following the Reading a
         Lease skill; a later document replaces the terms it changes, as the Which Source Wins skill says.
       </p>
-      {assetDocuments.length > 0 ? (
-        <div className="lease-pick">
-          <label htmlFor="lease-pick">Already loaded on this asset?</label>
-          <select id="lease-pick" value={picked} disabled={busy} onChange={(event) => setPicked(event.target.value)}>
-            <option value="">Choose a document</option>
-            {assetDocuments.map((document) => (
-              <option key={document.id} value={document.id}>{document.name}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="btn btn-ghost btn-small"
-            disabled={busy || !picked}
-            onClick={() => {
-              const chosen = assetDocuments.find((document) => document.id === picked)
-              if (chosen) void read(chosen.id, chosen.name).then(() => setPicked(''))
-            }}
-          >
-            Read Into This Lease
-          </button>
-        </div>
-      ) : null}
       {progress ? (
         <p className="note" role="status">
           {progress.stage === 'uploading' ? `Uploading ${progress.name}… ${Math.round(progress.done * 100)}%` : `Reading ${progress.name}. A long lease takes a few minutes; you can leave this page open.`}
