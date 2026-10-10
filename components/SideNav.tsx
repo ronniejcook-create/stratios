@@ -12,7 +12,7 @@ const icon = (path: ReactNode) => (
 
 const SECTIONS: { title: string; adminOnly?: boolean; stratiosOnly?: boolean; items: { label: string; href: string; icon: ReactNode }[] }[] = [
   {
-    title: 'Portfolio',
+    title: 'Investment Management',
     items: [
       { label: 'Assets', href: '/dashboard', icon: icon(<><path d="M4 20V6l7-2v16" /><path d="M11 9h9v11" /><path d="M7 9h1M7 13h1M15 13h1M15 17h1" /><path d="M2.5 20h19" /></>) },
       { label: 'Tenants', href: '/dashboard/tenants', icon: icon(<><circle cx="8" cy="15.5" r="4.5" /><path d="M11.2 12.3L20 3.5" /><path d="M16.5 7l3 3M13.5 10l2.2 2.2" /></>) },

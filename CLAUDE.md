@@ -1627,6 +1627,9 @@ work and how data is isolated; this file covers how we work and where things sta
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
+  - **Navigation headers** (October 10, his request): the group above Assets and Tenants reads
+    **Investment Management** (was Portfolio), and all three group headers (`.side-title`)
+    are in the highlight color (`--link`, the accent as readable text).
   - **Navigation icons** (October 9, night; his request): Assets uses the buildings icon that
     Tenants had, and Tenants has a key (`SideNav.tsx`).
   - Not built yet (later stages): stored formulas
