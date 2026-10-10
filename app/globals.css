@@ -1160,3 +1160,9 @@ td.muted { color: var(--dim); }
 }
 .table-tools { display: flex; justify-content: flex-end; margin-top: 6px; }
 .panel-head h3 { margin: 0; }
+
+/* The signed-in page never scrolls as a whole: only its three columns do. Labels kept for screen readers (.sr-only) are
+   placed out of the flow, and without these two rules one far down a long page made the whole window scrollable, which
+   slid the page up and left an empty band below it. */
+.shell-main { position: relative; }
+@media (min-width: 761px) { .shell { overflow: hidden; } }

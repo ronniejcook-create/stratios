@@ -384,9 +384,6 @@ export function DataGrid({
         <span className="grid-tools">
           {filtered || resorted ? <button type="button" className="btn btn-ghost btn-small" onClick={clear}>Clear Filters and Sorting</button> : null}
           {toolbar}
-          <button type="button" className="icon-button grid-search-button" aria-label="Download to Excel" title={filtered ? 'Download the rows shown to Excel' : 'Download to Excel'} disabled={shown.length === 0} onClick={download}>
-            <DownloadIcon />
-          </button>
           {searching || search ? (
             <input
               ref={searchBox}
@@ -411,6 +408,9 @@ export function DataGrid({
               <SearchIcon />
             </button>
           )}
+          <button type="button" className="icon-button grid-search-button" aria-label="Download to Excel" title={filtered ? 'Download the rows shown to Excel' : 'Download to Excel'} disabled={shown.length === 0} onClick={download}>
+            <DownloadIcon />
+          </button>
         </span>
       </div>
 

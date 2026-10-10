@@ -1505,6 +1505,13 @@ work and how data is isolated; this file covers how we work and where things sta
       is over what scrolls. The page, the navigation and the agent column already hid theirs.
       He wrote "see example" but no picture arrived, so this was a best reading of "old
       fashion scroll"; ask for the example again if it is not what he meant.
+  - **The empty band under a long page** (October 10; Ronnie's screenshot of the Overview tab).
+    The whole window could scroll as well as the main column, sliding the page up and leaving
+    blank space below. Cause: `.sr-only` labels are `position: absolute`, and `.shell-main` was
+    not their containing block, so one far down a long page stretched the document. Fixed at
+    the end of `globals.css`: `.shell-main { position: relative }` and, above phone width,
+    `.shell { overflow: hidden }`. Reproduced and confirmed on a test page. In the list
+    toolbar the order is now search, then download last (his request).
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
