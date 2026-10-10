@@ -130,7 +130,7 @@ export function StackPlan({ rows, asOfDate }: { rows: RentRollRow[]; asOfDate: s
                 {level.rows.map((row) => {
                   const group = groupOf(row, colorBy, baseYear)
                   const title = [
-                    row.suite ? `Suite ${row.suite}` : null,
+                    row.suite ? `Unit ${row.suite}` : null,
                     row.tenant,
                     row.squareFeet !== null ? `${whole(row.squareFeet)} SF` : null,
                     row.status === 'leased' && row.leaseEnd ? `lease ends ${day(row.leaseEnd)}` : RENT_ROLL_STATUS_LABELS[row.status],
@@ -160,18 +160,18 @@ export function StackPlan({ rows, asOfDate }: { rows: RentRollRow[]; asOfDate: s
 
       {selected ? (
         <dl className="stack-detail" role="status">
-          <div><dt>Suite</dt><dd>{selected.suite ?? 'Not shown'}</dd></div>
+          <div><dt>Unit</dt><dd>{selected.suite ?? 'Not shown'}</dd></div>
           <div><dt>Tenant</dt><dd>{selected.tenant ?? 'Not shown'}</dd></div>
           <div><dt>Status</dt><dd>{RENT_ROLL_STATUS_LABELS[selected.status]}</dd></div>
-          <div><dt>Floor</dt><dd>{selected.floor ?? 'Not known'}{selected.floor !== null && selected.floor !== undefined && selected.floorInferred ? ' (worked out from the suite number)' : ''}</dd></div>
+          <div><dt>Floor</dt><dd>{selected.floor ?? 'Not known'}{selected.floor !== null && selected.floor !== undefined && selected.floorInferred ? ' (worked out from the unit number)' : ''}</dd></div>
           <div><dt>Square Feet</dt><dd>{selected.squareFeet !== null ? whole(selected.squareFeet) : 'Not shown'}</dd></div>
           <div><dt>Lease</dt><dd>{selected.leaseStart || selected.leaseEnd ? `${day(selected.leaseStart) || '?'} to ${day(selected.leaseEnd) || '?'}` : 'Not shown'}</dd></div>
           <div><dt>Annual Rent</dt><dd>{selected.annualRent !== null ? selected.annualRent.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) : 'Not shown'}</dd></div>
         </dl>
       ) : (
-        <p className="doc-sub">Click a suite for its details. Suites run left to right in suite-number order, each as wide as its share of its floor. The colors are your organization&apos;s graph colors.</p>
+        <p className="doc-sub">Click a unit for its details. Units run left to right in unit-number order, each as wide as its share of its floor. The colors are your organization&apos;s graph colors.</p>
       )}
-      {anyInferred ? <p className="doc-sub">Some floors were worked out from suite numbers because the rent roll does not show them. The rule is in the Reading a Rent Roll skill.</p> : null}
+      {anyInferred ? <p className="doc-sub">Some floors were worked out from unit numbers because the rent roll does not show them. The rule is in the Reading a Rent Roll skill.</p> : null}
       {unplaced.length > 0 ? <p className="doc-sub">{unplaced.length === 1 ? '1 row has' : `${unplaced.length} rows have`} no floor and {unplaced.length === 1 ? 'is' : 'are'} shown under No Floor.</p> : null}
     </div>
   )

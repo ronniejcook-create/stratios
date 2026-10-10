@@ -5,6 +5,7 @@
 // Each reading takes three steps, so no database transaction is held open
 // while Claude reads: claim the document, read it, then apply what was found.
 
+import { listTenantQuestions, syncRentRoll, tenantsReady } from './tenants'
 import { followAddressChange, pointOfProperty, type Point } from './locationFacts'
 import { createAssetWithDefaults, fallbackPropertyType, propertyTypesOf } from './assets'
 import { withOrg } from './db'
@@ -42,6 +43,8 @@ export type ReadSuccess = {
   calculated: number
   /** Rows of the rent roll saved as a dated snapshot; 0 when the document has no rent roll. */
   rentRollRows: number
+  /** Tenant names in the asset's rent rolls that look like an existing tenant and wait for a person to confirm. */
+  tenantQuestions: number
   /** Street addresses set on properties and buildings from the document. */
   addresses: number
   /** Photos copied out of the document onto the asset. */
@@ -131,6 +134,27 @@ async function addRentRoll(client: Queryable, caller: Caller, assetId: string, d
   } catch (error) {
     console.error('Saving a rent roll from a document failed; continuing without it', error)
     await client.query('rollback to savepoint rent_roll').catch(() => {})
+    return 0
+  }
+}
+
+/**
+ * Works out the units, tenants and leases of the rent roll a document was
+ * saved as. An extra, in its own step after the reading is saved: a failure
+ * here (or migration 024 not run yet) never fails the reading. Returns how
+ * many tenant names of the asset are waiting to be confirmed.
+ */
+async function addTenants(caller: Caller, assetId: string, documentId: string, rentRollRows: number): Promise<number> {
+  if (rentRollRows === 0) return 0
+  try {
+    return await withOrg(caller.orgId, async (client) => {
+      if (!(await tenantsReady(client))) return 0
+      const saved = await client.query('select id::text as id from rent_rolls where org_id = $1 and document_id = $2', [caller.orgId, documentId])
+      for (const rentRoll of saved.rows) await syncRentRoll(client, caller.orgId, caller.userId, rentRoll.id)
+      return (await listTenantQuestions(client, caller.orgId, assetId)).length
+    })
+  } catch (error) {
+    console.error('Building tenants and leases from a rent roll failed; the rent roll itself is saved', error)
     return 0
   }
 }
@@ -261,6 +285,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       return { counts: applied, listRows: entries, rentRollRows: await addRentRoll(client, caller, tree.id, { id: documentId, name: document.name }, result.reading.rentRoll) }
     })
     const addresses = await addAddresses(caller, tree.id, result.reading.addresses)
+    const tenantQuestions = await addTenants(caller, tree.id, documentId, rentRollRows)
     const photos = await addPhotos(caller, tree.id, documentId, prepared.file, result.reading, document.kind)
     return {
       ok: true,
@@ -277,6 +302,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       listRows,
       calculated: result.reading.candidates.filter((candidate) => candidate.basis === 'calculated').length,
       rentRollRows,
+      tenantQuestions,
       addresses,
       photos,
       planPages: planPagesOf(result.reading.photos),
@@ -359,6 +385,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         listRows,
         calculated: reading.candidates.filter((candidate) => candidate.basis === 'calculated').length,
         rentRollRows,
+        tenantQuestions: 0,
         addresses: 0,
         found: reading.addresses,
         photos: 0,
@@ -367,7 +394,8 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
     })
     const { found, ...success } = created
     const addresses = await addAddresses(caller, created.assetId, found)
-    return { ...success, addresses, photos: await addPhotos(caller, created.assetId, documentId, prepared.file, result.reading, document.kind) }
+    const tenantQuestions = await addTenants(caller, created.assetId, documentId, created.rentRollRows)
+    return { ...success, addresses, tenantQuestions, photos: await addPhotos(caller, created.assetId, documentId, prepared.file, result.reading, document.kind) }
   } catch (error) {
     console.error('Creating an asset from a document failed', error)
     return giveUp(caller, documentId, describeFailure(error, 'The asset could not be created from this document. Try again.'), 500)

@@ -18,6 +18,8 @@ import { AddAddressForm, AddChildForm, AddressList, RefreshLocationButton } from
 import { AssetMap } from './AssetMap'
 import { listPhotos, listPlanPages, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo, type PlanPage } from '@/lib/photos'
 import { RentRollPanel, type RentRollChoice } from './RentRollPanel'
+import { LeasesPanel } from './LeasesPanel'
+import { listLeases, listTenantQuestions, tenantsReady, type Lease, type TenantQuestion } from '@/lib/tenants'
 import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
 import { PhotosPanel, type PhotoRow } from './PhotosPanel'
 import { FieldGroup, type FieldView, type Target } from './FieldGroup'
@@ -150,6 +152,28 @@ export default async function AssetPage({
       rentRollError = isMissingSchema(error)
         ? 'Rent rolls need a database update: run db/migrations/019_rent_rolls.sql, then reload this page.'
         : 'The rent rolls could not be loaded. Try again.'
+    }
+  }
+
+  // Tenants and leases, built from the rent rolls, for the same people. On their own, so the page loads before migration 024 is run.
+  let leases: Lease[] = []
+  let tenantQuestions: TenantQuestion[] = []
+  let leasesError: string | null = null
+  if (access.canAddRecords && !rentRollError) {
+    try {
+      const found = await withOrg(orgId, async (client) => {
+        if (!(await tenantsReady(client))) return null
+        return { leases: await listLeases(client, orgId, { assetId: tree.id }), questions: await listTenantQuestions(client, orgId, tree.id) }
+      })
+      if (found) {
+        leases = found.leases
+        tenantQuestions = found.questions
+      } else {
+        leasesError = 'Tenants and leases need a database update: run db/migrations/024_tenants_and_leases.sql, then reload this page.'
+      }
+    } catch (error) {
+      console.error('Listing leases failed', error)
+      leasesError = 'The leases could not be loaded. Try again.'
     }
   }
 
@@ -534,6 +558,25 @@ export default async function AssetPage({
                       selectedId={rentRollSelected}
                       rows={rentRollRows}
                       canEdit={access.canAddRecords}
+                      severalProperties={tree.properties.length > 1}
+                    />
+                  ),
+                },
+                {
+                  key: '_leases',
+                  name: 'Leases',
+                  content: leasesError ? (
+                    <section className="panel notice">
+                      <h2>Leases</h2>
+                      <p>{leasesError}</p>
+                    </section>
+                  ) : (
+                    <LeasesPanel
+                      assetId={tree.id}
+                      leases={leases}
+                      questions={tenantQuestions}
+                      rentRolls={rentRollChoices.length}
+                      latestDate={rentRollChoices.reduce<string | null>((latest, choice) => (latest === null || choice.asOfDate > latest ? choice.asOfDate : latest), null)}
                       severalProperties={tree.properties.length > 1}
                     />
                   ),

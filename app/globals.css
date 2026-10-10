@@ -1028,3 +1028,18 @@ td.muted { color: var(--dim); }
 .option-actions { white-space: nowrap; width: 1%; }
 .option-actions .link-button { min-height: 0; margin-right: 12px; font-size: 13px; }
 .option-retired input[type="text"] { color: var(--muted); text-decoration: line-through; }
+
+/* Leases and tenants. */
+.panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.panel-head h2 { margin: 0; }
+.lease-summaries { margin: 16px 0 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px 28px; }
+.lease-summaries h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--heading); }
+.lease-summaries .table-scroll { margin-top: 6px; }
+.lease-table { min-width: 320px; font-size: 13px; }
+.lease-table th, .lease-table td { padding: 6px 8px; }
+.lease-table tbody th { font-weight: 500; color: var(--heading); }
+.lease-table .num, .num { text-align: right; font-variant-numeric: tabular-nums; }
+.tenant-question-list { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.tenant-question-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-top: 10px; border-top: 1px solid var(--line); }
+.tenant-question-list .button-row { margin: 0; }
+.tenant-names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

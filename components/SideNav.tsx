@@ -15,6 +15,7 @@ const SECTIONS: { title: string; adminOnly?: boolean; stratiosOnly?: boolean; it
     title: 'Portfolio',
     items: [
       { label: 'Assets', href: '/dashboard', icon: icon(<><path d="M4 21V8l8-5 8 5v13" /><path d="M9 21v-6h6v6" /></>) },
+      { label: 'Tenants', href: '/dashboard/tenants', icon: icon(<><path d="M4 20V6l7-2v16" /><path d="M11 9h9v11" /><path d="M7 9h1M7 13h1M15 13h1M15 17h1" /><path d="M2.5 20h19" /></>) },
     ],
   },
   {

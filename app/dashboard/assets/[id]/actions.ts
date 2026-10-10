@@ -14,6 +14,7 @@ import { isPhotoCategory, removePhoto, savePhotosFromDocument, setMainPhoto, upd
 import { LOCATION_SOURCE, lookUpAddress, type AddressMatch, type FoundAddress } from '@/lib/geocode'
 import { addressOfSuggestion, suggestAddresses, type Suggestion } from '@/lib/googlePlaces'
 import { deleteRentRoll, getRentRoll, setRentRollDate } from '@/lib/rentRolls'
+import { refreshLeases, tenantsReady } from '@/lib/tenants'
 import { followAddressChange, pointOfProperty, propertyOfAddress, propertyOfOwner, refreshLocationFacts, type Point } from '@/lib/locationFacts'
 import { deleteAddress, formatAddress, getAddress, insertAddress, insertChild, isRecordType, isUuid, setAddressLocation, type AddressOwner, type Queryable } from '@/lib/records'
 
@@ -522,6 +523,8 @@ async function changeRentRoll(rentRollId: string, work: (client: Queryable, orgI
       if (!access.canAddRecords) return { ok: false as const, error: NO_PERMISSION }
       const rentRoll = await getRentRoll(client, orgId, rentRollId)
       if (!rentRoll || !(await work(client, orgId))) return { ok: false as const, error: 'That rent roll could not be found.' }
+      // A rent roll's date decides which leases are the current ones.
+      if (await tenantsReady(client)) await refreshLeases(client, orgId, rentRoll.propertyId)
       return { ok: true as const, assetId: rentRoll.assetId }
     })
     if (!result.ok) return result
@@ -558,6 +561,8 @@ export async function removeRentRoll(input: { rentRollId: string; withDocument?:
       if (!access.canAddRecords) return { ok: false as const, error: NO_PERMISSION }
       const rentRoll = await getRentRoll(client, orgId, input.rentRollId)
       if (!rentRoll || !(await deleteRentRoll(client, orgId, input.rentRollId))) return { ok: false as const, error: 'That rent roll could not be found. It may already have been deleted; reload the page.' }
+      // Leases only this rent roll showed go with it; the others fall back to the rent roll before.
+      if (await tenantsReady(client)) await refreshLeases(client, orgId, rentRoll.propertyId)
       let message = 'The rent roll was deleted.'
       if (input.withDocument === true && rentRoll.documentId) {
         const document = await getDocument(client, orgId, rentRoll.documentId)

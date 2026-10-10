@@ -127,6 +127,7 @@ function describeReading(session: Session, result: ReadOutcome): string {
   session.links.push({ label: `Open ${result.assetName}`, href: `/dashboard/assets/${result.assetId}` })
   session.links.push({ label: 'Review What Was Found', href: `/dashboard/assets/${result.assetId}/documents/${result.documentId}` })
   if (result.rentRollRows > 0) session.links.push({ label: 'Open Rent Roll', href: `/dashboard/assets/${result.assetId}?screen=_rentroll` })
+  if (result.rentRollRows > 0 && result.tenantQuestions > 0) session.links.push({ label: 'Confirm Tenants', href: `/dashboard/assets/${result.assetId}?screen=_leases` })
   return JSON.stringify({
     ok: true,
     asset_created: result.created,
@@ -144,6 +145,12 @@ function describeReading(session: Session, result: ReadOutcome): string {
     new_fields_proposed: result.proposals,
     comments_and_critical_dates_added_to_lists: result.listRows,
     rent_roll_rows_saved_as_a_dated_snapshot: result.rentRollRows,
+    ...(result.rentRollRows > 0
+      ? {
+          tenant_names_waiting_for_the_person_to_confirm: result.tenantQuestions,
+          about_tenants: 'Units, tenants and leases were built from the rent roll and are on the asset\'s Leases tab. Names that only look like an existing tenant are never matched by guesswork; tell the person how many are waiting there to be confirmed, if any.',
+        }
+      : {}),
     street_addresses_set_from_the_document: result.addresses,
     photos_added_to_the_asset: result.photos,
     plan_and_map_pages_being_added_as_pictures: result.planPages.length,

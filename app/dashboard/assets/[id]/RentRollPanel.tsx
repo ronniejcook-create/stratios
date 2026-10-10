@@ -36,7 +36,7 @@ function day(value: string | null, monthOnly = false): string {
 const stamp = (value: string | null) => (value ? Date.parse(`${value}T00:00:00Z`) : Number.MAX_SAFE_INTEGER)
 
 const COLUMNS: GridColumn[] = [
-  { key: 'suite', label: 'Suite' },
+  { key: 'suite', label: 'Unit' },
   { key: 'floor', label: 'Floor', numeric: true },
   { key: 'tenant', label: 'Tenant' },
   { key: 'status', label: 'Status', display: 'chip' },
@@ -282,7 +282,7 @@ export function RentRollPanel({
         rows={gridRows}
         noun="rows"
         searchColumns={['suite', 'tenant']}
-        searchPlaceholder="Search suites and tenants"
+        searchPlaceholder="Search units and tenants"
         emptyText="This rent roll has no rows."
       />
     </section>

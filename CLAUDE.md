@@ -1104,6 +1104,51 @@ work and how data is isolated; this file covers how we work and where things sta
       organization unaffected); the earlier agent and location suites again; and the real
       Options panel clicked through in Chromium with stand-in data. **Not opened inside the
       app**, and no reading was run against the real Claude API with the new lists.
+  - **Stage 6, second part: tenants, leases and units from rent rolls** (October 9, night;
+    `db/migrations/024_tenants_and_leases.sql`). Ronnie's decisions: a name that only looks
+    like an existing tenant is **asked about, never matched by guesswork**; and a suite and a
+    unit are the same thing, so suites become **unit records** and the screens say "Unit"
+    (the database column is still `rent_roll_rows.suite`). All logic is in `lib/tenants.ts`.
+    - A rent roll stays a dated copy of the document. Its rows now point at lasting records
+      (`rent_roll_rows.unit_id`, `tenant_id`, `lease_id`), and those records can always be
+      rebuilt from the rows; nothing about a lease is typed in yet.
+    - **Units**: `syncRentRoll` finds or makes a unit per row under the property's first
+      building, on "Floor N" ("Basement N", or "Unassigned" when the row has no floor; a
+      unit moves out of Unassigned once a later rent roll gives its floor). Vacant and
+      not-for-lease rows get units too. Units are not shown on the asset page yet.
+    - **Tenants** (`tenants`, one per tenant across the organization, with `aliases`):
+      `matchTenant` treats the same spelling as the same tenant (capitals and punctuation
+      aside, aliases included); a look-alike (`lookAlike`: equal once legal endings such as
+      Inc, LLC, Corp are dropped, one name contained in the other, or 85% the same letters)
+      becomes a row in `tenant_questions` and the rent roll row waits with no tenant; any
+      other name is a new tenant. `answerTenantQuestion`: Same Tenant keeps the spelling as an
+      alias, Different Tenant makes a new tenant, and every rent roll with waiting rows is
+      synced again. **A leased row with no rent at all is not a tenant when most of the rent
+      roll's tenants show rent** (management office, amenity rooms); he was told.
+    - **Leases** (`leases`): one per tenant, unit and lease start at a property
+      (`refreshLeases` rebuilds a property's leases from all its rent rolls' rows). Terms come
+      from the latest rent roll that shows the lease; **active** when the property's latest
+      rent roll date shows it, else **past**; a lease no rent roll shows is deleted. It runs
+      after a rent roll is saved (`addTenants` in `lib/documentReading.ts`, its own step, a
+      failure never fails the reading), deleted or re-dated. The design's `lease_units`
+      (several units per lease) was not built: one unit per lease. Tenants and leases are not
+      record types in the field dictionary yet, so they have no dynamic fields.
+    - Screens, all for people with `canAddRecords` like the Rent Roll tab: a **Leases** tab on
+      the asset (key `_leases`, after Rent Roll; `LeasesPanel.tsx`) with Tenants to Confirm
+      (`app/dashboard/tenants/TenantQuestions.tsx`), tiles, Lease Expirations by year
+      (`rollover`), Largest Tenants (`tenantShares`), the leases in `DataGrid`, and **Update
+      From Rent Rolls** (`rebuildLeases` -> `syncAsset`, needed once for rent rolls loaded
+      before 024, safe any time). **Tenants** in the left navigation (`/dashboard/tenants`,
+      and `/dashboard/tenants/[id]` with a tenant's leases across assets and its other names).
+      The analyst is told how many names are waiting and gets a Confirm Tenants button.
+    - Not built: renaming or merging tenants by hand, undoing an answer, marking a tenant as
+      not a real tenant, editing a lease, units on the asset page, residential columns, and
+      KPIs calculated from the stored leases (the next step).
+    - Deleting an asset removes its leases and units (cascade); tenants stay.
+    - Checked: 024 twice as a role without BYPASSRLS; 30 cases on the scratch database (three
+      rent rolls over time, both answers, re-dating, deleting, another organization, deleting
+      the asset); the Leases tab clicked through in Chromium with stand-in data. **Not opened
+      inside the app**; the Tenants pages were type-checked only.
   - Not built yet (later stages): stored formulas
     (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
@@ -1128,9 +1173,11 @@ work and how data is isolated; this file covers how we work and where things sta
 
 ## Where we left off (October 9, 2026, evening)
 
-Everything described above is committed, pushed to `main` and copied to his folder. Nothing is half done. The latest piece is "Property types and subtypes, and
-drop-down lists that can be managed". **He needs to run migrations 022 and 023** in Supabase,
-in that order, then press Refresh Location on Knoll Trail; none of that is confirmed yet.
+Everything described above is committed, pushed to `main` and copied to his folder. Nothing is half done. The latest piece is "Stage 6, second part: tenants, leases
+and units from rent rolls". **He needs to run migrations 022, 023 and 024** in Supabase, in
+that order, then on Knoll Trail press Refresh Location (Overview) and Update From Rent Rolls
+(Leases tab); none of that is confirmed yet. **Agreed next step:** KPIs calculated from the
+stored leases, with a Recalculate button, then cash flow, then outside feeds.
 
 **The day's last stretch was the Map tab.** It now has a row of tabs, one layer at a time: None,
 Demographics, Schools, Jobs and Commuting, Transit, Flood Zones, Natural Hazards, plus a separate
@@ -1172,7 +1219,8 @@ The same route works for checking any new public service.
 - Organizations can't rename, reorder or hide standard sections and screens yet.
 - The design document "Stratios Data Design" is behind: its build order and Starter Fields tab
   do not yet cover stages 4 to 6, the 22 fields from migration 017, the 11 Location fields
-  from 022, Property Subtype and managed option lists from 023, or rent rolls.
+  from 022, Property Subtype and managed option lists from 023, tenants and leases from
+  024, or rent rolls.
 
 ## Ideas offered but not started
 
