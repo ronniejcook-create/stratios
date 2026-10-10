@@ -286,6 +286,7 @@ export function RentRollPanel({
         searchColumns={['suite', 'tenant']}
         searchPlaceholder="Search units and tenants"
         defaultSort={{ column: 'suite', descending: false }}
+        exportName={`${selected.propertyName} Rent Roll ${selected.asOfDate}`}
         emptyText="This rent roll has no rows."
       />
     </section>

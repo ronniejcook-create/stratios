@@ -207,7 +207,7 @@ export function LeasesPanel({
               </div>
             </div>
 
-            <DataGrid columns={columns} rows={rows} noun="leases" searchColumns={['tenant', 'unit']} searchPlaceholder="Search tenants and units" emptyText="No leases." />
+            <DataGrid columns={columns} rows={rows} noun="leases" searchColumns={['tenant', 'unit']} searchPlaceholder="Search tenants and units" emptyText="No leases." exportName="Leases" />
           </>
         )}
       </section>

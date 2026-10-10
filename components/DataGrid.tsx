@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
+import { cellFromText, downloadWorkbook } from '@/lib/excelExport'
 import { ScrollBox } from './ScrollBox'
 
 /** How a cell is drawn: a link to the row's page, a small code-style key, a chip, or plain text. */
@@ -36,6 +37,14 @@ export type GridRow = {
 
 /** The column a grid is sorted by before anyone picks one. */
 export type GridSort = { column: string; descending: boolean }
+
+export function DownloadIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10 3v9.5M6 9l4 4 4-4M4 16.5h12" />
+    </svg>
+  )
+}
 
 function SearchIcon() {
   return (
@@ -225,6 +234,7 @@ export function DataGrid({
   emptyText,
   thumbnails,
   defaultSort,
+  exportName,
 }: {
   columns: GridColumn[]
   rows: GridRow[]
@@ -242,6 +252,8 @@ export function DataGrid({
   thumbnails?: boolean
   /** The order the rows start in, and go back to when sorting is cleared. Without it they stay in the order given. */
   defaultSort?: GridSort
+  /** What to call the Excel file the download button makes, without the ending. Left out, the grid is named after its rows. */
+  exportName?: string
 }) {
   const [search, setSearch] = useState('')
   const [searching, setSearching] = useState(false)
@@ -356,6 +368,13 @@ export function DataGrid({
 
   const menuColumn = menu ? columns.find((column) => column.key === menu.column) : undefined
 
+  // The download holds what is on screen: the rows left by the search and filters, in the order shown.
+  const download = () => {
+    const kept = columns.filter((column) => !column.plain)
+    const title = exportName ?? `${noun.charAt(0).toUpperCase()}${noun.slice(1)}`
+    downloadWorkbook(title, title, kept.map((column) => column.label), shown.map((row) => kept.map((column) => cellFromText(row.cells[column.key] ?? '', column.numeric === true))))
+  }
+
   return (
     <>
       <div className="grid-toolbar">
@@ -365,6 +384,9 @@ export function DataGrid({
         <span className="grid-tools">
           {filtered || resorted ? <button type="button" className="btn btn-ghost btn-small" onClick={clear}>Clear Filters and Sorting</button> : null}
           {toolbar}
+          <button type="button" className="icon-button grid-search-button" aria-label="Download to Excel" title={filtered ? 'Download the rows shown to Excel' : 'Download to Excel'} disabled={shown.length === 0} onClick={download}>
+            <DownloadIcon />
+          </button>
           {searching || search ? (
             <input
               ref={searchBox}

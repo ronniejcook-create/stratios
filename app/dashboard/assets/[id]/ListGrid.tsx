@@ -206,6 +206,7 @@ export function ListGrid({
         searchColumns={[...columns.filter((column) => column.dataType === 'text' || column.dataType === 'picklist').map((column) => column.key), '_belongs']}
         searchPlaceholder="Search entries"
         emptyText="No entries yet."
+        exportName={sources[0]?.list.name}
         defaultSort={sortKey && columns.some((column) => column.key === sortKey) ? { column: sortKey, descending: sortDescending } : undefined}
         toolbar={editable.length > 0 ? <button type="button" className="btn btn-primary btn-small" onClick={startAdd}>Add Entry</button> : undefined}
       />

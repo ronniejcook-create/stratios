@@ -1139,3 +1139,22 @@ td.muted { color: var(--dim); }
 .shell-main .list-form .form-error { margin: 0; }
 @media (max-width: 640px) { .list-form { grid-template-columns: minmax(0, 1fr); } }
 .fields-grid .grid-figure { white-space: nowrap; }
+.grid-search-button:disabled { opacity: 0.45; cursor: default; }
+.cash-flow-download { margin-left: auto; }
+
+/* ---------------------------------------------------------------------------
+   Scroll bars (October 10). The heavy bars browsers draw by default, with
+   their arrow buttons and light track, are replaced everywhere by a thin
+   rounded bar with no track and no arrows. It shows while the pointer is
+   over whatever scrolls, and darkens under the pointer.
+   --------------------------------------------------------------------------- */
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+*::-webkit-scrollbar-thumb { background: transparent; border: 2px solid transparent; border-radius: 9px; background-clip: padding-box; }
+*:hover::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--muted) 38%, transparent); }
+*::-webkit-scrollbar-thumb:hover, *::-webkit-scrollbar-thumb:active { background-color: color-mix(in srgb, var(--muted) 70%, transparent); }
+/* Browsers without those (Firefox) get their own thin bar in the same colors. */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 38%, transparent) transparent; }
+}

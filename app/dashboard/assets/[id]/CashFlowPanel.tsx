@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AiIcon } from '@/components/AiIcon'
-import { Modal } from '@/components/DataGrid'
+import { DownloadIcon, Modal } from '@/components/DataGrid'
+import { downloadWorkbook, type SheetCell } from '@/lib/excelExport'
 import { ScrollBox } from '@/components/ScrollBox'
 import {
   byCategory, CASH_FLOW_COLUMN_LABELS, CASH_FLOW_SECTION_LABELS, CASH_FLOW_SECTIONS, checkTotals, columnSums, periodTotals,
@@ -171,6 +172,24 @@ export function CashFlowPanel({
   const categories = byCategory(lines, columns.length)
   const uncategorized = categories.some((row) => row.category === 'Not Categorized')
 
+  // The download holds the view on screen: the lines as the document shows them, or added up by category.
+  const download = () => {
+    const amounts = (values: (number | null | undefined)[]): SheetCell[] => columns.map((_column, index) => (values[index] === null || values[index] === undefined ? null : { value: values[index] as number, format: cents ? 'cents' : 'whole' }))
+    const labels = columns.map((column) => (mixed || column.kind !== 'actual' ? `${column.label} (${CASH_FLOW_COLUMN_LABELS[column.kind]})` : column.label))
+    const name = `${selected.propertyName} Cash Flow ${selected.period}`
+    if (view === 'lines') {
+      downloadWorkbook(name, 'Cash Flow', ['Account', 'Line', 'Part', 'Category', ...labels], lines.map((line) => [line.code, line.name, CASH_FLOW_SECTION_LABELS[line.section], line.category, ...amounts(line.amounts)]))
+      return
+    }
+    const rows: SheetCell[][] = []
+    for (const section of CASH_FLOW_SECTIONS) {
+      for (const row of categories.filter((entry) => entry.section === section)) rows.push([CASH_FLOW_SECTION_LABELS[section], row.category, ...amounts(row.amounts)])
+      if (section === 'income') rows.push(['', TOTAL_NAMES.income, ...amounts(sums.map((sum) => sum.income.amount))])
+      if (section === 'expense') rows.push(['', TOTAL_NAMES.expenses, ...amounts(sums.map((sum) => sum.expenses.amount))], ['', TOTAL_NAMES.noi, ...amounts(sums.map((sum) => sum.noi.amount))])
+    }
+    downloadWorkbook(`${name} by Category`, 'By Category', ['Part', 'Category', ...labels], rows)
+  }
+
   const head = (
     <thead>
       <tr>
@@ -305,6 +324,9 @@ export function CashFlowPanel({
           <button type="button" role="tab" aria-selected={view === 'categories'} className={`map-tab${view === 'categories' ? ' active' : ''}`} onClick={() => setView('categories')}>By Category</button>
         </div>
         {view === 'categories' ? <span className="doc-sub">Item lines added up under the categories the Reading an Operating Statement skill lists.</span> : null}
+        <button type="button" className="icon-button grid-search-button cash-flow-download" aria-label="Download to Excel" title="Download to Excel" onClick={download}>
+          <DownloadIcon />
+        </button>
       </div>
 
       <ScrollBox className="table-scroll cash-flow-scroll">

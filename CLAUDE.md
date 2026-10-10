@@ -1486,6 +1486,22 @@ work and how data is isolated; this file covers how we work and where things sta
       button, lease links, dragging, search open and close, documents newest first, a list
       merged from an asset and a property, add, edit, remove, the Belongs To choice). Not
       opened inside the app.
+  - **Download to Excel, and thin scroll bars** (October 10, late afternoon; no migration).
+    - Every `DataGrid` has a download button beside the magnifying glass. It saves an `.xlsx`
+      of the rows on screen (after search and filters, in the order shown), without the
+      buttons column. `exportName` names the file; without it the grid's noun is used. The
+      Cash Flow tab has the same button and saves whichever view is showing. Lists that are
+      not a `DataGrid` (Users, Skills, Layouts, the small summary tables) have none.
+    - `lib/excelExport.ts` writes the workbook in the browser with no library: a few XML
+      files in a zip stored without compression. `cellFromText` turns a cell of a numeric
+      column into a real number, money, percentage or date so Excel can add and sort it; any
+      other column stays text, so a unit such as "0425" is not changed. Checked by reading
+      the files back with openpyxl and with `lib/spreadsheet.ts`; **not opened in Excel itself**.
+    - Scroll bars: a block at the end of `globals.css` replaces the browser's default bars
+      everywhere with a thin rounded one, no track and no arrows, that shows while the pointer
+      is over what scrolls. The page, the navigation and the agent column already hid theirs.
+      He wrote "see example" but no picture arrived, so this was a best reading of "old
+      fashion scroll"; ask for the example again if it is not what he meant.
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
