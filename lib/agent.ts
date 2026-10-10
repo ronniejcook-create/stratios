@@ -4,6 +4,7 @@
 // as the signed-in person, inside their organization and with their
 // permissions, so the agent can never see or change more than they can.
 
+import { documentsForAgent, leaseForAgent, listsForAgent, rentRollForAgent, searchPortfolio, tenantsForAgent, type Lookup } from './agentLookups'
 import { setValueForAgent } from './agentValues'
 import { buildAnalystPrompt, DEFAULT_ANALYST_INSTRUCTIONS, getAnalystInstructions } from './analystInstructions'
 import { createAssetWithDefaults, fallbackPropertyType, listPropertyTypes, matchPropertyType } from './assets'
@@ -32,7 +33,7 @@ export type AgentStatement = { assetId: string; documentId: string }
 export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[]; statements?: AgentStatement[] } | { ok: false; error: string }
 
 const MAX_TURNS = 40
-const MAX_STEPS = 11
+const MAX_STEPS = 16
 /** Leaves room inside the web host's five-minute limit for the conversation steps around a document reading. */
 const TIME_BUDGET_MS = 285000
 
@@ -127,6 +128,44 @@ const TOOLS: ToolDefinition[] = [
     name: 'recalculate_kpis',
     description:
       'Calculates an asset\'s KPIs again from its stored leases and latest rent roll, following the KPI skill that fits each property\'s kind (commercial and residential properties have different KPIs). Use when the person asks to calculate, recalculate or refresh KPIs, for example after confirming tenant names. It takes up to a minute or two. A figure a document shows or a person entered is never overwritten; such values are reported as kept. After a rent roll is read this already runs by itself, so do not call it then.',
+    input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
+  },
+  {
+    name: 'search_portfolio',
+    description:
+      'Searches everything Stratios holds for a name or phrase: assets and properties, tenants and their leases, names written in rent rolls, documents, and the text of fields, comments and critical dates. Use it FIRST whenever the person asks whether something or someone is in the system, asks about a name you have not already seen in a tool result, or asks where to find something. Search for the distinctive word alone (for example "Keeks"), not a whole sentence. Each match says where it was found, and buttons to open those screens are shown under your reply.',
+    input_schema: { type: 'object', properties: { query: { type: 'string', description: 'One or two distinctive words' } }, required: ['query'], additionalProperties: false },
+  },
+  {
+    name: 'list_tenants',
+    description:
+      'Returns the complete list of tenants with every lease each holds (unit, square feet, lease dates, rent, active or past), for one asset or, with no asset_id, for the whole organization, plus the names waiting to be confirmed. Use for any question about who the tenants are, how many there are, who leases a unit, lease expirations or rents by tenant. get_asset does not list tenants.',
+    input_schema: { type: 'object', properties: { asset_id: { type: 'string', description: 'Leave out for every asset' } }, additionalProperties: false },
+  },
+  {
+    name: 'get_lease',
+    description:
+      'Returns one lease in full: its terms from the rent roll, every lease field read from its lease agreement (term, rent, options, recoveries, restrictions, security and so on), and the documents loaded on it. Give the tenant, the unit, or both. Use for questions about a particular tenant\'s lease.',
+    input_schema: {
+      type: 'object',
+      properties: { asset_id: { type: 'string', description: 'Leave out to look across every asset' }, tenant: { type: 'string', description: 'The tenant\'s name or part of it; empty if not known' }, unit: { type: 'string', description: 'The suite or unit; empty if not known' } },
+      required: ['tenant', 'unit'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_rent_roll',
+    description: 'Returns every row of an asset\'s latest rent roll as its document shows it (unit, floor, tenant as written, leased or vacant, square feet, lease dates, rents), and the dates of the other rent rolls on file. Use for questions about vacant space, a unit, or what the rent roll itself says.',
+    input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
+  },
+  {
+    name: 'get_dates_and_commentary',
+    description: 'Returns the entries of an asset\'s lists: its critical dates, its comments, and any list the organization added, for the asset and each of its properties. get_asset does not include these.',
+    input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
+  },
+  {
+    name: 'list_documents',
+    description: 'Lists the documents loaded on an asset, newest first: name, kind (offering memorandum, rent roll, lease and so on), when it was uploaded, whether it has been read, and its summary.',
     input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
   },
   {
@@ -446,6 +485,20 @@ async function runTool(session: Session, name: string, input: Record<string, unk
         }).slice(0, 30000),
         isError: false,
       }
+    }
+    const lookups: Record<string, () => Promise<Lookup>> = {
+      search_portfolio: () => searchPortfolio(caller, asText(input.query, 200)),
+      list_tenants: () => tenantsForAgent(caller, asText(input.asset_id, 60) || null),
+      get_lease: () => leaseForAgent(caller, { assetId: asText(input.asset_id, 60) || null, tenant: asText(input.tenant, 200), unit: asText(input.unit, 60) }),
+      get_rent_roll: () => rentRollForAgent(caller, asText(input.asset_id, 60)),
+      get_dates_and_commentary: () => listsForAgent(caller, asText(input.asset_id, 60)),
+      list_documents: () => documentsForAgent(caller, asText(input.asset_id, 60)),
+    }
+    if (lookups[name]) {
+      const found = await lookups[name]()
+      if (!found.ok) return fail(found.error)
+      session.links.push(...found.links)
+      return { content: JSON.stringify({ ok: true, ...found.result }).slice(0, 60000), isError: false }
     }
     if (name === 'get_cash_flow') {
       const assetId = asText(input.asset_id, 60)

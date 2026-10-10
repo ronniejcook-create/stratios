@@ -1512,6 +1512,33 @@ work and how data is isolated; this file covers how we work and where things sta
     the end of `globals.css`: `.shell-main { position: relative }` and, above phone width,
     `.shell { overflow: hidden }`. Reproduced and confirmed on a test page. In the list
     toolbar the order is now search, then download last (his request).
+  - **The analyst can find things** (October 10, evening; no migration). Ronnie asked it
+    whether Keeks was a tenant and it could not say: `get_asset` returns fields only, so it
+    saw four tenant names in a summary field and no tenant list. He asked whether that was a
+    skill. It is not: a skill changes how an agent does something, a new ability needs a tool.
+    - Six read-only tools in `lib/agentLookups.ts` (seventeen tools now, `MAX_STEPS` 16):
+      `search_portfolio` (a name or phrase across assets, properties, tenants and their
+      leases, names in rent rolls that have no tenant record, documents, and the text of
+      fields, comments and critical dates; every word must appear; each match says where it
+      is and adds a button), `list_tenants` (the complete list with every lease, for one asset
+      or all, plus names waiting to be confirmed), `get_lease` (rent roll terms, the lease
+      agreement's fields, its documents; by tenant, unit or both, through `findLease`),
+      `get_rent_roll` (every row of the latest one), `get_dates_and_commentary` (list
+      entries, which `get_asset` never returned) and `list_documents`.
+    - Permissions as on the screens: tenants, leases, rent rolls and document summaries need
+      `canAddRecords`; field text follows each field's level (a list column follows its
+      list's section); lease field mentions need `canAddRecords` too.
+    - `lib/analystInstructions.ts`: the introduction now says what Stratios holds and which
+      tool reads each, and a new fixed rule says never to tell the person something is not in
+      Stratios, or to look it up themselves, before using `search_portfolio` and the tool
+      that holds that kind of information.
+    - Not built: questions across the whole portfolio that need arithmetic (totals by
+      tenant across assets beyond what the tools return), opening a screen for the person
+      (the analyst gives buttons; it cannot navigate), and searching inside a document's text.
+    - Checked: 28 cases on the scratch database (search by tenant, by a rent roll name with
+      no tenant record, by lease field text, wildcards, nothing found, a view-only member,
+      another organization, each tool, and the analyst end to end with a scripted Claude).
+      **Not run against the real Claude API.**
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
