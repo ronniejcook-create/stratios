@@ -7,7 +7,8 @@ import { listDocuments, MAX_DOCUMENT_BYTES, type DocumentSummary } from '@/lib/d
 import { EMPTY_VALUE } from '@/lib/fieldFormat'
 import { listFields, listSourceTypes, listValues, parentFieldOf, type FieldDefinition, type FieldValue } from '@/lib/fields'
 import { currentLabel, findOption, OFFICE_KEY, parentKeysOf, pickable, standardKeyOf } from '@/lib/optionLists'
-import { listScreens, type Screen, type Section } from '@/lib/layout'
+import { listKpiRuns } from '@/lib/kpis'
+import { listScreens, shownForType, type Screen, type Section } from '@/lib/layout'
 import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from '@/lib/lists'
 import type { MapPin } from '@/components/PropertyMap'
 import { typeAheadEnabled } from '@/lib/googlePlaces'
@@ -18,6 +19,7 @@ import { AddAddressForm, AddChildForm, AddressList, RefreshLocationButton } from
 import { AssetMap } from './AssetMap'
 import { listPhotos, listPlanPages, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo, type PlanPage } from '@/lib/photos'
 import { RentRollPanel, type RentRollChoice } from './RentRollPanel'
+import { KpiPanel, type KpiRunView } from './KpiPanel'
 import { LeasesPanel } from './LeasesPanel'
 import { listLeases, listTenantQuestions, tenantsReady, type Lease, type TenantQuestion } from '@/lib/tenants'
 import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
@@ -110,6 +112,14 @@ export default async function AssetPage({
   /** Whether a property's type is Office, or a type the organization added that counts as Office. */
   const isOffice = (label: string | null) => (propertyTypeField && propertyTypeField.optionList.length > 0 ? standardKeyOf(propertyTypeField.optionList, label) === OFFICE_KEY : label === 'Office')
 
+  // Some sections are for certain property types only (Residential Leasing on residential property). A type no
+  // section names, such as one the organization added that counts as nothing standard, is shown every section.
+  const typesWithSections = new Set(screens.flatMap((screen) => screen.sections.flatMap((section) => section.shownFor ?? [])))
+  const typeKeyOf = (label: string | null) => {
+    const key = propertyTypeField && propertyTypeField.optionList.length > 0 ? standardKeyOf(propertyTypeField.optionList, label) : null
+    return key && typesWithSections.has(key) ? key : null
+  }
+
   // What the asset holds, for the administrator's delete warning. The warning still works without the counts.
   let contents: AssetContents | null = null
   if (orgRole === 'org:admin') {
@@ -174,6 +184,41 @@ export default async function AssetPage({
     } catch (error) {
       console.error('Listing leases failed', error)
       leasesError = 'The leases could not be loaded. Try again.'
+    }
+  }
+
+  // The latest KPI calculation for each property, shown on the Leases tab. Values of fields the person can't see are left out.
+  let kpiRuns: KpiRunView[] = []
+  if (access.canAddRecords && !leasesError) {
+    try {
+      const sectionOf = new Map<string, string>()
+      for (const screen of screens) for (const section of screen.sections) for (const fieldId of section.fieldIds) if (!sectionOf.has(fieldId)) sectionOf.set(fieldId, section.id)
+      const known = new Set(fields.map((field) => field.id))
+      kpiRuns = (await withOrg(orgId, (client) => listKpiRuns(client, orgId, tree.id))).map((run) => ({
+        id: run.id,
+        propertyName: run.propertyName,
+        asOfDate: run.asOfDate,
+        skillName: run.skillName,
+        notes: run.notes,
+        createdAt: run.createdAt,
+        rows: run.results.flatMap((result) => {
+          const level = known.has(result.fieldId) ? access.fieldLevel(result.fieldId, sectionOf.get(result.fieldId) ?? null) : 'hidden'
+          if (level === 'hidden') return []
+          return [{
+            fieldId: result.fieldId,
+            name: result.fieldName,
+            period: result.period,
+            display: result.display,
+            working: result.working,
+            outcome: result.outcome,
+            current: result.current,
+            currentSource: result.currentSource,
+            canChoose: level === 'edit',
+          }]
+        }),
+      }))
+    } catch (error) {
+      console.error('Listing KPI calculations failed', error)
     }
   }
 
@@ -440,7 +485,7 @@ export default async function AssetPage({
                     </div>
                   ) : null}
 
-                  {propertySections.map((section) => {
+                  {propertySections.filter((section) => shownForType(section, typeKeyOf(property.propertyType))).map((section) => {
                     const body = sectionBody(section, propertyRecord)
                     return body ? (
                       <div key={section.id} className="record-group">
@@ -578,6 +623,7 @@ export default async function AssetPage({
                       rentRolls={rentRollChoices.length}
                       latestDate={rentRollChoices.reduce<string | null>((latest, choice) => (latest === null || choice.asOfDate > latest ? choice.asOfDate : latest), null)}
                       severalProperties={tree.properties.length > 1}
+                      kpis={<KpiPanel assetId={tree.id} runs={kpiRuns} canCalculate={access.canAddRecords} severalProperties={tree.properties.length > 1} />}
                     />
                   ),
                 },

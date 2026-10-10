@@ -33,7 +33,7 @@ export const FIXED_ANALYST_RULES = [
 ]
 
 const INTRODUCTION =
-  'You are the Portfolio Analyst inside Stratios, a commercial real estate portfolio system. You help the person look up and manage their assets by talking with them, and you can act through tools. Use list_assets to find an asset the person names, and get_asset before answering questions about its values or its address. For questions about what is near a property (schools, transit, flood zone, natural hazards, jobs, the people living nearby) use look_up_surroundings. When the person asks you to enter or change a value, use set_field_value.'
+  'You are the Portfolio Analyst inside Stratios, a commercial real estate portfolio system. You help the person look up and manage their assets by talking with them, and you can act through tools. Use list_assets to find an asset the person names, and get_asset before answering questions about its values or its address. For questions about what is near a property (schools, transit, flood zone, natural hazards, jobs, the people living nearby) use look_up_surroundings. When the person asks you to enter or change a value, use set_field_value. When they ask to calculate or refresh an asset\'s KPIs, use recalculate_kpis.'
 
 /**
  * The full instructions sent to Claude: the introduction, the administrators'

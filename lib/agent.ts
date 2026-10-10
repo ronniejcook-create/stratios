@@ -17,6 +17,7 @@ import { listFields, listSourceTypes, listValues } from './fields'
 import { listScreens } from './layout'
 import { loadAccess } from './permissions'
 import { formatAddress, getAssetTree, isUuid, listAssets, RECORD_LABELS, type Address } from './records'
+import { calculateKpis, describeKpiRuns } from './kpis'
 import { loadSkillsForAgent, skillIndex, type Skill } from './skills'
 import { isSurroundingTopic, lookUpSurroundings, SURROUNDING_TOPICS } from './surroundings'
 
@@ -24,10 +25,10 @@ export type AgentTurn = { role: 'user' | 'assistant'; text: string; attachments?
 export type AgentLink = { label: string; href: string }
 /** Pages of a document for the browser to draw as pictures and add to an asset's photos (plans and maps). */
 export type AgentPages = { assetId: string; documentId: string; pages: { page: number; caption: string | null }[] }
-export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[] } | { ok: false; error: string }
+export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[] } | { ok: false; error: string }
 
 const MAX_TURNS = 40
-const MAX_STEPS = 8
+const MAX_STEPS = 9
 /** Leaves room inside the web host's five-minute limit for the conversation steps around a document reading. */
 const TIME_BUDGET_MS = 285000
 
@@ -102,9 +103,15 @@ const TOOLS: ToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'recalculate_kpis',
+    description:
+      'Calculates an asset\'s KPIs again from its stored leases and latest rent roll, following the KPI skill that fits each property\'s kind (commercial and residential properties have different KPIs). Use when the person asks to calculate, recalculate or refresh KPIs, for example after confirming tenant names. It takes up to a minute or two. A figure a document shows or a person entered is never overwritten; such values are reported as kept. After a rent roll is read this already runs by itself, so do not call it then.',
+    input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
+  },
 ]
 
-type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string>; skills: Skill[]; pages: AgentPages[] }
+type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string>; skills: Skill[]; pages: AgentPages[]; kpis: string[] }
 
 const READ_SKILL: ToolDefinition = {
   name: 'read_skill',
@@ -128,6 +135,8 @@ function describeReading(session: Session, result: ReadOutcome): string {
   session.links.push({ label: 'Review What Was Found', href: `/dashboard/assets/${result.assetId}/documents/${result.documentId}` })
   if (result.rentRollRows > 0) session.links.push({ label: 'Open Rent Roll', href: `/dashboard/assets/${result.assetId}?screen=_rentroll` })
   if (result.rentRollRows > 0 && result.tenantQuestions > 0) session.links.push({ label: 'Confirm Tenants', href: `/dashboard/assets/${result.assetId}?screen=_leases` })
+  // The KPIs are calculated from the new leases next, by the browser, so this turn is not held up by it.
+  if (result.rentRollRows > 0 && !session.kpis.includes(result.assetId)) session.kpis.push(result.assetId)
   return JSON.stringify({
     ok: true,
     asset_created: result.created,
@@ -148,6 +157,7 @@ function describeReading(session: Session, result: ReadOutcome): string {
     ...(result.rentRollRows > 0
       ? {
           tenant_names_waiting_for_the_person_to_confirm: result.tenantQuestions,
+          about_kpis: 'The property\'s KPIs are now being calculated from these leases, following the KPI skill for its kind of property; that finishes a minute or so after this reply, and the results are on the Leases tab. Say so; do not call recalculate_kpis for it.',
           about_tenants: 'Units, tenants and leases were built from the rent roll and are on the asset\'s Leases tab. Names that only look like an existing tenant are never matched by guesswork; tell the person how many are waiting there to be confirmed, if any.',
         }
       : {}),
@@ -316,6 +326,36 @@ async function runTool(session: Session, name: string, input: Record<string, unk
         isError: false,
       }
     }
+    if (name === 'recalculate_kpis') {
+      const assetId = asText(input.asset_id, 60)
+      if (!isUuid(assetId)) return fail('That asset could not be found. Use list_assets to get its id.')
+      const left = session.deadline - Date.now()
+      if (left < 45000) return fail('There is not enough time left in this turn to calculate. Ask the person to send the request again, or to press Recalculate KPIs on the asset\'s Leases tab.')
+      const result = await calculateKpis(caller, assetId, { timeoutMs: left - 20000 })
+      if (!result.ok) return fail(result.error)
+      session.changed = true
+      session.links.push({ label: 'Open the Leases Tab', href: `/dashboard/assets/${assetId}?screen=_leases` })
+      return {
+        content: JSON.stringify({
+          ok: true,
+          asset: result.assetName,
+          summary: describeKpiRuns(result.runs, result.problems),
+          properties: result.runs.map((run) => ({
+            property: run.propertyName,
+            as_of: run.asOfDate,
+            skill_followed: run.skillName,
+            values: run.results.map((value) => ({
+              name: value.fieldName,
+              calculated: value.display,
+              result: value.outcome === 'kept' ? `not saved: the field holds ${value.current} from ${value.currentSource ?? 'another source'}, which was kept. The person can choose the calculated figure on the Leases tab.` : value.outcome === 'same' ? 'already held this value' : 'saved',
+              working: value.working,
+            })),
+            notes: run.notes,
+          })),
+        }).slice(0, 30000),
+        isError: false,
+      }
+    }
     return fail(`There is no tool called ${name}.`)
   } catch (error) {
     console.error(`Agent tool ${name} failed`, error)
@@ -334,7 +374,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
   const turns = input.turns.slice(-MAX_TURNS)
   if (turns.length === 0 || turns[turns.length - 1].role !== 'user') return { ok: false, error: 'Type a message first.' }
 
-  const session: Session = { caller, links: [], changed: false, deadline: Date.now() + TIME_BUDGET_MS, documentIds: new Set(), skills: [], pages: [] }
+  const session: Session = { caller, links: [], changed: false, deadline: Date.now() + TIME_BUDGET_MS, documentIds: new Set(), skills: [], pages: [], kpis: [] }
   const messages: ChatMessage[] = []
   turns.forEach((turn, index) => {
     let content = asText(turn.text, 8000)
@@ -377,7 +417,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
       const said = answer.content.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text').map((block) => block.text).join('\n').trim()
       const requests = answer.content.filter((block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use')
       if (answer.stopReason !== 'tool_use' || requests.length === 0) {
-        return { ok: true, text: said || 'Done.', links: dedupe(session.links), changed: session.changed, pages: session.pages }
+        return { ok: true, text: said || 'Done.', links: dedupe(session.links), changed: session.changed, pages: session.pages, kpis: session.kpis }
       }
       messages.push({ role: 'assistant', content: answer.content })
       const results: ContentBlock[] = []
@@ -387,7 +427,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
       }
       messages.push({ role: 'user', content: results })
     }
-    return { ok: true, text: 'I did part of that but ran out of steps. Tell me what is still missing and I will carry on.', links: dedupe(session.links), changed: session.changed, pages: session.pages }
+    return { ok: true, text: 'I did part of that but ran out of steps. Tell me what is still missing and I will carry on.', links: dedupe(session.links), changed: session.changed, pages: session.pages, kpis: session.kpis }
   } catch (error) {
     // Anything already done (an asset created, a document read) is still done; say so through the buttons.
     const reason =
@@ -395,7 +435,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
       error instanceof Error && error.name === 'TimeoutError' ? 'Claude took too long to answer.' :
       'Stratios could not reach the Claude API.'
     if (!(error instanceof ApiError)) console.error('Agent failed', error)
-    if (session.changed) return { ok: true, text: `The work was done, but I could not write up the result (${reason}) Use the buttons below to see it.`, links: dedupe(session.links), changed: true, pages: session.pages }
+    if (session.changed) return { ok: true, text: `The work was done, but I could not write up the result (${reason}) Use the buttons below to see it.`, links: dedupe(session.links), changed: true, pages: session.pages, kpis: session.kpis }
     return { ok: false, error: reason }
   }
 }

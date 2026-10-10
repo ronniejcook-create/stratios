@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DataGrid, type GridColumn, type GridRow } from '@/components/DataGrid'
@@ -34,6 +34,7 @@ export function LeasesPanel({
   rentRolls,
   latestDate,
   severalProperties,
+  kpis,
 }: {
   assetId: string
   leases: Lease[]
@@ -43,6 +44,8 @@ export function LeasesPanel({
   /** The date of the latest rent roll, which decides which leases are active. */
   latestDate: string | null
   severalProperties: boolean
+  /** The KPIs calculated from these leases, shown above them. */
+  kpis?: ReactNode
 }) {
   const router = useRouter()
   const [busy, start] = useTransition()
@@ -127,6 +130,7 @@ export function LeasesPanel({
   return (
     <>
       <TenantQuestions questions={questions} assetId={assetId} />
+      {kpis}
       <section className="panel">
         <div className="panel-head">
           <h2>Leases</h2>

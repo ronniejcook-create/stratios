@@ -1043,3 +1043,14 @@ td.muted { color: var(--dim); }
 .tenant-question-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-top: 10px; border-top: 1px solid var(--line); }
 .tenant-question-list .button-row { margin: 0; }
 .tenant-names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+/* KPIs calculated from leases (Leases tab) */
+.kpi-run { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.kpi-run h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--heading); }
+.kpi-run .table-scroll { margin-top: 8px; }
+.kpi-table { width: 100%; }
+.kpi-table td, .kpi-table th { vertical-align: top; }
+.kpi-table tbody th { white-space: nowrap; }
+.kpi-period { font-weight: 400; color: var(--muted); }
+.kpi-kept { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.kpi-working { min-width: 260px; color: var(--muted); }

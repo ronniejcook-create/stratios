@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { askAgent, CANNOT_UPLOAD, canUpload, DOCUMENT_ACCEPT, uploadDocument, type AgentLink, type AgentPages } from '@/lib/documentClient'
+import { askAgent, CANNOT_UPLOAD, canUpload, DOCUMENT_ACCEPT, recalculateKpis, uploadDocument, type AgentLink, type AgentPages } from '@/lib/documentClient'
 import { addDocumentPages } from '@/lib/pagePictures'
 import { toHtml } from '@/lib/richText'
 import { useAgentReferences } from './AgentContext'
@@ -31,6 +31,7 @@ export function AgentPanel() {
   const [pending, setPending] = useState<Pending[]>([])
   const [working, setWorking] = useState(false)
   const [planStatus, setPlanStatus] = useState<string | null>(null)
+  const [kpiStatus, setKpiStatus] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const end = useRef<HTMLDivElement>(null)
@@ -91,6 +92,22 @@ export function AgentPanel() {
     setMessages((current) => [...current, { role: 'assistant', text: answer.text, links: answer.links }])
     if (answer.changed) router.refresh()
     if (answer.pages && answer.pages.length > 0) void addPlanPages(answer.pages)
+    if (answer.kpis && answer.kpis.length > 0) void calculateKpis(answer.kpis)
+  }
+
+  // After a rent roll is read, the property's KPIs are calculated from the
+  // new leases. Like the plan pages it runs on its own after the reply, so
+  // the person can keep chatting; if it fails, Recalculate KPIs on the
+  // asset's Leases tab does the same.
+  const calculateKpis = async (assetIds: string[]) => {
+    setKpiStatus('Calculating KPIs from the leases…')
+    const said: string[] = []
+    for (const assetId of assetIds) {
+      const result = await recalculateKpis(assetId)
+      said.push(result.ok ? `KPIs: ${result.message}` : `The KPIs were not calculated: ${result.error}`)
+    }
+    setKpiStatus(said.join(' '))
+    router.refresh()
   }
 
   // Plan and map pages are drawn as pictures here in the browser, after the
@@ -171,6 +188,7 @@ export function AgentPanel() {
           </div>
         ) : null}
         {planStatus ? <p className="agent-status" role="status">{planStatus}</p> : null}
+        {kpiStatus ? <p className="agent-status" role="status">{kpiStatus}</p> : null}
         <div ref={end} />
       </div>
 

@@ -14,6 +14,7 @@ import { isPhotoCategory, removePhoto, savePhotosFromDocument, setMainPhoto, upd
 import { LOCATION_SOURCE, lookUpAddress, type AddressMatch, type FoundAddress } from '@/lib/geocode'
 import { addressOfSuggestion, suggestAddresses, type Suggestion } from '@/lib/googlePlaces'
 import { deleteRentRoll, getRentRoll, setRentRollDate } from '@/lib/rentRolls'
+import { KPI_NEEDS_UPDATE, applyCalculatedValue } from '@/lib/kpis'
 import { refreshLeases, tenantsReady } from '@/lib/tenants'
 import { followAddressChange, pointOfProperty, propertyOfAddress, propertyOfOwner, refreshLocationFacts, type Point } from '@/lib/locationFacts'
 import { deleteAddress, formatAddress, getAddress, insertAddress, insertChild, isRecordType, isUuid, setAddressLocation, type AddressOwner, type Queryable } from '@/lib/records'
@@ -581,5 +582,24 @@ export async function removeRentRoll(input: { rentRollId: string; withDocument?:
   } catch (error) {
     console.error('Deleting a rent roll failed', error)
     return { ok: false, error: 'The rent roll could not be deleted. Try again.' }
+  }
+}
+
+/**
+ * Makes a calculated KPI the field's value where the calculation had kept a
+ * figure from a document, or one a person entered, in its place.
+ */
+export async function chooseCalculatedValue(input: { runId: string; fieldId: string }): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  const { userId, orgId, orgRole } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (!isUuid(input.runId) || !isUuid(input.fieldId)) return { ok: false, error: 'That value could not be found.' }
+  try {
+    const result = await withOrg(orgId, (client) => applyCalculatedValue(client, orgId, userId, orgRole === 'org:admin', input))
+    if (!result.ok) return result
+    revalidatePath(`/dashboard/assets/${result.assetId}`)
+    return { ok: true, message: `${result.fieldName} is now ${result.display}.` }
+  } catch (error) {
+    console.error('Choosing a calculated value failed', error)
+    return { ok: false, error: isMissingSchema(error) ? KPI_NEEDS_UPDATE : 'That could not be saved. Try again.' }
   }
 }

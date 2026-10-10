@@ -1181,6 +1181,79 @@ work and how data is isolated; this file covers how we work and where things sta
       every decision kind plus the "tenant and unit" lease match; the fallback suite again.
       **Not run against the real Claude API**, so how well the agent writes `decisions` and
       spots look-alikes shows on his next rent roll.
+  - **Stage 5, second part: KPIs calculated from the stored leases, by skills** (October 9,
+    night; `db/migrations/026_kpis_from_leases.sql`). Ronnie: KPIs from the stored leases with
+    a Recalculate button; commercial and residential properties have different KPIs; "the
+    skills will determine the logic". All logic is in `lib/kpis.ts`.
+    - **Two standard skills hold the logic**: Calculating Commercial KPIs
+      (`calculating-commercial-kpis`: total, leased and vacant square feet, percent leased,
+      occupancy, number of tenants, annual base rent, average rent per square foot, weighted
+      average lease term, rollover within 12 months, largest tenant and its share) and
+      Calculating Residential KPIs (`calculating-residential-kpis`: unit count, occupied and
+      vacant units, occupancy and percent leased by units, monthly in-place rent, average rent
+      per unit, average unit size, monthly rent per square foot, leases expiring within 90
+      days). Each skill's Use When names the property types it is for, lists the values and
+      says how each is worked out. An organization can edit either or add its own. The agent
+      picks the one skill that fits; with none (or none fitting) nothing is calculated.
+    - What the agent gets (`buildKpiPrompt`): the property's type and subtype, the date and
+      stated totals of its **latest rent roll** (for one date, the one with the most rows),
+      every unit of that rent roll with the tenant on file for it (a unit with a lease), the
+      number of tenant names waiting to be confirmed, the fields it may fill, and the skills
+      that mention KPIs, calculating or metrics in their name or Use When (`kpiSkills`; all
+      skills if none do). It also gets **sums worked out in code** (`kpiSums`: units and
+      square feet by status, active leases, rents, leases ending within 90 days, 12 and 24
+      months, the weighted-term numerator, the largest tenants), because an agent adding 60
+      rows in its head makes mistakes; which sums make up a value is still the skill's call.
+      He was told. Leases of a second, smaller rent roll for the same date are not included.
+    - The answer is small (skill, values of field key / value / working, notes).
+      `interpretKpiAnswer` drops an unknown skill (then nothing is taken), an unknown field
+      and a value that does not fit its field. Fields offered (`kpiFields`): property fields
+      the person may **edit** holding a number, money, percent, date or text. A field does
+      **not** need "How to Calculate" here (unlike values calculated while a document is
+      read): the skill's logic comes first, the field's recipe is the fallback.
+    - What becomes of a value (`storeCalculated`, code on purpose; his rule that the page
+      wins): empty field, **Saved**; field already calculated, **Updated**; equal,
+      **Unchanged**; field holding a figure from a document, a person or a lookup, **Not
+      Used**: the field is left alone, the calculated figure is recorded as the Calculated
+      source value and listed with a **Use Calculated Value** button (`applyCalculatedValue`,
+      action `chooseCalculatedValue`; needs edit on the field). Saved values have source
+      Calculated and the history note `Calculated from the leases as of <date>, following the
+      skill "<name>": <working>`. Monthly fields are saved for the rent roll's month.
+    - `kpi_runs` records every calculation (property, rent roll, skill, each value with its
+      working and outcome, notes). Deleting the asset removes them (cascade).
+    - When it runs: **Recalculate KPIs** on the Leases tab (`KpiPanel.tsx`, the "KPIs From
+      Leases" panel above the leases, which also shows each property's last calculation);
+      by itself after a rent roll is read, asked for **by the browser** once the reading has
+      answered, so the reading's five minutes are not shared (`DocumentsPanel`, and
+      `AgentPanel` through `kpis` on the analyst's reply, with a status line); and the
+      analyst's ninth tool, `recalculate_kpis` (`MAX_STEPS` 9). All go through
+      `calculateKpis` (`POST /api/kpis`, `maxDuration` 300, one Claude call per property that
+      has a rent roll, three steps so no transaction is open during the call). Needs
+      `canAddRecords`. It does **not** run again by itself after tenant names are confirmed,
+      a rent roll is deleted or re-dated, or Update From Rent Rolls; he presses the button.
+    - **Sections for some property types only**: `sections.shown_for` (a list of standard
+      Property Type keys; `shownFor` on `Section`, `shownForType` in `lib/layout.ts`, read
+      through `to_jsonb`). Two standard tile sections on Financials: **Commercial Leasing**
+      (office, industrial, retail, hotel, self-storage, mixed use, other) and **Residential
+      Leasing** (residential, seniors housing), holding the 13 new standard fields (67
+      standard fields now), all flagged calculated. A type the organization added follows
+      the type it counts as; a property with no type, or a type no section names, is shown
+      every section. There is no screen to set `shown_for` yet.
+    - 026 also takes "Values to Calculate" out of the standard Reading a Rent Roll skill
+      ("Values Are Calculated Afterwards"), so the logic lives in one place; an organization's
+      edited copy is not touched. The Reading an Operating Statement skill still calculates
+      Net Operating Income while reading. An organization's own Leased SF, Vacant SF and
+      similar fields are moved onto the standard ones, as in 017.
+    - Not built: calculating for a past rent roll's date, KPIs across a portfolio, a screen
+      to choose which property types a section shows for, and a history of runs on screen
+      (only the latest per property is shown).
+    - Checked: 026 twice as a role without BYPASSRLS; 27 cases on the scratch database with
+      a scripted answer (the sums, the prompt for an office and a residential property, every
+      outcome, a typed value kept and then chosen, a member and another organization
+      refused, no skill, Claude failing, sections by type, asset deletion); the earlier
+      analyst and lease suites again; the real panel clicked through in Chromium with
+      stand-in data. **Not run against the real Claude API**, so how well the agent follows
+      the skills on his rent roll, and how long it takes, shows on his first try.
   - Not built yet (later stages): stored formulas
     (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
@@ -1205,11 +1278,12 @@ work and how data is isolated; this file covers how we work and where things sta
 
 ## Where we left off (October 9, 2026, evening)
 
-Everything described above is committed, pushed to `main` and copied to his folder. Nothing is half done. The latest pieces are "Stage 6, second part: tenants, leases
-and units from rent rolls" and "The tenant and lease rules moved into the skill". **He needs to run migrations 022, 023, 024 and 025** in Supabase, in
-that order, then on Knoll Trail press Refresh Location (Overview) and Update From Rent Rolls
-(Leases tab); none of that is confirmed yet. **Agreed next step:** KPIs calculated from the
-stored leases, with a Recalculate button, then cash flow, then outside feeds.
+Everything described above is committed, pushed to `main` and copied to his folder. Nothing is
+half done. The latest piece is "Stage 5, second part: KPIs calculated from the stored leases, by
+skills". **He needs to run migrations 022, 023, 024, 025 and 026** in Supabase, in that order
+(022 to 025 were not confirmed as run), then on Knoll Trail press Refresh Location (Overview),
+Update From Rent Rolls and then Recalculate KPIs (Leases tab). **Agreed next step:** cash flow,
+then outside feeds.
 
 **The day's last stretch was the Map tab.** It now has a row of tabs, one layer at a time: None,
 Demographics, Schools, Jobs and Commuting, Transit, Flood Zones, Natural Hazards, plus a separate
@@ -1223,7 +1297,8 @@ Trail rent roll). Every migration through 021 is on Supabase. Notes above that s
 Vercel can reach ... is not known" are answered by this.
 
 **Not yet tried by him:** asking the analyst about a property's surroundings, asking it to
-set a value, and the Location fields.
+set a value, the Location fields, the Options panel, the Leases tab and Tenants pages, and
+Recalculate KPIs.
 
 **How the federal services were checked:** the cloud workspace can't reach them, so questions
 were run in the built-in browser on his computer (he allowed hazards.fema.gov, nces.ed.gov and
@@ -1252,7 +1327,7 @@ The same route works for checking any new public service.
 - The design document "Stratios Data Design" is behind: its build order and Starter Fields tab
   do not yet cover stages 4 to 6, the 22 fields from migration 017, the 11 Location fields
   from 022, Property Subtype and managed option lists from 023, tenants and leases from
-  024, or rent rolls.
+  024, the KPI skills and fields from 026, or rent rolls.
 
 ## Ideas offered but not started
 

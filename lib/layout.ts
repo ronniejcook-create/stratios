@@ -14,6 +14,21 @@ export type Section = {
   displayStyle: DisplayStyle
   /** The fields in this section, in order. Empty for a list section. */
   fieldIds: string[]
+  /**
+   * For a property's section: the standard Property Type keys it is shown
+   * for (Residential Leasing only on residential property). Null means every
+   * type.
+   */
+  shownFor: string[] | null
+}
+
+/**
+ * Whether a section is shown for a property, given the standard key its type
+ * counts as. A property with no type, or a type that counts as nothing
+ * standard, is shown everything.
+ */
+export function shownForType(section: Pick<Section, 'shownFor'>, typeKey: string | null): boolean {
+  return !section.shownFor || section.shownFor.length === 0 || typeKey === null || section.shownFor.includes(typeKey)
 }
 
 export type Screen = {
@@ -23,6 +38,11 @@ export type Screen = {
   sections: Section[]
 }
 
+function readKeys(raw: unknown): string[] | null {
+  const value = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw
+  return Array.isArray(value) && value.length > 0 ? value.map(String) : null
+}
+
 /** Every screen this organization sees, in order, each with its sections. Pass null for the Stratios standard layout alone. */
 export async function listScreens(client: Queryable, orgId: string | null): Promise<Screen[]> {
   const screens = await client.query(
@@ -30,7 +50,8 @@ export async function listScreens(client: Queryable, orgId: string | null): Prom
     [orgId],
   )
   const sections = await client.query(
-    `select id::text as id, screen_id::text as screen_id, key, name, applies_to, display_style
+    // shown_for arrives with migration 026; read this way the layout still loads before it is run.
+    `select id::text as id, screen_id::text as screen_id, key, name, applies_to, display_style, to_jsonb(sections) -> 'shown_for' as shown_for
      from sections where org_id is null or org_id = $1 order by sort_order, name`,
     [orgId],
   )
@@ -55,6 +76,7 @@ export async function listScreens(client: Queryable, orgId: string | null): Prom
         appliesTo: section.applies_to,
         displayStyle: section.display_style,
         fieldIds: placements.rows.filter((placement) => placement.section_id === section.id).map((placement) => placement.field_id as string),
+        shownFor: readKeys(section.shown_for),
       })),
   }))
 }

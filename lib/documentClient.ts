@@ -51,19 +51,28 @@ export async function uploadDocument(assetId: string | null, file: File, onProgr
 export type AgentTurn = { role: 'user' | 'assistant'; text: string; attachments?: { id: string; name: string }[] }
 export type AgentLink = { label: string; href: string }
 export type AgentPages = { assetId: string; documentId: string; pages: { page: number; caption: string | null }[] }
-export type AgentAnswer = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[] } | { ok: false; error: string }
+export type AgentAnswer = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[] } | { ok: false; error: string }
 
 /** Sends the conversation so far to the agent and returns its reply. A turn that reads a document can take a few minutes. */
 export async function askAgent(input: { turns: AgentTurn[]; pageAssetId: string | null; references: string[] }): Promise<AgentAnswer> {
   const result = await call('/api/agent', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
   if (!result.ok) return { ok: false, error: result.error ?? 'The agent could not answer. Try again.' }
-  return { ok: true, text: String(result.text ?? ''), links: Array.isArray(result.links) ? (result.links as AgentLink[]) : [], changed: result.changed === true, pages: Array.isArray(result.pages) ? (result.pages as AgentPages[]) : [] }
+  return { ok: true, text: String(result.text ?? ''), links: Array.isArray(result.links) ? (result.links as AgentLink[]) : [], changed: result.changed === true, pages: Array.isArray(result.pages) ? (result.pages as AgentPages[]) : [], kpis: Array.isArray(result.kpis) ? result.kpis.map(String) : [] }
 }
 
 /** Asks the agent to read an uploaded document. This can take a few minutes. */
-export async function readUploadedDocument(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function readUploadedDocument(id: string): Promise<{ ok: true; rentRollRows: number } | { ok: false; error: string }> {
   const result = await call(`/api/documents/${id}/read`, { method: 'POST' })
-  return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'The document could not be read.' }
+  return result.ok ? { ok: true, rentRollRows: Number(result.rentRollRows) || 0 } : { ok: false, error: result.error ?? 'The document could not be read.' }
+}
+
+/**
+ * Calculates an asset's KPIs from its stored leases, following the KPI skill
+ * for each property's kind. Takes up to a minute or two per property.
+ */
+export async function recalculateKpis(assetId: string): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  const result = await call('/api/kpis', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId }) })
+  return result.ok ? { ok: true, message: String(result.message ?? 'The KPIs were calculated.') } : { ok: false, error: result.error ?? 'The KPIs could not be calculated. Try again.' }
 }
 
 /** The file picker's filter: PDFs and Excel workbooks. */
