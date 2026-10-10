@@ -405,6 +405,8 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 .agent-file { align-self: flex-start; max-width: 100%; padding: 2px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line-strong); font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agent-links { display: flex; flex-wrap: wrap; gap: 6px; }
 .agent-links .btn { min-height: 30px; padding: 0 10px; font-size: 13px; text-decoration: none; }
+.agent-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.agent-choices .btn { min-height: 30px; padding: 0 12px; font-size: 13px; border-radius: 999px; }
 .agent-working { flex-direction: row; align-items: center; gap: 10px; color: var(--muted); }
 .agent-dots { display: inline-flex; gap: 4px; flex: none; }
 .agent-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--link); animation: agent-dot 1.2s ease-in-out infinite; }

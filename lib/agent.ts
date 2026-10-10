@@ -21,7 +21,7 @@ import { loadAccess } from './permissions'
 import { formatAddress, getAssetTree, isUuid, listAssets, RECORD_LABELS, type Address } from './records'
 import { calculateKpis, describeKpiRuns } from './kpis'
 import { CASH_FLOW_COLUMN_LABELS, CASH_FLOW_SECTION_LABELS, cashFlowsReady, columnSums, listCashFlowLines, listCashFlows, periodLabel, periodTotals } from './cashFlows'
-import { loadSkillsForAgent, skillIndex, type Skill } from './skills'
+import { loadSkillsForAgent, skillIndex, skillsInFull, type Skill } from './skills'
 import { isSurroundingTopic, lookUpSurroundings, SURROUNDING_TOPICS } from './surroundings'
 
 export type AgentTurn = { role: 'user' | 'assistant'; text: string; attachments?: { id: string; name: string }[] }
@@ -30,10 +30,12 @@ export type AgentLink = { label: string; href: string }
 export type AgentPages = { assetId: string; documentId: string; pages: { page: number; caption: string | null }[] }
 /** A document whose operating statement the browser asks to have copied as a cash flow, once the agent has answered. */
 export type AgentStatement = { assetId: string; documentId: string }
-export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[]; statements?: AgentStatement[] } | { ok: false; error: string }
+export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[]; statements?: AgentStatement[]; choices?: string[] } | { ok: false; error: string }
 
 const MAX_TURNS = 40
-const MAX_STEPS = 18
+const MAX_STEPS = 19
+/** Skills the analyst is shown in full on every turn, by key, so it never has to decide to open them. An organization's edited copy is the one shown. */
+const ALWAYS_OPEN_SKILLS = ['after-changing-data']
 /** Leaves room inside the web host's five-minute limit for the conversation steps around a document reading. */
 const TIME_BUDGET_MS = 285000
 
@@ -131,6 +133,17 @@ const TOOLS: ToolDefinition[] = [
     input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
   },
   {
+    name: 'offer_choices',
+    description:
+      'Shows the answers to the question you are about to ask as buttons under your reply; the person clicks one and it is sent as their next message. Call it whenever your reply ends in a question with a few clear answers (yes or no, do it or not now, which of these). Then write your reply ending with the question, without listing the answers again. Each choice is a short, complete reply in the person\'s voice, for example "Yes, recalculate the KPIs" and "Not now". Do not use it for open questions.',
+    input_schema: {
+      type: 'object',
+      properties: { choices: { type: 'array', items: { type: 'string' }, description: 'Two to four answers, most likely first, each under 50 characters' } },
+      required: ['choices'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'rebuild_leases',
     description:
       'Rebuilds an asset\'s units, tenants and leases from its rent rolls, and reports what changed. Use it when a lease looks out of step with the rent rolls: marked Past although the latest rent roll shows the tenant, missing, or showing old terms. It changes nothing in the rent rolls themselves and is safe to run at any time. If it reports that nothing changed and the tenant still has no active lease, use set_tenant_ruling.',
@@ -202,7 +215,7 @@ const TOOLS: ToolDefinition[] = [
   },
 ]
 
-type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string>; skills: Skill[]; pages: AgentPages[]; kpis: string[]; statements: AgentStatement[] }
+type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string>; skills: Skill[]; pages: AgentPages[]; kpis: string[]; statements: AgentStatement[]; choices: string[] }
 
 const READ_SKILL: ToolDefinition = {
   name: 'read_skill',
@@ -507,6 +520,16 @@ async function runTool(session: Session, name: string, input: Record<string, unk
         isError: false,
       }
     }
+    if (name === 'offer_choices') {
+      const seen = new Set<string>()
+      const choices = (Array.isArray(input.choices) ? input.choices : [])
+        .map((choice) => asText(choice, 60).replace(/\s+/g, ' ').trim())
+        .filter((choice) => choice && !seen.has(choice.toLowerCase()) && Boolean(seen.add(choice.toLowerCase())))
+        .slice(0, 4)
+      if (choices.length < 2) return fail('Give two to four different answers.')
+      session.choices = choices
+      return { content: JSON.stringify({ ok: true, shown_as_buttons: choices, next: 'Now write your reply, ending with the question. Do not list the answers in the text.' }), isError: false }
+    }
     const repairs: Record<string, () => Promise<Lookup>> = {
       rebuild_leases: () => rebuildLeasesForAgent(caller, asText(input.asset_id, 60)),
       set_tenant_ruling: () => ruleTenantForAgent(caller, { assetId: asText(input.asset_id, 60) || null, name: asText(input.name, 200), isTenant: input.is_tenant === true }),
@@ -608,7 +631,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
   const turns = input.turns.slice(-MAX_TURNS)
   if (turns.length === 0 || turns[turns.length - 1].role !== 'user') return { ok: false, error: 'Type a message first.' }
 
-  const session: Session = { caller, links: [], changed: false, deadline: Date.now() + TIME_BUDGET_MS, documentIds: new Set(), skills: [], pages: [], kpis: [], statements: [] }
+  const session: Session = { caller, links: [], changed: false, deadline: Date.now() + TIME_BUDGET_MS, documentIds: new Set(), skills: [], pages: [], kpis: [], statements: [], choices: [] }
   const messages: ChatMessage[] = []
   turns.forEach((turn, index) => {
     let content = asText(turn.text, 8000)
@@ -642,7 +665,8 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
   }
   // The skills library is read on its own, so a problem with one never hides the other.
   session.skills = await withOrg(caller.orgId, (client) => loadSkillsForAgent(client, caller.orgId)).catch(() => [])
-  const system = buildAnalystPrompt(instructions, skillIndex(session.skills))
+  const open = session.skills.filter((skill) => ALWAYS_OPEN_SKILLS.includes(skill.key))
+  const system = buildAnalystPrompt(instructions, skillIndex(session.skills.filter((skill) => !open.includes(skill))), skillsInFull(open, 12000))
   const tools = session.skills.length > 0 ? [...TOOLS, READ_SKILL] : TOOLS
 
   try {
@@ -651,7 +675,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
       const said = answer.content.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text').map((block) => block.text).join('\n').trim()
       const requests = answer.content.filter((block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use')
       if (answer.stopReason !== 'tool_use' || requests.length === 0) {
-        return { ok: true, text: said || 'Done.', links: dedupe(session.links), changed: session.changed, pages: session.pages, kpis: session.kpis, statements: session.statements }
+        return { ok: true, text: said || 'Done.', links: dedupe(session.links), changed: session.changed, pages: session.pages, kpis: session.kpis, statements: session.statements, choices: session.choices }
       }
       messages.push({ role: 'assistant', content: answer.content })
       const results: ContentBlock[] = []

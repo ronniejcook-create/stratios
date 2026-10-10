@@ -53,13 +53,13 @@ export type AgentLink = { label: string; href: string }
 export type AgentPages = { assetId: string; documentId: string; pages: { page: number; caption: string | null }[] }
 /** A document whose operating statement is to be copied as a cash flow once the agent has answered. */
 export type AgentStatement = { assetId: string; documentId: string }
-export type AgentAnswer = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[]; statements?: AgentStatement[] } | { ok: false; error: string }
+export type AgentAnswer = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[]; statements?: AgentStatement[]; choices?: string[] } | { ok: false; error: string }
 
 /** Sends the conversation so far to the agent and returns its reply. A turn that reads a document can take a few minutes. */
 export async function askAgent(input: { turns: AgentTurn[]; pageAssetId: string | null; references: string[] }): Promise<AgentAnswer> {
   const result = await call('/api/agent', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
   if (!result.ok) return { ok: false, error: result.error ?? 'The agent could not answer. Try again.' }
-  return { ok: true, text: String(result.text ?? ''), links: Array.isArray(result.links) ? (result.links as AgentLink[]) : [], changed: result.changed === true, pages: Array.isArray(result.pages) ? (result.pages as AgentPages[]) : [], kpis: Array.isArray(result.kpis) ? result.kpis.map(String) : [], statements: Array.isArray(result.statements) ? (result.statements as AgentStatement[]) : [] }
+  return { ok: true, text: String(result.text ?? ''), links: Array.isArray(result.links) ? (result.links as AgentLink[]) : [], changed: result.changed === true, pages: Array.isArray(result.pages) ? (result.pages as AgentPages[]) : [], kpis: Array.isArray(result.kpis) ? result.kpis.map(String) : [], statements: Array.isArray(result.statements) ? (result.statements as AgentStatement[]) : [], choices: Array.isArray(result.choices) ? result.choices.map(String).slice(0, 4) : [] }
 }
 
 /** Asks the agent to read an uploaded document. This can take a few minutes. */

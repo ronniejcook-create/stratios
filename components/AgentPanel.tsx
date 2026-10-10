@@ -10,7 +10,7 @@ import { useAgentReferences } from './AgentContext'
 import { AiIcon } from './AiIcon'
 
 type Attachment = { id: string; name: string }
-type Message = { role: 'user' | 'assistant'; text: string; attachments?: Attachment[]; links?: AgentLink[]; failed?: boolean }
+type Message = { role: 'user' | 'assistant'; text: string; attachments?: Attachment[]; links?: AgentLink[]; choices?: string[]; failed?: boolean }
 /** A file dropped into the panel: uploading, ready to send, or refused. */
 type Pending = { key: number; name: string; progress: number; id: string | null; error: string | null }
 
@@ -70,14 +70,15 @@ export function AgentPanel() {
     addFiles(Array.from(event.dataTransfer.files ?? []))
   }
 
-  const send = async () => {
-    const text = draft.trim()
+  /** Sends what is typed, or `chosen` when the person clicked one of the analyst's answer buttons. */
+  const send = async (chosen?: string) => {
+    const text = (chosen ?? draft).trim()
     if (working || uploading || (!text && ready.length === 0)) return
     const attachments = ready.map((file) => ({ id: file.id as string, name: file.name }))
     const mine: Message = { role: 'user', text: text || (attachments.length === 1 ? 'Here is a document.' : 'Here are some documents.'), attachments }
     const history = [...messages, mine]
     setMessages(history)
-    setDraft('')
+    if (chosen === undefined) setDraft('')
     setPending([])
     setWorking(true)
     const answer = await askAgent({
@@ -90,7 +91,7 @@ export function AgentPanel() {
       setMessages((current) => [...current, { role: 'assistant', text: answer.error, failed: true }])
       return
     }
-    setMessages((current) => [...current, { role: 'assistant', text: answer.text, links: answer.links }])
+    setMessages((current) => [...current, { role: 'assistant', text: answer.text, links: answer.links, choices: answer.choices }])
     if (answer.changed) router.refresh()
     if (answer.pages && answer.pages.length > 0) void addPlanPages(answer.pages)
     if (answer.kpis && answer.kpis.length > 0) void calculateKpis(answer.kpis)
@@ -191,6 +192,14 @@ export function AgentPanel() {
                 <div className="agent-links">
                   {message.links.map((link) => (
                     <Link key={link.href} href={link.href} className="btn btn-ghost btn-small">{link.label}</Link>
+                  ))}
+                </div>
+              ) : null}
+              {/* Answers to the analyst's question, as buttons. Only the latest reply's can be clicked; older ones are gone. */}
+              {message.choices && message.choices.length > 0 && index === messages.length - 1 && !working ? (
+                <div className="agent-choices" role="group" aria-label="Answers">
+                  {message.choices.map((choice, place) => (
+                    <button key={choice} type="button" className={`btn btn-small ${place === 0 ? 'btn-primary' : 'btn-ghost'}`} disabled={uploading} onClick={() => void send(choice)}>{choice}</button>
                   ))}
                 </div>
               ) : null}

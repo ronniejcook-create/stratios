@@ -1571,6 +1571,27 @@ work and how data is isolated; this file covers how we work and where things sta
       analyst end to end with a scripted Claude); the lookup suite again. **Not run against
       the real Claude API.** The cause was worked out from the code and his screenshot, not
       seen in his database.
+  - **Follow-ups are a skill, and the analyst's questions have buttons** (October 10, evening;
+    `db/migrations/032_after_changing_data.sql`). Ronnie asked why he should have to remember
+    to recalculate KPIs after a fix, whether that belonged in a skill, and chose "ask first,
+    with clickable options".
+    - Standard skill **After Changing Data** (`after-changing-data`): ask first with buttons;
+      after leases change, ask whether to recalculate KPIs; after a value is entered, no
+      question except for Property Type; after KPIs, report; when data looks wrong, ask
+      before fixing unless already asked. An organization can edit it.
+    - **It is always in front of the analyst**: skills whose key is in `ALWAYS_OPEN_SKILLS`
+      (`lib/agent.ts`) are put in the prompt in full ("Skills you always follow",
+      `buildAnalystPrompt`'s third argument) and left out of the list it opens with
+      `read_skill`. Add a key there for any future always-on analyst skill. Before 032 is run
+      the fixed rule and the tools' own notes still make it offer.
+    - **Buttons**: a tool, `offer_choices` (two to four short answers; twenty tools now,
+      `MAX_STEPS` 19), puts `choices` on the reply; `AgentPanel` shows them as pill buttons
+      under the latest reply only (the first is the filled one), and a click sends that text
+      as the person's next message. A fixed rule tells the analyst to use it for any question
+      with a few clear answers. Typing an answer still works.
+    - Checked: 032 twice; 7 scripted cases (the skill in the prompt, choices returned and
+      tidied, one choice refused); the ruling and lookup suites again. **The buttons were not
+      opened in a browser, and nothing was run against the real Claude API.**
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
@@ -1604,7 +1625,7 @@ Everything described above is committed, pushed to `main` and copied to his fold
 of October 10 built cash flow from operating statements (stage 6, third part, under "What's
 built"), against the Yardi statement he supplied for Knoll Trail.
 
-**Waiting on Ronnie:** run `db/migrations/031_tenant_rulings.sql`, then ask the analyst to fix Journey House (see "The analyst can repair tenants and leases"). Before that: He ran 030 and said (October 10, afternoon) "Cash Flow looks
+**Waiting on Ronnie:** run `db/migrations/031_tenant_rulings.sql` and `032_after_changing_data.sql`, then ask the analyst to fix Journey House (see "The analyst can repair tenants and leases"). Before that: He ran 030 and said (October 10, afternoon) "Cash Flow looks
 good for now". The same afternoon his twelve list and sizing requests were built ("Lists
 clean-up" under "What's built"); he has not yet said how they look inside the app.
 
