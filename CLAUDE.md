@@ -1625,7 +1625,7 @@ Everything described above is committed, pushed to `main` and copied to his fold
 of October 10 built cash flow from operating statements (stage 6, third part, under "What's
 built"), against the Yardi statement he supplied for Knoll Trail.
 
-**Waiting on Ronnie:** run `db/migrations/031_tenant_rulings.sql` and `032_after_changing_data.sql`, then ask the analyst to fix Journey House (see "The analyst can repair tenants and leases"). Before that: He ran 030 and said (October 10, afternoon) "Cash Flow looks
+**Migrations 031 and 032 are run** (Ronnie, October 10, evening). He has not yet said how the Journey House fix through the analyst, or its answer buttons, came out. Earlier the same day: He ran 030 and said (October 10, afternoon) "Cash Flow looks
 good for now". The same afternoon his twelve list and sizing requests were built ("Lists
 clean-up" under "What's built"); he has not yet said how they look inside the app.
 
