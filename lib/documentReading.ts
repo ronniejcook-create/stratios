@@ -10,7 +10,8 @@ import { followAddressChange, pointOfProperty, type Point } from './locationFact
 import { createAssetWithDefaults, fallbackPropertyType, propertyTypesOf } from './assets'
 import { withOrg } from './db'
 import { describeFailure, NO_PERMISSION, type Caller } from './documentRequests'
-import { applyReading, attachDocument, failReading, getDocument, readDocumentFile, startReading, type Outcome } from './documents'
+import { applyReading, attachDocument, failReading, getDocument, listCurrentValues, readDocumentFile, startReading, type Outcome } from './documents'
+import { editText } from './fieldFormat'
 import { extractableFields, extractableLists, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField, type DocumentAddress, type DocumentRentRoll, type Reading } from './extraction'
 import { listFields } from './fields'
 import { LOCATION_SOURCE, lookUpAddress } from './geocode'
@@ -255,7 +256,10 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       const fields = extractableFields(allFields, sectionByField(await listScreens(client, orgId)), access.fieldLevel)
       const lists = extractableLists(await listLists(client, orgId), allFields, access.sectionLevel)
       const savedRentRolls = await listRentRollsIfAny(client, orgId, tree.id)
-      return { ok: true as const, document, tree, file, fields, lists, savedRentRolls, tenants: await listTenantNames(client, orgId), skills: await loadSkillsForAgent(client, orgId) }
+      // What the records hold now and where it came from, for the skills that say which source wins. Only fields the agent is offered.
+      const offered = new Map(fields.map((field) => [field.id, field]))
+      const current = (await listCurrentValues(client, orgId, recordsOf(tree).map((record) => record.id))).filter((value) => offered.has(value.fieldId))
+      return { ok: true as const, document, tree, file, fields, lists, savedRentRolls, current, tenants: await listTenantNames(client, orgId), skills: await loadSkillsForAgent(client, orgId) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)
@@ -271,7 +275,12 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
     const record = records.find((entry) => entry.id === saved.propertyId)
     return record && saved.documentId !== documentId ? [{ record: record.ref, asOfDate: saved.asOfDate, asOfStated: saved.asOfStated, documentName: saved.documentName, rowCount: saved.rowCount }] : []
   })
-  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records, fields: prepared.fields, lists: prepared.lists, savedRentRolls, tenants: prepared.tenants, skills: prepared.skills, timeoutMs })
+  const currentValues = prepared.current.flatMap((value) => {
+    const record = records.find((entry) => entry.id === value.recordId)
+    const field = prepared.fields.find((entry) => entry.id === value.fieldId)
+    return record && field ? [{ record: record.ref, fieldKey: field.key, month: value.period ? value.period.slice(0, 7) : null, value: editText(field, value.value), source: value.source }] : []
+  })
+  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records, fields: prepared.fields, lists: prepared.lists, savedRentRolls, tenants: prepared.tenants, currentValues, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
 
   try {

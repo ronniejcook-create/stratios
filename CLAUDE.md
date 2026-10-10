@@ -1254,6 +1254,46 @@ work and how data is isolated; this file covers how we work and where things sta
       analyst and lease suites again; the real panel clicked through in Chromium with
       stand-in data. **Not run against the real Claude API**, so how well the agent follows
       the skills on his rent roll, and how long it takes, shows on his first try.
+  - **Which source wins is a skill** (October 9, night; `db/migrations/027_which_source_wins.sql`,
+    one standard skill, no table changes). Ronnie wanted a rent roll to override an offering
+    memorandum (a memorandum is one-time, rent rolls come monthly), and said these rules
+    belong in a skill, not in the field's drop-downs, because they will grow with cash flows.
+    - The standard skill **Which Source Wins** (`which-source-wins`) sets out, in plain words,
+      when a differing value is **replaced**, **asked** about or **kept**: a typed value
+      stays (ask); a current source (rent roll, operating statement) beats a one-time one
+      (memorandum, appraisal); newer beats older for the same kind of document; each kind of
+      document is trusted for its own subject; a figure calculated from leases replaces a
+      memorandum's or an older rent roll's but not one the latest rent roll shows; otherwise
+      ask. An organization can edit it. New sources (cash flows, feeds) get a part here.
+    - The agents are shown what the records hold and where each value came from
+      (`listCurrentValues` in `lib/documents.ts`: typed by a person, taken from which
+      document of what kind and date, calculated, looked up; "## Values already on record"
+      in both prompts) and answer `when_different` per value: replace, ask, keep, or
+      `field` when no skill covers it. The document a value is credited to is the one whose
+      stored source value equals it, else the name in the value's note.
+    - Reading (`applyReading`): for a value that differs from the one on record, the
+      agent's call **stands in place of the field's When Different and Manually Entered
+      settings**. With no call (`field`, no skill, a new asset, an organization that turned
+      the skill off) those drop-downs decide as before; they are still on the field editor
+      as the fallback. When Empty is unchanged. The same-date rule for two rent rolls
+      (mixed use) still comes first.
+    - KPIs (`saveKpiRun`): `replace` lets a calculated figure take the place of a document's
+      value (shown as Updated, history note says the skills decided); `ask`, `keep` and no
+      call leave the field alone with Use Calculated Value, as before. The skill reaches the
+      KPI agent because its Use When mentions calculating (`kpiSkills`).
+    - The reading's answer format grew by one property (`when_different`, existing assets
+      only; the new-asset format leaves it out, `valuesWithoutCall`). It is still smaller
+      than the new-asset format.
+    - He was told: the agent's call is less repeatable than a drop-down, the history shows
+      every replaced value, and nothing typed by a person is replaced under the standard
+      skill.
+    - Not built: removing the drop-downs from the field editor (offered), the agent's reason
+      for a call shown on the review page, and making Percent Leased, Number of Tenants and
+      Weighted Average Lease Term monthly so each rent roll keeps its own value (offered).
+    - Checked: 027 twice; 14 cases on the scratch database with scripted answers (the
+      prompts, the calls for a memorandum then a rent roll then an older rent roll, a typed
+      value, KPIs replacing a memorandum's figure); the KPI, analyst and option suites again.
+      **Not run against the real Claude API.**
   - Not built yet (later stages): stored formulas
     (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
@@ -1279,8 +1319,9 @@ work and how data is isolated; this file covers how we work and where things sta
 ## Where we left off (October 9, 2026, evening)
 
 Everything described above is committed, pushed to `main` and copied to his folder. Nothing is
-half done. The latest piece is "Stage 5, second part: KPIs calculated from the stored leases, by
-skills". **He needs to run migrations 022, 023, 024, 025 and 026** in Supabase, in that order
+half done. The latest pieces are "Stage 5, second part: KPIs calculated from the stored leases, by
+skills" and "Which source wins is a skill". **He needs to run migrations 022, 023, 024, 025, 026
+and 027** in Supabase, in that order
 (022 to 025 were not confirmed as run), then on Knoll Trail press Refresh Location (Overview),
 Update From Rent Rolls and then Recalculate KPIs (Leases tab). **Agreed next step:** cash flow,
 then outside feeds.

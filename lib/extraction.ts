@@ -6,7 +6,7 @@
 // touches the database; lib/documents.ts applies the result.
 
 import { ApiError, askClaudeWith, claudeApiKey } from './claude'
-import type { Candidate, Confidence, DocumentKind, ProposalInput } from './documents'
+import { readSourceCall, type Candidate, type Confidence, type DocumentKind, type ProposalInput } from './documents'
 import { DEFAULT_PROPERTY_TYPES, fallbackPropertyType, matchPropertyType } from './assets'
 import { pickable } from './optionLists'
 import { isEmptyValue, monthToPeriod, parseInput } from './fieldFormat'
@@ -134,8 +134,9 @@ const SCHEMA = {
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
           basis: { type: 'string', enum: ['stated', 'calculated'], description: 'stated when the document itself shows this value; calculated when you worked it out from other figures in the document' },
           quote: { type: 'string', description: 'For a stated value, the few words or the line from the document that state it. For a calculated value, the working: the inputs and the arithmetic' },
+          when_different: { type: 'string', enum: ['replace', 'ask', 'keep', 'field'], description: 'What to do if the record already holds a different value, by the skills that say which source wins: replace it, ask a person, or keep what is there. "field" when no skill covers it or the record holds no value' },
         },
-        required: ['record', 'field', 'value', 'month', 'page', 'confidence', 'basis', 'quote'],
+        required: ['record', 'field', 'value', 'month', 'page', 'confidence', 'basis', 'quote', 'when_different'],
         additionalProperties: false,
       },
     },
@@ -260,6 +261,14 @@ const SCHEMA = {
 }
 
 /** The same answer shape, plus the few facts needed to create the asset. The property type is one of the organization's own. */
+/** The values part without the which-source-wins call: a new asset holds no values yet, and the answer format has a size limit. */
+function valuesWithoutCall() {
+  const items = SCHEMA.properties.values.items
+  const { when_different: _unused, ...properties } = items.properties
+  void _unused
+  return { ...SCHEMA.properties.values, items: { ...items, properties, required: items.required.filter((name) => name !== 'when_different') } }
+}
+
 const newAssetSchema = (propertyTypes: readonly string[]) => ({
   ...SCHEMA,
   properties: {
@@ -274,6 +283,7 @@ const newAssetSchema = (propertyTypes: readonly string[]) => ({
       additionalProperties: false,
     },
     ...SCHEMA.properties,
+    values: valuesWithoutCall(),
   },
   required: ['asset', ...SCHEMA.required],
 })
@@ -285,7 +295,11 @@ function describeList({ list, columns }: ExtractableList): string {
 /** A rent roll already saved for one of the document's properties, as the agent is told about it. */
 export type SavedRentRoll = { record: string; asOfDate: string; asOfStated: boolean; documentName: string | null; rowCount: number }
 
-export function buildPrompt(documentName: string, records: RecordEntry[], fields: FieldDefinition[], newAsset: boolean, skills: Skill[], lists: ExtractableList[], saved: SavedRentRoll[] = [], tenants: string[] = []): string {
+/** A value a record already holds, as the agent is told about it: which record and field, the value, and where it came from. */
+export type CurrentLine = { record: string; fieldKey: string; month: string | null; value: string; source: string }
+const MAX_CURRENT_LINES = 400
+
+export function buildPrompt(documentName: string, records: RecordEntry[], fields: FieldDefinition[], newAsset: boolean, skills: Skill[], lists: ExtractableList[], saved: SavedRentRoll[] = [], tenants: string[] = [], current: CurrentLine[] = []): string {
   const library = skillsInFull(skills)
   return `You are the Stratios extraction agent for commercial real estate. Read the attached document ("${documentName}") and find the values of the fields in the dictionary below.
 
@@ -302,6 +316,10 @@ Each field has a level (asset, property or building); give its value only for a 
 Each field's description says what it means. Its instructions, when present, were written by the organization and tell you its other names, where to find it, and any rules; follow them.
 ${fields.map((field) => describeField(field)).join('\n')}
 
+${current.length > 0 ? `## Values already on record
+What the records hold now, and where each value came from. One per line: record | field key | month (for a field kept per month) | value | source. Use this only to decide "when_different" for the values you return; never copy a value from here into your answer.
+${current.slice(0, MAX_CURRENT_LINES).map((line) => `${line.record} | ${line.fieldKey} | ${line.month ?? ''} | ${line.value.replace(/\s+/g, ' ').slice(0, 120)} | ${line.source}`).join('\n')}
+` : ''}
 ${saved.length > 0 ? `## Rent rolls already saved
 These rent rolls were saved earlier for the records above. A date marked "assumed" is the day the rent roll was loaded, because its document gave none; a new rent roll with no date will be given today's date in the same way.
 ${saved.map((entry) => `- ${entry.record}: as of ${entry.asOfDate}${entry.asOfStated ? '' : ' (assumed)'}, ${entry.rowCount} rows${entry.documentName ? `, from "${entry.documentName}"` : ''}`).join('\n')}
@@ -322,6 +340,7 @@ ${library}
 ## Rules
 - Return a value the document states with basis "stated". When the document shows a figure, always return it exactly as shown, even if you would have calculated it differently: the reader will compare your answer with the page.
 - Calculate a value (basis "calculated") only when all of these hold: the document does not show the value itself; a skill that fits this document lists the field under values to calculate; the field's instructions have a "How to Calculate" part; and every input that part needs is in the document. Then follow "How to Calculate" exactly, put the working (the inputs and the arithmetic) in "quote", give the page the main inputs are on, and use medium or low confidence. If any of these is missing, leave the value out and say in the summary what could not be calculated and why.
+- when_different: ${newAsset ? 'not asked for here.' : 'for each value, look the record and field (and month) up under "Values already on record". If the record holds a different value there, decide what should happen by the skills that say which source wins, weighing what kind of document this is and its date against where the current value came from: "replace" (this document\'s value takes its place without asking), "ask" (a person decides in review) or "keep" (the current value stays; this one is only noted). Answer "field" when no skill covers the case, when the record holds no value, or when it holds the same value; the field\'s own settings then apply. Return the document\'s value exactly as shown whatever you decide here.'}
 - Never estimate, and never carry a value over from general knowledge.
 - Write each value the way its "value" line asks. Convert units when the document uses different ones (for example a figure stated in thousands), and lower the confidence when you do.
 - For a field tracked per month, give the month the figure is for. If the document gives only an annual or trailing-twelve-month figure for such a field, leave it out and say so in the summary.
@@ -572,6 +591,7 @@ export function interpretAnswer(answer: Record<string, unknown>, records: Record
       confidence: (confidence === 'high' || confidence === 'medium' ? confidence : 'low') as Confidence,
       basis: calculated ? 'calculated' : 'stated',
       quote: text(raw.quote, 500) || null,
+      call: readSourceCall(raw.when_different),
     })
   }
 
@@ -705,6 +725,8 @@ export async function readDocument(input: {
   savedRentRolls?: SavedRentRoll[]
   /** The organization's tenants ("Acme Corp (also: Acme Corporation)"), for the agent to compare a rent roll's names with. */
   tenants?: string[]
+  /** What the records hold now and where each value came from, so the agent can apply the skills that say which source wins. */
+  currentValues?: CurrentLine[]
   timeoutMs?: number
 }): Promise<ReadResult> {
   const apiKey = claudeApiKey()
@@ -741,7 +763,7 @@ export async function readDocument(input: {
       apiKey,
       [
         attachment,
-        { type: 'text', text: buildPrompt(input.documentName, records, fields, wantsAsset, input.skills ?? [], lists, input.savedRentRolls ?? [], (input.tenants ?? []).slice(0, MAX_TENANTS_SHOWN)) },
+        { type: 'text', text: buildPrompt(input.documentName, records, fields, wantsAsset, input.skills ?? [], lists, input.savedRentRolls ?? [], (input.tenants ?? []).slice(0, MAX_TENANTS_SHOWN), wantsAsset ? [] : input.currentValues ?? []) },
       ],
       wantsAsset ? newAssetSchema(propertyTypes) : SCHEMA,
       { maxTokens: 28000, timeoutMs: input.timeoutMs ?? 270000 },

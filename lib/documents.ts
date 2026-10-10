@@ -266,6 +266,95 @@ export type Candidate = {
   /** Whether the document shows the value, or the agent worked it out from the document's figures. Stated when left out. */
   basis?: 'stated' | 'calculated'
   quote: string | null
+  /**
+   * The agent's call, under the skills that say which source wins, on what to
+   * do when the record already holds a different value: replace it, ask a
+   * person, or keep what is there. Left out when no skill covers it; the
+   * field's own settings then decide.
+   */
+  call?: SourceCall | null
+}
+
+/** What the skills say to do with a value that differs from the one on record. */
+export type SourceCall = 'replace' | 'ask' | 'keep'
+
+/** Reads the agent's answer for a value's call; anything else (including "field") means the field's own settings decide. */
+export function readSourceCall(raw: unknown): SourceCall | null {
+  const said = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  return said === 'replace' || said === 'ask' || said === 'keep' ? said : null
+}
+
+/** A value a record holds now, with where it came from, as the agents are told about it. */
+export type CurrentValue = {
+  recordId: string
+  fieldId: string
+  /** First day of the month for a monthly field, else null. */
+  period: string | null
+  value: StoredValue
+  /** Where the value came from, in words an agent can weigh against the skills: the source, the document and its kind, the dates. */
+  source: string
+}
+
+/**
+ * The values a set of records hold now and where each came from, so an agent
+ * can apply the skills that say which source wins (a rent roll over an
+ * offering memorandum, a newer document over an older one). Never throws:
+ * without it the agents simply make no call and each field's settings decide.
+ */
+export async function listCurrentValues(client: Queryable, orgId: string, recordIds: string[]): Promise<CurrentValue[]> {
+  if (recordIds.length === 0) return []
+  try {
+    await client.query('savepoint current_values')
+  } catch {
+    return []
+  }
+  try {
+    const { rows } = await client.query(
+      `select v.record_id::text as record_id, v.field_id::text as field_id, v.period::text as period, ${VALUE_COLUMNS.replace(/value_/g, 'v.value_')},
+              v.source_type, v.manual_override, to_char(v.updated_at at time zone 'UTC', 'YYYY-MM-DD') as updated,
+              d.name as document_name, d.document_type, to_char(d.read_at at time zone 'UTC', 'YYYY-MM-DD') as document_read,
+              (select r.as_of_date::text from rent_rolls r where r.document_id = d.id limit 1) as rent_roll_date
+       from field_values v
+       left join lateral (
+         -- The document that gave this very value. What Documents says is kept per field, and a later document whose
+         -- value was not taken overwrites it, so the value has to match; failing that, the name in the value's note.
+         select coalesce(
+           (select s.document_id from field_source_values s
+            where s.org_id = v.org_id and s.record_id = v.record_id and s.field_id = v.field_id and s.source_type = v.source_type
+              and s.period is not distinct from v.period and s.row_id is null and s.document_id is not null
+              and s.value_text is not distinct from v.value_text and s.value_number is not distinct from v.value_number
+              and s.value_date is not distinct from v.value_date and s.value_bool is not distinct from v.value_bool
+            limit 1),
+           (select n.id from documents n
+            where n.org_id = v.org_id and n.name = substring(v.note from '^(?:Calculated from|From) "(.*?)"')
+            order by n.read_at desc nulls last limit 1)
+         ) as document_id
+       ) s on true
+       left join documents d on d.id = s.document_id
+       where v.org_id = $1 and v.record_id = any($2::uuid[]) and v.row_id is null and v.status = 'approved'
+       order by v.period desc nulls first`,
+      [orgId, recordIds],
+    )
+    await client.query('release savepoint current_values')
+    return rows.flatMap((row) => {
+      const value: StoredValue = { text: row.text ?? null, number: row.number === null || row.number === undefined ? null : Number(row.number), date: row.date ?? null, bool: row.bool ?? null }
+      if (isEmptyValue(value)) return []
+      const from = row.document_name
+        ? ` the document "${row.document_name}"${row.document_type ? ` (${row.document_type}${row.rent_roll_date ? `, rent roll as of ${row.rent_roll_date}` : ''})` : row.rent_roll_date ? ` (rent roll as of ${row.rent_roll_date})` : ''}${row.document_read ? `, read ${row.document_read}` : ''}`
+        : ''
+      const source =
+        row.source_type === 'manual' ? `typed in by a person on ${row.updated}` :
+        row.source_type === 'documents' ? `taken as shown from${from || ' a document'}` :
+        row.source_type === 'calculated' ? (from ? `calculated by the agent from${from}` : `calculated by the agent from the stored leases on ${row.updated}`) :
+        row.source_type === 'marketData' ? `looked up from a public source on ${row.updated}` :
+        `from ${row.source_type} on ${row.updated}`
+      return [{ recordId: row.record_id, fieldId: row.field_id, period: row.period ?? null, value, source }]
+    })
+  } catch (error) {
+    console.error('Reading the current values for the agent failed; continuing without them', error)
+    await client.query('rollback to savepoint current_values').catch(() => {})
+    return []
+  }
 }
 
 export type ProposalInput = {
@@ -478,6 +567,12 @@ export async function applyReading(
           reason = null
         }
       }
+    }
+    // Which source wins is the skills' call: where the agent made one for a value that differs from the one
+    // on record, it stands in place of the field's own settings. The same-date rent roll rule above still holds.
+    if (!outranked && candidate.call && (outcome === 'decision' || outcome === 'kept' || outcome === 'replaced') && !isEmptyValue(golden.value) && !sameValue(golden.value, found)) {
+      outcome = candidate.call === 'replace' ? 'replaced' : candidate.call === 'keep' ? 'kept' : 'decision'
+      reason = outcome === 'decision' ? (golden.manualOverride ? 'manual' : 'different') : null
     }
     // A value the agent worked out is recorded as Calculated, not as what the document says.
     const source = candidate.basis === 'calculated' ? 'calculated' : 'documents'
