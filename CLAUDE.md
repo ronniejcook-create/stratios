@@ -1630,7 +1630,8 @@ work and how data is isolated; this file covers how we work and where things sta
   - **Navigation headers** (October 10, his requests): the group above Assets and Tenants reads
     **Investment Management** (was Portfolio). The headers were tried in the highlight color
     and put back to the muted one. Each header is a button that collapses or expands its
-    group (chevron at the right). What is closed is remembered per person: in localStorage
+    group. At his request the headers are not bold and there is no arrow: clicking the
+    header is the only cue (it has a Collapse / Expand tooltip). What is closed is remembered per person: in localStorage
     (`stratios.navClosed.<userId>`) and on their Clerk account (`unsafeMetadata.navClosed`),
     like the agent column's width. The search box opens every group with a match without
     changing what is remembered. A closed group stays closed even when its page is open.

@@ -104,10 +104,7 @@ export function SideNav({ isAdmin, isStratiosAdmin = false }: { isAdmin: boolean
         return (
         <div key={section.title} className="side-section">
           <button type="button" className="side-title" aria-expanded={open} title={open ? 'Collapse' : 'Expand'} onClick={() => toggle(section.title)}>
-            <span>{section.title}</span>
-            <svg className={`side-chevron${open ? ' open' : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M9 6l6 6-6 6" />
-            </svg>
+            {section.title}
           </button>
           {open ? (
           <ul>
