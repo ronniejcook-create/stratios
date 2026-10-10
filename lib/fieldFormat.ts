@@ -6,7 +6,12 @@ export type DataType = 'text' | 'number' | 'money' | 'percent' | 'date' | 'boole
 export type FieldShape = {
   dataType: DataType
   unit: string | null
+  /** A pick list's choices that can be picked now. */
   options: string[] | null
+  /** Choices no longer offered; a record that holds one keeps it. */
+  retiredOptions?: string[] | null
+  /** Names a choice used to have, in lower case, with its name now. A stored old name is shown, and saved, as the current one. */
+  optionAliases?: Record<string, string> | null
 }
 
 /** One stored value. Only the part that matches the field's type is filled. */
@@ -71,6 +76,8 @@ export function formatValue(field: FieldShape, value: StoredValue | null | undef
       return value.date ? formatDate(value.date) : ''
     case 'boolean':
       return value.bool === null ? '' : value.bool ? 'Yes' : 'No'
+    case 'picklist':
+      return value.text === null ? '' : field.optionAliases?.[value.text.trim().toLowerCase()] ?? value.text
     default:
       return value.text ?? ''
   }
@@ -88,6 +95,8 @@ export function editText(field: FieldShape, value: StoredValue | null | undefine
       return value.date ?? ''
     case 'boolean':
       return value.bool === null ? '' : value.bool ? 'yes' : 'no'
+    case 'picklist':
+      return value.text === null ? '' : field.optionAliases?.[value.text.trim().toLowerCase()] ?? value.text
     default:
       return value.text ?? ''
   }
@@ -126,7 +135,12 @@ export function parseInput(field: FieldShape, raw: string): ParseResult {
       return { ok: false, error: 'Choose Yes or No.' }
     }
     case 'picklist': {
-      const match = (field.options ?? []).find((option) => option.toLowerCase() === text.toLowerCase())
+      // A name the choice used to have is read as the choice it is now.
+      const wanted = (field.optionAliases?.[text.toLowerCase()] ?? text).toLowerCase()
+      const match =
+        (field.options ?? []).find((option) => option.toLowerCase() === wanted) ??
+        // A retired choice can't be picked afresh, but a record that holds it may be saved again unchanged.
+        (field.retiredOptions ?? []).find((option) => option.toLowerCase() === wanted)
       // Values that came from before the list existed are kept as they are.
       if (!match && field.options && field.options.length > 0) return { ok: false, error: 'Choose one of the listed options.' }
       return { ok: true, value: { ...EMPTY_VALUE, text: match ?? text } }

@@ -10,6 +10,7 @@
 // one organization (see withOrg in lib/db.ts).
 
 import { EMPTY_VALUE, isEmptyValue, monthToPeriod, parseInput, sameValue, type DataType, type StoredValue } from './fieldFormat'
+import { belongsTo, findOption, labelsOf, normalizeOptions, parentKeysOf, pickable, type FieldOption } from './optionLists'
 import { recordExists, tableFor, type Queryable, type RecordType } from './records'
 
 export type FieldDefinition = {
@@ -19,7 +20,17 @@ export type FieldDefinition = {
   appliesTo: RecordType
   dataType: DataType
   unit: string | null
+  /** A pick list's choices that can be picked now, as labels. The full choices are in `optionList`. */
   options: string[] | null
+  /** A pick list's choices in full: permanent key, label, parent, retired ones included. Empty for other types. */
+  optionList: FieldOption[]
+  /** Labels of retired choices, and old names of renamed ones; see FieldShape. */
+  retiredOptions: string[]
+  optionAliases: Record<string, string>
+  /** The key of the field (on the same kind of record) whose value decides which choices apply, as Property Subtype depends on Property Type. */
+  dependsOn: string | null
+  /** For a field that depends on another: that field's choices, key to label, for naming the groups. */
+  parentLabels: Record<string, string>
   tracking: 'single' | 'monthly'
   rollup: 'sum' | 'average' | 'last' | 'direct' | null
   calculated: boolean
@@ -72,6 +83,7 @@ export async function listFields(client: Queryable, orgId: string | null): Promi
             core_column, group_name, sort_order, ai_description, to_json(other_names) as other_names, extraction_hints,
             to_json(source_priority) as source_priority, when_empty, when_different, manual_override,
             to_jsonb(field_definitions) ->> 'agent_instructions' as agent_instructions,
+            to_jsonb(field_definitions) ->> 'depends_on' as depends_on,
             list_id::text as list_id, default_value
      from field_definitions
      where (org_id is null or org_id = $1) and retired_at is null
@@ -87,7 +99,12 @@ export async function listFields(client: Queryable, orgId: string | null): Promi
     appliesTo: row.applies_to,
     dataType: row.data_type,
     unit: row.unit ?? null,
-    options: Array.isArray(row.options) ? (row.options as string[]) : null,
+    options: null,
+    optionList: [],
+    retiredOptions: [],
+    optionAliases: {},
+    dependsOn: row.depends_on ?? null,
+    parentLabels: {},
     tracking: row.tracking,
     rollup: row.rollup ?? null,
     calculated: Boolean(row.calculated),
@@ -111,8 +128,16 @@ export async function listFields(client: Queryable, orgId: string | null): Promi
   }))
 
   const byId = new Map(fields.map((field) => [field.id, field]))
+  // A pick list's choices as stored: the field's own, or the organization's version of a standard field's.
+  const storedLists = new Map<string, unknown>(definitions.rows.map((row) => [row.id as string, row.options]))
   for (const row of settings.rows) {
     const field = byId.get(row.field_id)
+    if (field && field.standard && row.setting === 'options' && Array.isArray(row.value)) {
+      field.standardValues.options = storedLists.get(field.id) ?? null
+      storedLists.set(field.id, row.value)
+      field.modifiedSettings.push('options')
+      continue
+    }
     const property = OVERRIDABLE[row.setting as OverridableSetting] as keyof FieldDefinition | undefined
     // Only standard fields are customized this way; an organization's own fields are edited directly.
     if (!field || !field.standard || !property || row.value === undefined) continue
@@ -120,7 +145,89 @@ export async function listFields(client: Queryable, orgId: string | null): Promi
     ;(field as Record<string, unknown>)[property] = row.value
     field.modifiedSettings.push(row.setting)
   }
+  for (const field of fields) {
+    if (field.dataType !== 'picklist') continue
+    applyOptionList(field, normalizeOptions(storedLists.get(field.id)))
+  }
+  for (const field of fields) {
+    const parent = parentFieldOf(fields, field)
+    if (parent) field.parentLabels = Object.fromEntries(parent.optionList.map((option) => [option.key, option.label]))
+  }
   return fields.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+}
+
+/** Sets a pick list field's choices and everything worked out from them. */
+export function applyOptionList(field: FieldDefinition, optionList: FieldOption[]): void {
+  field.optionList = optionList
+  const active = labelsOf(optionList.filter((option) => !option.retired))
+  field.options = active.length > 0 || optionList.length > 0 ? active : null
+  field.retiredOptions = labelsOf(optionList.filter((option) => option.retired))
+  field.optionAliases = {}
+  for (const option of optionList) {
+    for (const alias of option.aliases) {
+      const old = alias.trim().toLowerCase()
+      // A name another choice now carries is that choice's, not an old name of this one.
+      if (old && !optionList.some((other) => other.label.trim().toLowerCase() === old)) field.optionAliases[old] ??= option.label
+    }
+  }
+}
+
+/** The field another depends on: same kind of record, the key named in `dependsOn`, itself a pick list. */
+export function parentFieldOf(fields: FieldDefinition[], field: FieldDefinition): FieldDefinition | null {
+  if (!field.dependsOn) return null
+  return fields.find((candidate) => candidate.key === field.dependsOn && candidate.appliesTo === field.appliesTo && candidate.dataType === 'picklist' && !candidate.listId) ?? null
+}
+
+/** What a single-value field holds on a record right now, as text (its fixed column when it has no stored value yet). */
+async function currentText(client: Queryable, orgId: string, field: FieldDefinition, recordType: RecordType, recordId: string): Promise<string | null> {
+  const stored = await client.query(
+    `select value_text from field_values
+     where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4 and period is null and row_id is null and status = 'approved'`,
+    [orgId, recordType, recordId, field.id],
+  )
+  if (stored.rows.length > 0) return stored.rows[0].value_text ?? null
+  if (!field.coreColumn) return null
+  const core = await client.query(`select ${field.coreColumn} as value from ${tableFor(recordType)} where id = $1 and org_id = $2`, [recordId, orgId])
+  return core.rows[0]?.value ?? null
+}
+
+/**
+ * For a field whose choices depend on another field: why `label` can't be
+ * picked for this record, or null when it can. "Medical Office" is refused on
+ * a Retail property; nothing can be picked until the parent has a value.
+ */
+export async function dependentProblem(client: Queryable, orgId: string, fields: FieldDefinition[], field: FieldDefinition, recordType: RecordType, recordId: string, label: string): Promise<string | null> {
+  const parent = parentFieldOf(fields, field)
+  if (!parent) return null
+  const parentLabel = await currentText(client, orgId, parent, recordType, recordId)
+  const parentOption = findOption(parent.optionList, parentLabel)
+  if (!parentLabel || !parentOption) return `Set ${parent.name} first; the choices for ${field.name} depend on it.`
+  const allowed = pickable(field.optionList, parentKeysOf(parentOption))
+  if (allowed.some((option) => option.label.toLowerCase() === label.trim().toLowerCase())) return null
+  return allowed.length > 0
+    ? `"${label}" is not a choice for ${parentOption.label}. Choose one of: ${allowed.map((option) => option.label).join(', ')}.`
+    : `${field.name} has no choices for ${parentOption.label}.`
+}
+
+/**
+ * After a field's value changed on a record: empties any field that depends
+ * on it and now holds a choice that no longer fits (a subtype left over from
+ * the old property type). The emptying is in the dependent field's history.
+ */
+export async function clearMisfitDependents(client: Queryable, orgId: string, userId: string, fields: FieldDefinition[], parent: FieldDefinition, recordType: RecordType, recordId: string): Promise<void> {
+  const dependents = fields.filter((candidate) => candidate.dependsOn === parent.key && candidate.appliesTo === parent.appliesTo && candidate.dataType === 'picklist' && !candidate.listId && candidate.id !== parent.id)
+  if (dependents.length === 0) return
+  const parentLabel = await currentText(client, orgId, parent, recordType, recordId)
+  const parentOption = findOption(parent.optionList, parentLabel)
+  for (const dependent of dependents) {
+    const held = await currentText(client, orgId, dependent, recordType, recordId)
+    if (!held) continue
+    const option = findOption(dependent.optionList, held, parentKeysOf(parentOption))
+    if (parentOption && option && belongsTo(option, parentKeysOf(parentOption))) continue
+    const note = parentLabel ? `Emptied because ${parent.name} changed to ${parentOption?.label ?? parentLabel}` : `Emptied because ${parent.name} was emptied`
+    const cleared = await saveManualValue(client, orgId, userId, { recordType, recordId, fieldId: dependent.id, raw: '', note })
+    if (!cleared.ok) console.error(`Emptying ${dependent.key} after ${parent.key} changed failed: ${cleared.error}`)
+  }
 }
 
 export type FieldValue = StoredValue & {
@@ -266,6 +373,20 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
     current = { ...EMPTY_VALUE, text: core.rows[0]?.value ?? null }
   }
 
+  // A retired choice stays on records that hold it, but can't be picked afresh.
+  if (field.dataType === 'picklist' && next.text !== null && !sameValue(current, next)) {
+    const label = next.text.toLowerCase()
+    if (field.retiredOptions.some((option) => option.toLowerCase() === label) && !(field.options ?? []).some((option) => option.toLowerCase() === label)) {
+      return { ok: false, error: `"${next.text}" has been retired and can no longer be chosen for ${field.name}.` }
+    }
+  }
+
+  // A choice that depends on another field has to fit what that field holds (a subtype of the property's type).
+  if (field.dependsOn && field.dataType === 'picklist' && !rowId && next.text !== null && !sameValue(current, next)) {
+    const problem = await dependentProblem(client, orgId, fields, field, input.recordType, input.recordId, next.text)
+    if (problem) return { ok: false, error: problem }
+  }
+
   // What this source says is always recorded, whether or not it changes the golden record.
   await client.query(
     `delete from field_source_values
@@ -337,6 +458,8 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
   if (field.coreColumn) {
     await client.query(`update ${table} set ${field.coreColumn} = $1 where id = $2 and org_id = $3`, [next.text, input.recordId, orgId])
   }
+  // Fields whose choices depend on this one may now hold a choice that no longer fits.
+  if (changed && field.dataType === 'picklist' && !rowId) await clearMisfitDependents(client, orgId, userId, fields, field, input.recordType, input.recordId)
   return { ok: true, changed }
 }
 

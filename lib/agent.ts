@@ -6,7 +6,7 @@
 
 import { setValueForAgent } from './agentValues'
 import { buildAnalystPrompt, DEFAULT_ANALYST_INSTRUCTIONS, getAnalystInstructions } from './analystInstructions'
-import { createAssetWithDefaults, PROPERTY_TYPES } from './assets'
+import { createAssetWithDefaults, fallbackPropertyType, listPropertyTypes, matchPropertyType } from './assets'
 import { ApiError, claudeApiKey, converse, type ChatMessage, type ContentBlock, type ToolDefinition } from './claude'
 import { withOrg } from './db'
 import { createAssetFromDocument, readIntoAsset, type ReadOutcome } from './documentReading'
@@ -51,10 +51,10 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'create_asset',
-    description: 'Creates a new, empty asset with one property and one building, when the person gives its details in words and no document.',
+    description: 'Creates a new, empty asset with one property and one building, when the person gives its details in words and no document. The property type must be one the organization lists; if the one given is not listed, the tool answers with the list.',
     input_schema: {
       type: 'object',
-      properties: { name: { type: 'string' }, property_type: { type: 'string', enum: [...PROPERTY_TYPES] }, city: { type: 'string', description: 'Empty if not given' } },
+      properties: { name: { type: 'string' }, property_type: { type: 'string', description: 'For example Office, Industrial, Retail, Residential, Hotel or Other' }, city: { type: 'string', description: 'Empty if not given' } },
       required: ['name', 'property_type', 'city'],
       additionalProperties: false,
     },
@@ -183,14 +183,21 @@ async function runTool(session: Session, name: string, input: Record<string, unk
 
     if (name === 'create_asset') {
       const assetName = asText(input.name, 200)
-      const propertyType = (PROPERTY_TYPES as readonly string[]).find((type) => type.toLowerCase() === asText(input.property_type, 40).toLowerCase()) ?? 'Other'
       if (!assetName) return fail('The asset needs a name.')
-      const assetId = await withOrg(orgId, async (client) => {
+      const wantedType = asText(input.property_type, 100)
+      type Made = { made: true; assetId: string; propertyType: string } | { made: false; choices: string[] }
+      const made = await withOrg(orgId, async (client): Promise<Made | null> => {
         const access = await loadAccess(client, orgId, userId, caller.isAdmin)
         if (!access.canAddRecords) return null
-        return createAssetWithDefaults(client, orgId, userId, { name: assetName, propertyType, city: asText(input.city, 200) || null })
+        const choices = await listPropertyTypes(client, orgId)
+        // "Multifamily" and the like are not on every list; an empty answer falls back, a wrong one is sent back with the list.
+        const type = matchPropertyType(choices, wantedType) ?? (wantedType ? null : fallbackPropertyType(choices))
+        if (!type) return { made: false, choices }
+        return { made: true, assetId: await createAssetWithDefaults(client, orgId, userId, { name: assetName, propertyType: type, city: asText(input.city, 200) || null }), propertyType: type }
       })
-      if (!assetId) return fail("The person's role does not allow adding assets.")
+      if (!made) return fail("The person's role does not allow adding assets.")
+      if (!made.made) return fail(`"${wantedType}" is not one of this organization's property types. Choose one of: ${made.choices.join(', ')}.`)
+      const { assetId, propertyType } = made
       session.changed = true
       session.links.push({ label: `Open ${assetName}`, href: `/dashboard/assets/${assetId}` })
       return { content: JSON.stringify({ ok: true, asset_id: assetId, asset_name: assetName, property_type: propertyType }), isError: false }

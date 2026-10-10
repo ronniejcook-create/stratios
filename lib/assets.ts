@@ -1,8 +1,34 @@
-import { listFields, saveManualValue } from './fields'
+import { listFields, saveManualValue, type FieldDefinition } from './fields'
 import { insertAddress, insertAsset, insertChild, type Queryable } from './records'
 
-// Matches the Property Type pick list in the Stratios standard fields.
-export const PROPERTY_TYPES = ['Office', 'Retail', 'Industrial', 'Multifamily', 'Mixed Use', 'Other'] as const
+/**
+ * The property types offered when the Property Type field's own list can't be
+ * read. The list people actually pick from is that field's, which Stratios and
+ * each organization's administrators manage; see listPropertyTypes.
+ */
+export const DEFAULT_PROPERTY_TYPES: readonly string[] = ['Office', 'Industrial', 'Retail', 'Residential', 'Hotel', 'Self-Storage', 'Seniors Housing', 'Mixed Use', 'Other']
+
+/** The property types of a list of fields: the choices of the Property Type field that can be picked now. */
+export function propertyTypesOf(fields: FieldDefinition[]): string[] {
+  const choices = fields.find((field) => field.key === 'propertyType' && field.appliesTo === 'property' && !field.listId)?.options ?? []
+  return choices.length > 0 ? choices : [...DEFAULT_PROPERTY_TYPES]
+}
+
+/** The property types this organization picks from. */
+export async function listPropertyTypes(client: Queryable, orgId: string): Promise<string[]> {
+  return propertyTypesOf(await listFields(client, orgId))
+}
+
+/** The listed type a typed or spoken one means, whatever its capitals; null when it is none of them. */
+export function matchPropertyType(choices: readonly string[], raw: string): string | null {
+  const wanted = raw.trim().toLowerCase()
+  return choices.find((choice) => choice.toLowerCase() === wanted) ?? null
+}
+
+/** The type to fall back on when a document or a person names none of the listed ones: "Other" if listed, else the last. */
+export function fallbackPropertyType(choices: readonly string[]): string {
+  return matchPropertyType(choices, 'Other') ?? choices[choices.length - 1] ?? 'Other'
+}
 
 /**
  * Creates an asset with one property and one building, so a simple asset

@@ -10,7 +10,7 @@
 // organization (see withOrg in lib/db.ts).
 
 import { EMPTY_VALUE, isEmptyValue, sameValue, type StoredValue } from './fieldFormat'
-import type { FieldDefinition } from './fields'
+import { clearMisfitDependents, dependentProblem, listFields, type FieldDefinition } from './fields'
 import { recordExists, tableFor, type Queryable, type RecordType } from './records'
 
 /** The largest file that can be uploaded. Claude accepts about 32 MB per request, and a PDF grows by a third when sent. */
@@ -451,9 +451,16 @@ export async function applyReading(
   await client.query(`delete from field_proposals where org_id = $1 and document_id = $2 and status = 'proposed'`, [orgId, document.id])
   const keepBasis = await hasBasisColumn(client)
 
-  for (const candidate of reading.candidates) {
+  // Fields that others depend on go first, so a subtype is weighed against the type this same document gave.
+  const allFields = await listFields(client, orgId)
+  const isParent = (field: FieldDefinition) => allFields.some((other) => other.dependsOn === field.key && other.appliesTo === field.appliesTo)
+  const ordered = [...reading.candidates].sort((a, b) => Number(isParent(b.field)) - Number(isParent(a.field)))
+
+  for (const candidate of ordered) {
     const { recordType, recordId, field, period, value: found } = candidate
     if (isEmptyValue(found) || !(await recordExists(client, orgId, recordType, recordId))) continue
+    // A choice that does not belong to what the parent field holds (a subtype of another property type) is left out.
+    if (field.dependsOn && field.dataType === 'picklist' && found.text && (await dependentProblem(client, orgId, allFields, field, recordType, recordId, found.text))) continue
     const golden = await readGolden(client, orgId, recordType, recordId, field, period)
     let { outcome, reason } = decideOutcome(field, golden, found)
     // Two rent rolls for the same property and date (a mixed-use building): where both give a value for the
@@ -494,6 +501,7 @@ export async function applyReading(
     if (outcome === 'filled' || outcome === 'replaced') {
       const note = source === 'calculated' ? calculatedNote(document.name, candidate.page, candidate.quote) : sourceNote(document.name, candidate.page)
       await writeGolden(client, orgId, userId, { recordType, recordId, field, period }, golden, found, candidate.confidence, note, source)
+      if (field.dataType === 'picklist') await clearMisfitDependents(client, orgId, userId, allFields, field, recordType, recordId)
     }
     const finding = await client.query(
       `insert into document_findings
@@ -629,6 +637,11 @@ export async function decideFinding(
 ): Promise<Result> {
   if (accept) {
     const golden = await readGolden(client, orgId, finding.recordType, finding.recordId, field, finding.period)
+    const allFields = field.dataType === 'picklist' ? await listFields(client, orgId) : []
+    if (field.dependsOn && field.dataType === 'picklist' && finding.value.text && !sameValue(golden.value, finding.value)) {
+      const problem = await dependentProblem(client, orgId, allFields, field, finding.recordType, finding.recordId, finding.value.text)
+      if (problem) return { ok: false, error: problem }
+    }
     if (!sameValue(golden.value, finding.value)) {
       await writeGolden(
         client, orgId, userId,
@@ -639,6 +652,7 @@ export async function decideFinding(
           : `${sourceNote(finding.documentName, finding.page)}; chosen in review`,
         finding.basis === 'calculated' ? 'calculated' : 'documents',
       )
+      if (field.dataType === 'picklist') await clearMisfitDependents(client, orgId, userId, allFields, field, finding.recordType, finding.recordId)
     }
   }
   await client.query(

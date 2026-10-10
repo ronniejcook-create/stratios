@@ -3,13 +3,14 @@ import { notFound } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { isDatabaseConfigured, withStratiosAdmin } from '@/lib/db'
 import { DATA_TYPES, countCustomizations } from '@/lib/fieldAdmin'
-import { listFields } from '@/lib/fields'
+import { listFields, parentFieldOf } from '@/lib/fields'
 import { listScreens } from '@/lib/layout'
 import { listLists } from '@/lib/lists'
 import { RECORD_LABELS, isUuid } from '@/lib/records'
 import { isStratiosAdmin } from '@/lib/stratios'
 import { FieldEditor } from '../../fields/[id]/FieldEditor'
-import { retireLibraryField, saveLibraryField } from '../actions'
+import { OptionsEditor } from '../../fields/[id]/OptionsEditor'
+import { retireLibraryField, saveLibraryField, saveLibraryOptions } from '../actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,17 +22,19 @@ export default async function LibraryFieldPage({ params }: { params: Promise<{ i
 
   const loaded = await withStratiosAdmin(orgId, async (client) => {
     // null = the standard alone, without the Stratios organization's own changes
-    const field = (await listFields(client, null)).find((candidate) => candidate.id === id)
+    const fields = await listFields(client, null)
+    const field = fields.find((candidate) => candidate.id === id)
     if (!field) return null
     return {
       field,
+      parent: parentFieldOf(fields, field),
       screens: await listScreens(client, null),
       lists: await listLists(client, null),
       customized: (await countCustomizations(client)).get(id) ?? 0,
     }
   })
   if (!loaded) notFound()
-  const { field, screens, lists, customized } = loaded
+  const { field, parent, screens, lists, customized } = loaded
 
   const sections = screens.flatMap((screen) =>
     screen.sections
@@ -99,6 +102,26 @@ export default async function LibraryFieldPage({ params }: { params: Promise<{ i
           modifications={[]}
         />
       </section>
+
+      {field.dataType === 'picklist' ? (
+        <section className="panel">
+          <h2>Options</h2>
+          <p className="note">
+            The choices people pick from, for every organization that has not made its own version of this list. A standard option can be renamed or retired here, never removed,
+            because organizations may hold it.
+          </p>
+          <OptionsEditor
+            fieldId={field.id}
+            fieldName={field.name}
+            options={field.optionList.map(({ key, label, parent: belongsTo, countsAs, retired }) => ({ key, label, parent: belongsTo, countsAs, retired }))}
+            parent={parent ? { name: parent.name, choices: parent.optionList.map((option) => ({ key: option.key, label: option.retired ? `${option.label} (Retired)` : option.label })) } : null}
+            standardChoices={null}
+            isModified={false}
+            modifiedAt={null}
+            saveAction={saveLibraryOptions}
+          />
+        </section>
+      ) : null}
     </>
   )
 }

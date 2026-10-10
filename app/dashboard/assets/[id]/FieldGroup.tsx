@@ -16,6 +16,8 @@ export type FieldView = {
   dataType: DataType
   unit: string | null
   options: string[] | null
+  /** For choices that depend on another field: which they are shown for, or why there are none. */
+  optionsNote?: string | null
   monthly: boolean
   calculated: boolean
   formula: string | null
@@ -276,6 +278,7 @@ function FieldDetails({ target, field, canManageFields, onClose }: { target: Tar
                     autoFocus
                   />
                 )}
+                {field.optionsNote ? <p className="note">{field.optionsNote}</p> : null}
               </div>
               {field.monthly ? (
                 <div className="field">

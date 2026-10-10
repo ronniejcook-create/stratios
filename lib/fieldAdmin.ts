@@ -16,9 +16,10 @@
 // standard for every organization. Null is only for the Master Library, inside
 // withStratiosAdmin.
 
-import { listFields, OVERRIDABLE, type FieldDefinition, type OverridableSetting } from './fields'
+import { listFields, OVERRIDABLE, parentFieldOf, type FieldDefinition, type OverridableSetting } from './fields'
 import type { DataType } from './fieldFormat'
-import { RECORD_TYPES, type Queryable, type RecordType } from './records'
+import { keyFromLabel, MAX_OPTION_LABEL, MAX_OPTIONS, normalizeOptions, storedOptions, uniqueKey, type FieldOption } from './optionLists'
+import { RECORD_TYPES, tableFor, type Queryable, type RecordType } from './records'
 
 export const DATA_TYPES: { value: DataType; label: string }[] = [
   { value: 'text', label: 'Text' },
@@ -143,7 +144,7 @@ export async function createField(client: Queryable, orgId: string | null, input
      returning id::text as id`,
     [
       orgId, key, name, appliesTo, dataType, unit,
-      options.length > 0 ? JSON.stringify(options) : null,
+      options.length > 0 ? JSON.stringify(storedOptions(normalizeOptions(options))) : null,
       tracking, tracking === 'monthly' ? 'last' : null,
       groupName, sortOrder, input.aiDescription.trim().slice(0, 1000) || null, input.listId,
     ],
@@ -247,9 +248,11 @@ export async function saveFieldSettings(
     const changed = dataType !== field.dataType
     const numeric = dataType === 'number' || dataType === 'money'
     const unit = numeric ? (input.unit ?? '').trim().slice(0, 30) || null : changed ? null : field.unit
-    let options = changed ? null : field.options
-    if (dataType === 'picklist') {
-      options = cleanList(input.options ?? [], 100)
+    // A pick list's choices are edited on their own (saveFieldOptions) and are left alone here,
+    // except when the field has just become a pick list and needs its first ones.
+    let options: FieldOption[] | null = dataType === 'picklist' ? field.optionList : null
+    if (dataType === 'picklist' && changed) {
+      options = normalizeOptions(cleanList(input.options ?? [], 100))
       if (options.length === 0) return { ok: false, error: 'Enter at least one option for the pick list.' }
     }
     await client.query(
@@ -259,7 +262,7 @@ export async function saveFieldSettings(
        where id = $1 and org_id = $2`,
       [
         fieldId, orgId, settings.name, settings.ai_description, settings.agent_instructions,
-        settings.when_empty, settings.when_different, settings.manual_override, unit, options ? JSON.stringify(options) : null, dataType,
+        settings.when_empty, settings.when_different, settings.manual_override, unit, options && options.length > 0 ? JSON.stringify(storedOptions(options)) : null, dataType,
       ],
     )
     return { ok: true, modified: [] }
@@ -300,12 +303,226 @@ export async function fieldHasValues(client: Queryable, fieldId: string): Promis
 }
 
 /** Puts a standard field back to the Stratios standard: one setting, or all of them. */
-export async function resetFieldSettings(client: Queryable, orgId: string, fieldId: string, setting: string | null): Promise<void> {
+export async function resetFieldSettings(client: Queryable, orgId: string, fieldId: string, setting: string | null): Promise<Result> {
+  // The choices of a pick list need care: values saved under the organization's own names are renamed back first.
+  if (setting === null || setting === 'options') {
+    const reset = await resetFieldOptions(client, orgId, fieldId)
+    if (!reset.ok) return reset
+    if (setting === 'options') return { ok: true }
+  }
   if (setting) {
     await client.query('delete from field_settings where org_id = $1 and field_id = $2 and setting = $3', [orgId, fieldId, setting])
   } else {
     await client.query('delete from field_settings where org_id = $1 and field_id = $2', [orgId, fieldId])
   }
+  return { ok: true }
+}
+
+// ---------------------------------------------------------------------------
+// A pick list's choices
+// ---------------------------------------------------------------------------
+
+/** One row of the choices editor. `key` is set for a choice that already exists and empty for a new one. */
+export type OptionInput = { key?: string | null; label: string; parent?: string | null; countsAs?: string | null; retired?: boolean }
+
+const lowered = (text: string) => text.trim().toLowerCase()
+/** Every name a choice's stored values may carry: its label and the names it used to have. */
+const namesOf = (option: FieldOption) => [...new Set([option.label, ...option.aliases].map(lowered))]
+
+/**
+ * A condition limiting rows of `v` (field_values or field_source_values) to
+ * records whose parent field holds the given choice. Used when two choices of
+ * a dependent field share a label and only one of them is meant.
+ */
+function parentCondition(parent: FieldDefinition, parentNames: string[], params: unknown[]): string {
+  params.push(parent.id, parentNames)
+  const held = `exists (select 1 from field_values pv where pv.org_id = v.org_id and pv.record_id = v.record_id and pv.field_id = $${params.length - 1}
+                 and pv.period is null and pv.row_id is null and lower(pv.value_text) = any($${params.length}::text[]))`
+  if (!parent.coreColumn) return held
+  return `(${held} or exists (select 1 from ${tableFor(parent.appliesTo)} core where core.id = v.record_id and core.org_id = v.org_id and lower(core.${parent.coreColumn}) = any($${params.length}::text[])))`
+}
+
+/** How many of this organization's records hold a choice (as the value, or as what a source says). */
+async function optionUse(client: Queryable, orgId: string, field: FieldDefinition, option: FieldOption): Promise<number> {
+  const names = namesOf(option)
+  const stored = await client.query(
+    `select (select count(*) from field_values where org_id = $1 and field_id = $2 and lower(value_text) = any($3::text[]))
+          + (select count(*) from field_source_values where org_id = $1 and field_id = $2 and lower(value_text) = any($3::text[])) as used`,
+    [orgId, field.id, names],
+  )
+  let used = Number(stored.rows[0]?.used ?? 0)
+  if (field.coreColumn) {
+    const core = await client.query(`select count(*) as used from ${tableFor(field.appliesTo)} where org_id = $1 and lower(${field.coreColumn}) = any($2::text[])`, [orgId, names])
+    used += Number(core.rows[0]?.used ?? 0)
+  }
+  return used
+}
+
+/** Renames a choice in one organization's stored values, so they read the same as the list. */
+async function renameStored(client: Queryable, orgId: string, field: FieldDefinition, from: string[], to: string, parent: { field: FieldDefinition; names: string[] } | null): Promise<void> {
+  for (const table of ['field_values', 'field_source_values']) {
+    const params: unknown[] = [orgId, field.id, from, to]
+    const scope = parent ? ` and ${parentCondition(parent.field, parent.names, params)}` : ''
+    await client.query(`update ${table} v set value_text = $4 where v.org_id = $1 and v.field_id = $2 and lower(v.value_text) = any($3::text[]) and v.value_text <> $4${scope}`, params)
+  }
+  if (field.coreColumn) {
+    await client.query(`update ${tableFor(field.appliesTo)} set ${field.coreColumn} = $3 where org_id = $1 and lower(${field.coreColumn}) = any($2::text[]) and ${field.coreColumn} <> $3`, [orgId, from, to])
+  }
+}
+
+/**
+ * Saves a pick list's choices.
+ *
+ * - `owner` is the organization, or null to change a Stratios standard list
+ *   for everyone (inside withStratiosAdmin). An organization's version of a
+ *   standard list is stored as one modified setting, like its other changes,
+ *   and stops following Stratios updates to the list until it is reset.
+ * - A choice keeps its key for good. Renaming one keeps the old name as an
+ *   alias and, for an organization, rewrites its stored values to the new name.
+ * - A choice that records still hold is not removed but retired: hidden from
+ *   new picks, kept where it is. A standard choice can only ever be retired.
+ * - On a field that depends on another, each choice may belong to one choice
+ *   of that field. A choice an organization adds to a standard list may say
+ *   which standard choice it counts as.
+ */
+export async function saveFieldOptions(client: Queryable, owner: string | null, userId: string, fieldId: string, input: OptionInput[]): Promise<Result<{ kept: string[]; modified: boolean }>> {
+  const fields = await listFields(client, owner)
+  const field = fields.find((candidate) => candidate.id === fieldId)
+  if (!field) return { ok: false, error: 'That field could not be found.' }
+  if (field.dataType !== 'picklist') return { ok: false, error: 'Only a pick list has options.' }
+  if (!Array.isArray(input)) return { ok: false, error: 'The options could not be read.' }
+
+  const previous = field.optionList
+  const previousByKey = new Map(previous.map((option) => [option.key, option]))
+  // For an organization's version of a standard list: what Stratios itself lists.
+  const standard = owner && field.standard ? (field.modifiedSettings.includes('options') ? normalizeOptions(field.standardValues.options) : previous) : null
+  const standardKeys = new Set((standard ?? []).map((option) => option.key))
+  const parent = parentFieldOf(fields, field)
+  const parentKeys = new Set((parent?.optionList ?? []).map((option) => option.key))
+
+  const taken = new Set<string>([...previousByKey.keys(), ...standardKeys])
+  const used = new Set<string>()
+  const next: FieldOption[] = []
+  for (const row of input.slice(0, MAX_OPTIONS)) {
+    const label = String(row?.label ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_OPTION_LABEL)
+    if (!label) continue
+    const given = typeof row.key === 'string' ? row.key : ''
+    const before = given && !used.has(given) ? previousByKey.get(given) ?? null : null
+    const key = before ? before.key : given && standardKeys.has(given) && !used.has(given) ? given : uniqueKey(keyFromLabel(label), taken)
+    taken.add(key)
+    used.add(key)
+    const parentKey = parent && typeof row.parent === 'string' && parentKeys.has(row.parent) ? row.parent : null
+    const countsAs = standard && !standardKeys.has(key) && typeof row.countsAs === 'string' && standardKeys.has(row.countsAs) ? row.countsAs : null
+    const aliases = (before?.aliases ?? []).filter((alias) => lowered(alias) !== lowered(label))
+    if (before && lowered(before.label) !== lowered(label) && !aliases.some((alias) => lowered(alias) === lowered(before.label))) aliases.push(before.label)
+    next.push({ key, label, parent: parentKey, countsAs, retired: row.retired === true, aliases: aliases.slice(-20) })
+  }
+
+  for (const option of next) {
+    const twin = next.find((other) => other !== option && lowered(other.label) === lowered(option.label) && (other.parent === option.parent || other.parent === null || option.parent === null))
+    if (twin) return { ok: false, error: `"${option.label}" is listed twice${parent ? ` for the same ${parent.name}` : ''}. Each option needs its own name.` }
+  }
+
+  // Choices taken off the list: gone when nothing holds them, otherwise kept as retired.
+  const kept: string[] = []
+  for (const option of previous) {
+    if (used.has(option.key)) continue
+    if (owner && (await optionUse(client, owner, field, option)) === 0) continue
+    next.push({ ...option, retired: true })
+    if (!option.retired) kept.push(option.label)
+  }
+  if (!next.some((option) => !option.retired)) return { ok: false, error: 'A pick list needs at least one option that can be chosen.' }
+
+  // Renamed choices: this organization's stored values take the new name.
+  if (owner) {
+    for (const option of next) {
+      const before = previousByKey.get(option.key)
+      if (!before || before.label === option.label) continue
+      const shared = previous.some((other) => other.key !== before.key && lowered(other.label) === lowered(before.label))
+      const parentOption = parent && before.parent ? parent.optionList.find((candidate) => candidate.key === before.parent) ?? null : null
+      // A name two choices shared is only rewritten where the parent says which one was meant.
+      if (shared && !parentOption) continue
+      await renameStored(client, owner, field, namesOf(before), option.label, shared && parent && parentOption ? { field: parent, names: namesOf(parentOption) } : null)
+    }
+  }
+
+  const stored = JSON.stringify(storedOptions(next))
+  if (!owner) {
+    await client.query('update field_definitions set options = $2::jsonb where id = $1 and org_id is null', [fieldId, stored])
+    return { ok: true, kept, modified: false }
+  }
+  if (!field.standard) {
+    await client.query('update field_definitions set options = $3::jsonb where id = $1 and org_id = $2', [fieldId, owner, stored])
+    return { ok: true, kept, modified: false }
+  }
+  if (standard && stored === JSON.stringify(storedOptions(standard))) {
+    await client.query(`delete from field_settings where org_id = $1 and field_id = $2 and setting = 'options'`, [owner, fieldId])
+    return { ok: true, kept, modified: false }
+  }
+  await client.query(
+    `insert into field_settings (org_id, field_id, setting, value, modified_by)
+     values ($1, $2, 'options', $3::jsonb, $4)
+     on conflict (org_id, field_id, setting)
+     do update set value = excluded.value,
+                   modified_by = case when field_settings.value is distinct from excluded.value then excluded.modified_by else field_settings.modified_by end,
+                   modified_at = case when field_settings.value is distinct from excluded.value then now() else field_settings.modified_at end`,
+    [owner, fieldId, stored, userId],
+  )
+  return { ok: true, kept, modified: true }
+}
+
+/** Reads the rows the options editor sends, trusting none of it. */
+export function readOptionRows(raw: unknown): OptionInput[] {
+  if (!Array.isArray(raw)) return []
+  return raw.slice(0, 300).map((row) => {
+    const entry = (row ?? {}) as Record<string, unknown>
+    return {
+      key: typeof entry.key === 'string' ? entry.key.slice(0, 80) : null,
+      label: String(entry.label ?? '').slice(0, 300),
+      parent: typeof entry.parent === 'string' ? entry.parent.slice(0, 80) : null,
+      countsAs: typeof entry.countsAs === 'string' ? entry.countsAs.slice(0, 80) : null,
+      retired: entry.retired === true,
+    }
+  })
+}
+
+/** What to say after a list was saved, naming any options kept as retired because records hold them. */
+export function optionsMessage(kept: string[], standard: boolean): string {
+  const base = standard ? 'Saved. The list is live for every organization that has not made its own version.' : 'Options saved.'
+  if (kept.length === 0) return base
+  return `${base} ${kept.length === 1 ? `"${kept[0]}" is` : `${kept.map((label) => `"${label}"`).join(', ')} are`} still held by records, so ${kept.length === 1 ? 'it was' : 'they were'} retired instead of removed.`
+}
+
+/**
+ * Puts an organization's version of a standard pick list back to the Stratios
+ * list. Values saved under the organization's own names for standard choices
+ * are renamed back. It is refused while records hold a choice the
+ * organization added, because the standard list has no place for them.
+ */
+export async function resetFieldOptions(client: Queryable, orgId: string, fieldId: string): Promise<Result> {
+  const fields = await listFields(client, orgId)
+  const field = fields.find((candidate) => candidate.id === fieldId)
+  if (!field || !field.standard || !field.modifiedSettings.includes('options')) return { ok: true }
+  const standard = normalizeOptions(field.standardValues.options)
+  const standardKeys = new Set(standard.map((option) => option.key))
+  const stranded: string[] = []
+  for (const option of field.optionList) {
+    if (!standardKeys.has(option.key) && (await optionUse(client, orgId, field, option)) > 0) stranded.push(option.label)
+  }
+  if (stranded.length > 0) {
+    return { ok: false, error: `Records still use ${stranded.length === 1 ? 'an option' : 'options'} you added (${stranded.join(', ')}). Change those records first, then reset.` }
+  }
+  const parent = parentFieldOf(fields, field)
+  for (const option of field.optionList) {
+    const original = standard.find((candidate) => candidate.key === option.key)
+    if (!original || original.label === option.label) continue
+    const shared = field.optionList.some((other) => other.key !== option.key && lowered(other.label) === lowered(option.label))
+    const parentOption = parent && option.parent ? parent.optionList.find((candidate) => candidate.key === option.parent) ?? null : null
+    if (shared && !parentOption) continue
+    await renameStored(client, orgId, field, namesOf(option), original.label, shared && parent && parentOption ? { field: parent, names: namesOf(parentOption) } : null)
+  }
+  await client.query(`delete from field_settings where org_id = $1 and field_id = $2 and setting = 'options'`, [orgId, fieldId])
+  return { ok: true }
 }
 
 /** Who changed each modified setting of a standard field, and when. */
@@ -465,19 +682,14 @@ export async function saveStandardField(client: Queryable, fieldId: string, inpu
 
   const numeric = field.dataType === 'number' || field.dataType === 'money'
   const unit = numeric ? (input.unit ?? '').trim().slice(0, 30) || null : field.unit
-  let options = field.options
-  if (field.dataType === 'picklist') {
-    options = cleanList(input.options ?? [], 100)
-    if (options.length === 0) return { ok: false, error: 'Enter at least one option for the pick list.' }
-  }
   await client.query(
     `update field_definitions
      set name = $2, ai_description = $3, agent_instructions = $4,
-         when_empty = $5, when_different = $6, manual_override = $7, unit = $8, options = $9::jsonb
+         when_empty = $5, when_different = $6, manual_override = $7, unit = $8
      where id = $1 and org_id is null`,
     [
       fieldId, settings.name, settings.ai_description, settings.agent_instructions,
-      settings.when_empty, settings.when_different, settings.manual_override, unit, options ? JSON.stringify(options) : null,
+      settings.when_empty, settings.when_different, settings.manual_override, unit,
     ],
   )
   return { ok: true }

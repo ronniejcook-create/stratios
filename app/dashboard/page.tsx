@@ -1,5 +1,5 @@
 import { auth } from '@clerk/nextjs/server'
-import { PROPERTY_TYPES } from '@/lib/assets'
+import { DEFAULT_PROPERTY_TYPES, listPropertyTypes } from '@/lib/assets'
 import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
 import { loadAccess } from '@/lib/permissions'
 import { listMainPhotos } from '@/lib/photos'
@@ -29,8 +29,11 @@ export default async function AssetsPage() {
   let assets: AssetSummary[] = []
   let problem: 'none' | 'update-needed' | 'failed' = 'none'
   let canAdd = orgRole === 'org:admin'
+  let propertyTypes: readonly string[] = DEFAULT_PROPERTY_TYPES
   try {
     assets = await withOrg(orgId, (client) => listAssets(client, orgId))
+    // What Add Asset offers: the organization's own Property Type list.
+    propertyTypes = await withOrg(orgId, (client) => listPropertyTypes(client, orgId))
   } catch (error) {
     console.error('listAssets failed', error)
     problem = isMissingSchema(error) ? 'update-needed' : 'failed'
@@ -107,7 +110,7 @@ export default async function AssetsPage() {
         {problem === 'failed' ? (
           <p className="form-error" role="alert">The assets could not be loaded. Check the database connection and that the migrations have been run.</p>
         ) : (
-          <AssetsGrid rows={rows} canAdd={canAdd} propertyTypes={PROPERTY_TYPES} extraColumns={locations.columns} />
+          <AssetsGrid rows={rows} canAdd={canAdd} propertyTypes={propertyTypes} extraColumns={locations.columns} />
         )}
       </section>
     </>

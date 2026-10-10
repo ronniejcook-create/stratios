@@ -3,11 +3,14 @@ import { notFound, redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { isDatabaseConfigured, withOrg } from '@/lib/db'
 import { DATA_TYPES, fieldHasValues, listModifications } from '@/lib/fieldAdmin'
-import { listFields } from '@/lib/fields'
+import { listFields, parentFieldOf } from '@/lib/fields'
+import { normalizeOptions } from '@/lib/optionLists'
 import { listScreens } from '@/lib/layout'
 import { listLists } from '@/lib/lists'
 import { RECORD_LABELS, isUuid } from '@/lib/records'
+import { resetSettings, saveOptions } from '../actions'
 import { FieldEditor } from './FieldEditor'
+import { OptionsEditor } from './OptionsEditor'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +27,7 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
     if (!field) return null
     return {
       field,
+      parent: parentFieldOf(fields, field),
       screens: await listScreens(client, orgId),
       lists: await listLists(client, orgId),
       hasValues: field.standard ? false : await fieldHasValues(client, id),
@@ -31,7 +35,9 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
     }
   })
   if (!loaded) notFound()
-  const { field, screens, lists, modifications } = loaded
+  const { field, parent, screens, lists, modifications } = loaded
+  // For the organization's version of a standard list: what Stratios itself lists.
+  const standardList = field.standard ? (field.modifiedSettings.includes('options') ? normalizeOptions(field.standardValues.options) : field.optionList) : null
 
   const sections = screens.flatMap((screen) =>
     screen.sections
@@ -94,6 +100,28 @@ export default async function FieldPage({ params }: { params: Promise<{ id: stri
           modifications={modifications.map((item) => ({ setting: item.setting, modifiedAt: item.modifiedAt }))}
         />
       </section>
+
+      {field.dataType === 'picklist' ? (
+        <section className="panel">
+          <h2>Options</h2>
+          <p className="note">
+            {field.standard
+              ? 'The choices people pick from. Changing them gives your organization its own version of this list.'
+              : 'The choices people pick from.'}
+          </p>
+          <OptionsEditor
+            fieldId={field.id}
+            fieldName={field.name}
+            options={field.optionList.map(({ key, label, parent: belongsTo, countsAs, retired }) => ({ key, label, parent: belongsTo, countsAs, retired }))}
+            parent={parent ? { name: parent.name, choices: parent.optionList.map((option) => ({ key: option.key, label: option.retired ? `${option.label} (Retired)` : option.label })) } : null}
+            standardChoices={standardList ? standardList.filter((option) => !option.retired).map((option) => ({ key: option.key, label: option.label })) : null}
+            isModified={field.standard && field.modifiedSettings.includes('options')}
+            modifiedAt={modifications.find((item) => item.setting === 'options')?.modifiedAt ?? null}
+            saveAction={saveOptions}
+            resetAction={resetSettings}
+          />
+        </section>
+      ) : null}
     </>
   )
 }

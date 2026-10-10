@@ -7,6 +7,8 @@
 
 import { ApiError, askClaudeWith, claudeApiKey } from './claude'
 import type { Candidate, Confidence, DocumentKind, ProposalInput } from './documents'
+import { DEFAULT_PROPERTY_TYPES, fallbackPropertyType, matchPropertyType } from './assets'
+import { pickable } from './optionLists'
 import { isEmptyValue, monthToPeriod, parseInput } from './fieldFormat'
 import type { FieldDefinition } from './fields'
 import type { DocumentRow, ListDefinition } from './lists'
@@ -71,11 +73,27 @@ const TYPE_HELP: Record<string, string> = {
   picklist: 'one of the listed choices, spelled exactly',
 }
 
+/**
+ * A pick list's choices for the agent. Choices that depend on another field
+ * are grouped under the value of that field they belong to, since only those
+ * may be given: "for Office: CBD | Suburban; for Retail: Mall | Strip".
+ */
+function choicesText(field: FieldDefinition): string {
+  const active = pickable(field.optionList)
+  if (!field.dependsOn || !active.some((option) => option.parent)) return (field.options ?? []).join(' | ')
+  const groups = new Map<string, string[]>()
+  for (const option of active) {
+    const group = option.parent ? field.parentLabels[option.parent] ?? option.parent : 'any'
+    groups.set(group, [...(groups.get(group) ?? []), option.label])
+  }
+  return `depends on ${field.dependsOn}; ${[...groups].map(([group, labels]) => `for ${group}: ${labels.join(' | ')}`).join('; ')}`
+}
+
 function describeField(field: FieldDefinition, column = false): string {
   const lines = column ? [`  - column: ${field.key}`, `    name: ${field.name}`] : [`- key: ${field.key}`, `  name: ${field.name}`, `  level: ${field.appliesTo}`]
   if (column) {
     let type = TYPE_HELP[field.dataType] ?? field.dataType
-    if (field.dataType === 'picklist' && field.options?.length) type += `: ${field.options.join(' | ')}`
+    if (field.dataType === 'picklist' && field.options?.length) type += `: ${choicesText(field)}`
     lines.push(`    value: ${type}`)
     if (field.aiDescription) lines.push(`    description: ${field.aiDescription.slice(0, 500)}`)
     if (field.agentInstructions) lines.push(`    instructions: ${field.agentInstructions.slice(0, 1000).replace(/\s+/g, ' ')}`)
@@ -83,7 +101,7 @@ function describeField(field: FieldDefinition, column = false): string {
   }
   let type = TYPE_HELP[field.dataType] ?? field.dataType
   if (field.unit && field.dataType !== 'percent') type += ` (in ${field.unit})`
-  if (field.dataType === 'picklist' && field.options?.length) type += `: ${field.options.join(' | ')}`
+  if (field.dataType === 'picklist' && field.options?.length) type += `: ${choicesText(field)}`
   lines.push(`  value: ${type}`)
   if (field.tracking === 'monthly') lines.push('  tracked: one value per month, so "month" is required')
   if (field.calculated && field.formula) lines.push(`  worked out as: ${field.formula}`)
@@ -234,17 +252,15 @@ const SCHEMA = {
   additionalProperties: false,
 }
 
-const PROPERTY_TYPE_CHOICES = ['Office', 'Retail', 'Industrial', 'Multifamily', 'Mixed Use', 'Other']
-
-/** The same answer shape, plus the few facts needed to create the asset. */
-const NEW_ASSET_SCHEMA = {
+/** The same answer shape, plus the few facts needed to create the asset. The property type is one of the organization's own. */
+const newAssetSchema = (propertyTypes: readonly string[]) => ({
   ...SCHEMA,
   properties: {
     asset: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'The name the document gives the property or investment, for example "Harbor Point" or "120 Main Street". An empty string if it gives none' },
-        property_type: { type: 'string', enum: PROPERTY_TYPE_CHOICES },
+        property_type: { type: 'string', enum: [...propertyTypes] },
         city: { type: 'string', description: 'The city the property is in; an empty string if not stated' },
       },
       required: ['name', 'property_type', 'city'],
@@ -253,7 +269,7 @@ const NEW_ASSET_SCHEMA = {
     ...SCHEMA.properties,
   },
   required: ['asset', ...SCHEMA.required],
-}
+})
 
 function describeList({ list, columns }: ExtractableList): string {
   return [`- list: ${list.key}`, `  name: ${list.name}`, `  level: ${list.appliesTo}`, '  columns:', ...columns.map((column) => describeField(column, true))].join('\n')
@@ -619,6 +635,8 @@ export async function readDocument(input: {
   records: RecordEntry[]
   fields: FieldDefinition[]
   newAsset?: boolean
+  /** With `newAsset`: the property types the new asset's property may be, from the organization's Property Type list. */
+  propertyTypes?: readonly string[]
   /** The enabled skills from the library; the agent applies those that fit the document. */
   skills?: Skill[]
   /** The lists the person may add entries to; the agent adds comments, critical dates and the like to them. */
@@ -631,6 +649,7 @@ export async function readDocument(input: {
   if (!apiKey) return { ok: false, error: 'No Anthropic API key is set (ANTHROPIC_API_KEY).' }
   const { records } = input
   const wantsAsset = input.newAsset === true
+  const propertyTypes = input.propertyTypes && input.propertyTypes.length > 0 ? input.propertyTypes : DEFAULT_PROPERTY_TYPES
   const levels = new Set(records.map((record) => record.type))
   const fields = input.fields.filter((field) => levels.has(field.appliesTo))
   if (fields.length === 0) return { ok: false, error: 'There are no fields you can change on this asset, so there is nothing to fill in.' }
@@ -662,11 +681,11 @@ export async function readDocument(input: {
         attachment,
         { type: 'text', text: buildPrompt(input.documentName, records, fields, wantsAsset, input.skills ?? [], lists, input.savedRentRolls ?? []) },
       ],
-      wantsAsset ? NEW_ASSET_SCHEMA : SCHEMA,
+      wantsAsset ? newAssetSchema(propertyTypes) : SCHEMA,
       { maxTokens: 28000, timeoutMs: input.timeoutMs ?? 270000 },
     )
     const described = (answer.asset ?? {}) as Record<string, unknown>
-    const type = PROPERTY_TYPE_CHOICES.find((choice) => choice.toLowerCase() === text(described.property_type, 40).toLowerCase()) ?? 'Other'
+    const type = matchPropertyType(propertyTypes, text(described.property_type, 100)) ?? fallbackPropertyType(propertyTypes)
     const newAsset = wantsAsset ? { name: text(described.name, 200), propertyType: type, city: text(described.city, 200) || null } : null
     return { ok: true, reading: interpretAnswer(answer, records, fields, lists), newAsset }
   } catch (error) {

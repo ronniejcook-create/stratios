@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { PROPERTY_TYPES, deleteAsset } from '@/lib/assets'
+import { deleteAsset, listPropertyTypes, matchPropertyType } from '@/lib/assets'
 import { isMissingSchema, withOrg } from '@/lib/db'
 import { listHistory, saveManualValue, type HistoryEntry } from '@/lib/fields'
 import { removeListRow, saveListRow } from '@/lib/lists'
@@ -129,19 +129,17 @@ export async function addChild(prev: AddState, formData: FormData): Promise<AddS
   if (!CHILD_TYPES.includes(type) || !isUuid(parentId) || !isUuid(assetId)) return { error: 'That could not be added.', done: prev.done }
   if (!name) return { error: 'Enter a name.', done: prev.done }
   if (name.length > 200) return { error: 'The name is too long.', done: prev.done }
-  let propertyType: string | null = null
-  if (type === 'property') {
-    if (!(PROPERTY_TYPES as readonly string[]).includes(propertyTypeRaw)) return { error: 'Choose a property type.', done: prev.done }
-    propertyType = propertyTypeRaw
-  }
-
   try {
     const id = await withOrg(orgId, async (client) => {
       const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
       if (!access.canAddRecords) return 'denied' as const
+      // A property's type has to be one the organization's Property Type list offers now.
+      const propertyType = type === 'property' ? matchPropertyType(await listPropertyTypes(client, orgId), propertyTypeRaw) : null
+      if (type === 'property' && !propertyType) return 'no-type' as const
       return insertChild(client, orgId, userId, type, parentId, name, propertyType)
     })
     if (id === 'denied') return { error: NO_PERMISSION, done: prev.done }
+    if (id === 'no-type') return { error: 'Choose a property type.', done: prev.done }
     if (!id) return { error: 'That could not be added.', done: prev.done }
   } catch (error) {
     console.error('addChild failed', error)

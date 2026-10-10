@@ -6,7 +6,7 @@
 // while Claude reads: claim the document, read it, then apply what was found.
 
 import { followAddressChange, pointOfProperty, type Point } from './locationFacts'
-import { createAssetWithDefaults } from './assets'
+import { createAssetWithDefaults, fallbackPropertyType, propertyTypesOf } from './assets'
 import { withOrg } from './db'
 import { describeFailure, NO_PERMISSION, type Caller } from './documentRequests'
 import { applyReading, attachDocument, failReading, getDocument, readDocumentFile, startReading, type Outcome } from './documents'
@@ -308,7 +308,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
       const allFields = await listFields(client, orgId)
       const fields = extractableFields(allFields, sectionByField(await listScreens(client, orgId)), access.fieldLevel)
       const lists = extractableLists(await listLists(client, orgId), allFields, access.sectionLevel)
-      return { ok: true as const, document, file, fields, lists, skills: await loadSkillsForAgent(client, orgId) }
+      return { ok: true as const, document, file, fields, lists, propertyTypes: propertyTypesOf(allFields), skills: await loadSkillsForAgent(client, orgId) }
     })
   } catch (error) {
     console.error('Preparing to read a document failed', error)
@@ -318,14 +318,14 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
   const { document } = prepared
   if (!prepared.file) return giveUp(caller, documentId, 'The file for this document is missing. Upload it again.', 500)
 
-  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records: newAssetRecords(), fields: prepared.fields, lists: prepared.lists, newAsset: true, skills: prepared.skills, timeoutMs })
+  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records: newAssetRecords(), fields: prepared.fields, lists: prepared.lists, newAsset: true, propertyTypes: prepared.propertyTypes, skills: prepared.skills, timeoutMs })
   if (!result.ok) return giveUp(caller, documentId, result.error)
   const described = result.newAsset
   const name = (described?.name || document.name.replace(/\.(pdf|xlsx|xlsm)$/i, '')).slice(0, 200)
 
   try {
     const created = await withOrg(orgId, async (client) => {
-      const assetId = await createAssetWithDefaults(client, orgId, userId, { name, propertyType: described?.propertyType ?? 'Other', city: described?.city ?? null }, { id: documentId, name: document.name })
+      const assetId = await createAssetWithDefaults(client, orgId, userId, { name, propertyType: described?.propertyType ?? fallbackPropertyType(prepared.propertyTypes), city: described?.city ?? null }, { id: documentId, name: document.name })
       const tree = await getAssetTree(client, orgId, assetId)
       const property = tree?.properties[0]
       const building = property?.buildings[0]

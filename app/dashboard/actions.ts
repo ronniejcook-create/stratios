@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
-import { PROPERTY_TYPES, createAssetWithDefaults } from '@/lib/assets'
+import { createAssetWithDefaults, listPropertyTypes, matchPropertyType } from '@/lib/assets'
 import { isMissingSchema, withOrg } from '@/lib/db'
 import { loadAccess } from '@/lib/permissions'
 
@@ -20,20 +20,23 @@ export async function addAsset(_prev: AddAssetState, formData: FormData): Promis
 
   if (!name) return { error: 'Enter a name for the asset.' }
   if (name.length > 200) return { error: 'The name is too long.' }
-  if (!(PROPERTY_TYPES as readonly string[]).includes(propertyType)) return { error: 'Choose a property type.' }
 
-  let assetId: string | null
+  let assetId: string | null | 'no-type'
   try {
     assetId = await withOrg(orgId, async (client) => {
       const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
       if (!access.canAddRecords) return null
-      return createAssetWithDefaults(client, orgId, userId, { name, propertyType, city: city ? city.slice(0, 200) : null })
+      // The type has to be one the organization's Property Type list offers now.
+      const type = matchPropertyType(await listPropertyTypes(client, orgId), propertyType)
+      if (!type) return 'no-type' as const
+      return createAssetWithDefaults(client, orgId, userId, { name, propertyType: type, city: city ? city.slice(0, 200) : null })
     })
   } catch (error) {
     console.error('addAsset failed', error)
     if (isMissingSchema(error)) return { error: 'The database needs an update before assets can be added. Run the newest file in db/migrations.' }
     return { error: 'The asset could not be saved. Try again.' }
   }
+  if (assetId === 'no-type') return { error: 'Choose a property type.' }
 
   if (!assetId) return { error: "You don't have permission to add assets." }
 

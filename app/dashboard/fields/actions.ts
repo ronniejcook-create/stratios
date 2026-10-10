@@ -11,11 +11,14 @@ import {
   placeField,
   resetFieldSettings,
   retireField,
+  optionsMessage,
+  readOptionRows,
+  saveFieldOptions,
   saveFieldSettings,
   type FieldSettingsInput,
 } from '@/lib/fieldAdmin'
 import { generateFieldDescription, type DescriptionResult, type FieldFacts } from '@/lib/fieldDescription'
-import { OVERRIDABLE } from '@/lib/fields'
+import { listFields, OVERRIDABLE } from '@/lib/fields'
 import { isUuid } from '@/lib/records'
 
 // Only administrators manage the field dictionary and the layout. The
@@ -151,9 +154,10 @@ export async function resetSettings(input: { fieldId: string; setting: string | 
   const admin = await requireAdmin()
   if (!admin) return { ok: false, error: NOT_ADMIN }
   if (!isUuid(input.fieldId)) return { ok: false, error: 'That field could not be found.' }
-  if (input.setting !== null && !(input.setting in OVERRIDABLE)) return { ok: false, error: 'That setting could not be found.' }
+  if (input.setting !== null && input.setting !== 'options' && !(input.setting in OVERRIDABLE)) return { ok: false, error: 'That setting could not be found.' }
   try {
-    await withOrg(admin.orgId, (client) => resetFieldSettings(client, admin.orgId, input.fieldId, input.setting))
+    const reset = await withOrg(admin.orgId, (client) => resetFieldSettings(client, admin.orgId, input.fieldId, input.setting))
+    if (!reset.ok) return reset
   } catch (error) {
     console.error('resetSettings failed', error)
     return { ok: false, error: 'The field could not be reset. Try again.' }
@@ -197,4 +201,31 @@ export async function generateDescription(input: FieldFacts): Promise<Descriptio
     tracking: String(raw.tracking ?? ''),
     calculated: raw.calculated === true,
   })
+}
+
+export type SavedOption = { key: string; label: string; parent: string | null; countsAs: string | null; retired: boolean }
+export type OptionsResult = { ok: true; message: string; options: SavedOption[] } | { ok: false; error: string }
+
+/** Saves a pick list's choices for this organization: its own field's list, or its own version of a standard one. */
+export async function saveOptions(input: { fieldId: string; options: unknown }): Promise<OptionsResult> {
+  const admin = await requireAdmin()
+  if (!admin) return { ok: false, error: NOT_ADMIN }
+  if (!isUuid(input.fieldId)) return { ok: false, error: 'That field could not be found.' }
+  const rows = readOptionRows(input.options)
+  try {
+    const result = await withOrg(admin.orgId, async (client) => {
+      const saved = await saveFieldOptions(client, admin.orgId, admin.userId, input.fieldId, rows)
+      if (!saved.ok) return saved
+      const field = (await listFields(client, admin.orgId)).find((candidate) => candidate.id === input.fieldId)
+      return { ...saved, options: (field?.optionList ?? []).map(({ key, label, parent, countsAs, retired }) => ({ key, label, parent, countsAs, retired })) }
+    })
+    if (!result.ok) return result
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/fields')
+    revalidatePath(`/dashboard/fields/${input.fieldId}`)
+    return { ok: true, message: optionsMessage(result.kept, false), options: result.options }
+  } catch (error) {
+    console.error('saveOptions failed', error)
+    return { ok: false, error: 'The options could not be saved. Try again.' }
+  }
 }

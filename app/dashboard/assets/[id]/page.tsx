@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { auth, currentUser } from '@clerk/nextjs/server'
-import { PROPERTY_TYPES, getAssetContents, type AssetContents } from '@/lib/assets'
+import { getAssetContents, propertyTypesOf, type AssetContents } from '@/lib/assets'
 import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
 import { listDocuments, MAX_DOCUMENT_BYTES, type DocumentSummary } from '@/lib/documents'
 import { EMPTY_VALUE } from '@/lib/fieldFormat'
-import { listFields, listSourceTypes, listValues, type FieldDefinition, type FieldValue } from '@/lib/fields'
+import { listFields, listSourceTypes, listValues, parentFieldOf, type FieldDefinition, type FieldValue } from '@/lib/fields'
+import { currentLabel, findOption, OFFICE_KEY, parentKeysOf, pickable, standardKeyOf } from '@/lib/optionLists'
 import { listScreens, type Screen, type Section } from '@/lib/layout'
 import { listLists, listRows, sortRows, type ListDefinition, type ListRow } from '@/lib/lists'
 import type { MapPin } from '@/components/PropertyMap'
@@ -103,6 +104,9 @@ export default async function AssetPage({
   }
   if (!loaded) notFound()
   const { tree, fields, values, sourceNames, screens, lists, rows, access } = loaded
+  const propertyTypeField = fields.find((field) => field.key === 'propertyType' && field.appliesTo === 'property' && !field.listId) ?? null
+  /** Whether a property's type is Office, or a type the organization added that counts as Office. */
+  const isOffice = (label: string | null) => (propertyTypeField && propertyTypeField.optionList.length > 0 ? standardKeyOf(propertyTypeField.optionList, label) === OFFICE_KEY : label === 'Office')
 
   // What the asset holds, for the administrator's delete warning. The warning still works without the counts.
   let contents: AssetContents | null = null
@@ -133,6 +137,7 @@ export default async function AssetPage({
         asOfStated: rentRoll.asOfStated,
         propertyName: tree.properties.find((property) => property.id === rentRoll.propertyId)?.name ?? '',
         propertyType: tree.properties.find((property) => property.id === rentRoll.propertyId)?.propertyType ?? null,
+        office: isOffice(tree.properties.find((property) => property.id === rentRoll.propertyId)?.propertyType ?? null),
         documentId: rentRoll.documentId,
         documentName: rentRoll.documentName,
         rowCount: rentRoll.rowCount,
@@ -234,6 +239,11 @@ export default async function AssetPage({
   const fieldById = new Map(fields.map((field) => [field.id, field]))
   const placed = new Set(screens.flatMap((candidate) => candidate.sections.flatMap((section) => section.fieldIds)))
 
+  /** What a single-value text or pick list field holds on a record, as text. */
+  const textOf = (field: FieldDefinition, record: RecordContext): string | null => {
+    if (field.coreColumn) return field.coreColumn === 'name' ? record.core.name : record.core.property_type ?? null
+    return values.find((value) => value.recordId === record.id && value.fieldId === field.id)?.text ?? null
+  }
   const viewOf = (field: FieldDefinition, record: RecordContext, canEdit: boolean): FieldView => {
     // Values arrive newest month first, so the first match is the latest.
     const stored = values.find((value) => value.recordId === record.id && value.fieldId === field.id)
@@ -242,13 +252,30 @@ export default async function AssetPage({
       const text = field.coreColumn === 'name' ? record.core.name : record.core.property_type ?? null
       value = text ? { ...EMPTY_VALUE, text } : null
     }
+    let options = field.options
+    let optionsNote: string | null = null
+    if (field.dataType === 'picklist') {
+      // A choice renamed since the value was saved shows under its name now.
+      if (value?.text) value = { ...value, text: currentLabel(field.optionList, value.text) }
+      // Choices that depend on another field: only those belonging to what that field holds on this record.
+      const parent = parentFieldOf(fields, field)
+      if (parent) {
+        const held = textOf(parent, record)
+        const parentOption = findOption(parent.optionList, held)
+        options = parentOption ? pickable(field.optionList, parentKeysOf(parentOption)).map((option) => option.label) : []
+        if (!parentOption) optionsNote = `Set ${parent.name} first; the choices here depend on it.`
+        else if (options.length === 0) optionsNote = `There are no choices for ${parentOption.label}.`
+        else optionsNote = `Showing the choices for ${parentOption.label}.`
+      }
+    }
     return {
       id: field.id,
       key: field.key,
       name: field.name,
       dataType: field.dataType,
       unit: field.unit,
-      options: field.options,
+      options,
+      optionsNote,
       monthly: field.tracking === 'monthly',
       calculated: field.calculated,
       formula: field.formula,
@@ -460,7 +487,7 @@ export default async function AssetPage({
 
         {isFirstScreen && access.canAddRecords ? (
           <div className="record-add">
-            <AddChildForm type="property" parentId={tree.id} assetId={tree.id} propertyTypes={PROPERTY_TYPES} />
+            <AddChildForm type="property" parentId={tree.id} assetId={tree.id} propertyTypes={propertyTypesOf(fields)} />
           </div>
         ) : null}
       </>

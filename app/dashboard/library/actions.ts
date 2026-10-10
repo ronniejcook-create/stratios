@@ -9,13 +9,17 @@ import {
   createScreen,
   createSection,
   placeStandardField,
+  optionsMessage,
+  readOptionRows,
   retireStandardField,
+  saveFieldOptions,
   saveStandardField,
   type FieldSettingsInput,
 } from '@/lib/fieldAdmin'
 import { isUuid } from '@/lib/records'
 import { isStratiosAdmin } from '@/lib/stratios'
-import type { ActionResult, FormState } from '../fields/actions'
+import { listFields } from '@/lib/fields'
+import type { ActionResult, FormState, OptionsResult } from '../fields/actions'
 
 // The Master Library changes the Stratios standard for every organization.
 // Every action first confirms the signed-in person is an administrator of the
@@ -146,4 +150,28 @@ export async function retireLibraryField(input: { fieldId: string }): Promise<Ac
   }
   revalidatePath('/dashboard/library')
   return { ok: true, message: 'Field retired.' }
+}
+
+/** Saves a standard pick list's choices for every organization that has not made its own version of the list. */
+export async function saveLibraryOptions(input: { fieldId: string; options: unknown }): Promise<OptionsResult> {
+  const admin = await requireStratiosAdmin()
+  if (!admin) return { ok: false, error: NOT_ALLOWED }
+  if (!isUuid(input.fieldId)) return { ok: false, error: 'That field could not be found.' }
+  const rows = readOptionRows(input.options)
+  try {
+    const result = await withStratiosAdmin(admin.orgId, async (client) => {
+      const saved = await saveFieldOptions(client, null, admin.userId, input.fieldId, rows)
+      if (!saved.ok) return saved
+      const field = (await listFields(client, null)).find((candidate) => candidate.id === input.fieldId)
+      return { ...saved, options: (field?.optionList ?? []).map(({ key, label, parent, countsAs, retired }) => ({ key, label, parent, countsAs, retired })) }
+    })
+    if (!result.ok) return result
+    revalidatePath('/dashboard')
+    revalidatePath('/dashboard/library')
+    revalidatePath(`/dashboard/library/${input.fieldId}`)
+    return { ok: true, message: optionsMessage(result.kept, true), options: result.options }
+  } catch (error) {
+    console.error('saveLibraryOptions failed', error)
+    return { ok: false, error: 'The options could not be saved. Try again.' }
+  }
 }

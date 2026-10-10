@@ -1014,3 +1014,17 @@ td.muted { color: var(--dim); }
 .markdown.field-instructions { min-height: 0; padding: 10px 14px; }
 .field-modal-actions { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .field-modal-spacer { flex: 1; }
+
+/* The options of a pick list, in the field editor. */
+.options-table { min-width: 560px; }
+.options-table th, .options-table td { padding: 6px 8px; text-align: left; vertical-align: middle; }
+.options-table input[type="text"], .options-table select {
+  width: 100%; min-width: 150px; height: 36px; padding: 0 10px; background: var(--bg); color: var(--heading);
+  border: 1px solid var(--line-strong); border-radius: 6px; font: inherit; font-size: 14px;
+}
+.options-table input[type="text"]::placeholder { color: var(--placeholder); }
+.options-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.options-table td:has(input[type="checkbox"]) { width: 1%; text-align: center; }
+.option-actions { white-space: nowrap; width: 1%; }
+.option-actions .link-button { min-height: 0; margin-right: 12px; font-size: 13px; }
+.option-retired input[type="text"] { color: var(--muted); text-decoration: line-through; }

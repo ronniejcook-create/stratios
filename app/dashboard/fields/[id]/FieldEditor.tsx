@@ -235,7 +235,8 @@ export function FieldEditor({
 
       {typeLockedReason ? <p className="note">{typeLockedReason}</p> : null}
 
-      {!field.standard && dataType === 'picklist' ? (
+      {/* A field that is already a pick list has its options edited in their own panel below; this box is for one just becoming a pick list. */}
+      {!field.standard && dataType === 'picklist' && field.dataType !== 'picklist' ? (
         <div className="field">
           <label htmlFor="fe-options">Options (One per Line)</label>
           <textarea id="fe-options" rows={5} value={options} onChange={(e) => setOptions(e.target.value)} />

@@ -15,6 +15,8 @@ export type RentRollChoice = {
   propertyName: string
   /** The type of the property the rent roll is for; an office property gets a stack plan under the totals. */
   propertyType: string | null
+  /** The property's type is Office, or one that counts as Office; the stack plan is drawn for those. */
+  office: boolean
   documentId: string | null
   documentName: string | null
   rowCount: number
@@ -273,7 +275,7 @@ export function RentRollPanel({
         </p>
       ))}
 
-      {selected.propertyType === 'Office' ? <StackPlan key={selected.id} rows={rows} asOfDate={selected.asOfDate} /> : null}
+      {selected.office ? <StackPlan key={selected.id} rows={rows} asOfDate={selected.asOfDate} /> : null}
 
       <DataGrid
         columns={COLUMNS}

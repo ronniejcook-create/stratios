@@ -1039,6 +1039,71 @@ work and how data is isolated; this file covers how we work and where things sta
       button and the Location section were not opened in a browser. Assets that already had
       an address before this (Knoll Trail) are filled the first time Refresh Location is
       pressed.
+  - **Property types and subtypes, and drop-down lists that can be managed** (October 9, night;
+    `db/migrations/023_property_types.sql`; Ronnie asked how an administrator would change the
+    Property Type list, wanted NCREIF's types as the default, Mixed Use kept, and a Property
+    Subtype that cascades from the type).
+    - **A choice is more than its label** (`lib/optionLists.ts`, browser-safe): `key`
+      (permanent), `label`, `parent` (the choice of the field this one depends on),
+      `countsAs` (for a choice an organization adds to a standard list: the standard choice it
+      is a kind of), `retired`, `aliases` (names it used to have). `field_definitions.options`
+      is a JSON array of these; older lists of plain strings still read (`normalizeOptions`).
+      `listFields` fills `optionList` (everything), `options` (labels that can be picked now,
+      as before), `retiredOptions`, `optionAliases`, `dependsOn` and `parentLabels`.
+    - **Stored values are still the label.** A rename keeps the old label as an alias, so old
+      values resolve (`findOption`), show under the new name (`formatValue`) and save as it
+      (`parseInput`). For an organization's own rename the stored values are also rewritten
+      (`renameStored`, including `properties.property_type`). A Stratios rename of a standard
+      choice rewrites nothing, because a Stratios administrator can't touch other
+      organizations' rows; aliases carry it. The Assets list's Type column reads the raw
+      column, so after a Stratios rename it shows the old name until the value is saved again.
+    - **The standard Property Type list** is NCREIF's eight (Office, Industrial, Retail,
+      Residential, Hotel, Self-Storage, Seniors Housing, Other) plus Mixed Use. 023 renames
+      stored "Multifamily" to "Residential" (alias kept). **Property Subtype** is a new
+      standard field (Property Details, after Property Type) with NCREIF's 29 subtypes, each
+      tied to a type; Self-Storage and Mixed Use have none. Source: NCREIF's "Property Types
+      Definitions and Guidance" (April 2024) and the 2026 NPI transition notice. Two subtypes
+      are both called Life Science (keys `officeLifeScience`, `industrialLifeScience`).
+    - **Cascading** (`field_definitions.depends_on`, the parent field's key; only Property
+      Subtype uses it, and there is no screen to make another field depend on one):
+      `saveManualValue` refuses a choice that does not belong to what the parent holds
+      (`dependentProblem`) and, when a parent changes, empties dependents that no longer fit
+      with a history note (`clearMisfitDependents`). A type an organization added that counts
+      as Office gets the Office subtypes (`parentKeysOf`). `applyReading` takes parents first,
+      leaves out a misfit subtype and clears the same way; `decideFinding` checks too. On the
+      asset page the subtype's drop-down lists only the fitting choices, with a line saying
+      which type they are for (`optionsNote` on `FieldView`). A retired choice can't be picked
+      afresh but a record holding it saves unchanged.
+    - **Managing a list**: every pick list field's editor page has an **Options** panel
+      (`app/dashboard/fields/[id]/OptionsEditor.tsx`, saved on its own with Save Options):
+      rename, add, order (Up / Down), retire, remove, Belongs To for a dependent field (with
+      a "Show Options For" filter), and Counts As for a choice added to a standard list.
+      `saveFieldOptions` in `lib/fieldAdmin.ts`: an organization's version of a standard list
+      is one `field_settings` row, setting `options` (Modified, Reset to Standard, and like
+      Agent Instructions it stops following Stratios updates to that list as a whole;
+      `options` is handled beside `OVERRIDABLE`, not in it). A removed choice that records
+      hold is kept as retired and the message says so; a standard choice can only be retired.
+      Reset (`resetFieldOptions`, also run by Reset All) is refused while records hold a
+      choice the organization added, and renames values back. Stratios edits the standard
+      lists on its own Fields Library pages (`saveLibraryOptions`). Add a Field still takes
+      options one per line; the old one-per-line box in the editor now shows only while a
+      field is being turned into a pick list.
+    - **No more copies of the list in code.** `PROPERTY_TYPES` is gone: Add Asset, Add
+      Property, the analyst's `create_asset` (a type not on the list is sent back with the
+      list) and the new-asset reading (`propertyTypes` on `readDocument`) all use the
+      organization's Property Type field (`listPropertyTypes`, `propertyTypesOf`,
+      `matchPropertyType`, `fallbackPropertyType` in `lib/assets.ts`). The stack plan shows
+      for a property whose type is, or counts as, Office (`standardKeyOf` ... `OFFICE_KEY`,
+      `office` on `RentRollChoice`), not for the label "Office".
+    - The reading agent is shown a dependent list grouped by parent ("for Office: CBD | ...").
+      The answer format did not grow.
+    - Everything works before 023 is run: the old six types, no subtype field.
+    - Checked: 023 twice as a role without BYPASSRLS; 44 cases on the scratch database (the
+      cascade by hand and from a reading, renames, retiring, an added type that counts as
+      Office, the two Life Sciences, reset, Stratios changing the standard, another
+      organization unaffected); the earlier agent and location suites again; and the real
+      Options panel clicked through in Chromium with stand-in data. **Not opened inside the
+      app**, and no reading was run against the real Claude API with the new lists.
   - Not built yet (later stages): stored formulas
     (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
@@ -1063,9 +1128,9 @@ work and how data is isolated; this file covers how we work and where things sta
 
 ## Where we left off (October 9, 2026, evening)
 
-Everything described above is committed, pushed to `main` and copied to his folder. Nothing is half done. The latest piece is "Location fields, filled in from the
-map's sources". **He needs to run migration 022** in Supabase, then press Refresh Location on
-Knoll Trail; neither is confirmed yet.
+Everything described above is committed, pushed to `main` and copied to his folder. Nothing is half done. The latest piece is "Property types and subtypes, and
+drop-down lists that can be managed". **He needs to run migrations 022 and 023** in Supabase,
+in that order, then press Refresh Location on Knoll Trail; none of that is confirmed yet.
 
 **The day's last stretch was the Map tab.** It now has a row of tabs, one layer at a time: None,
 Demographics, Schools, Jobs and Commuting, Transit, Flood Zones, Natural Hazards, plus a separate
@@ -1107,7 +1172,7 @@ The same route works for checking any new public service.
 - Organizations can't rename, reorder or hide standard sections and screens yet.
 - The design document "Stratios Data Design" is behind: its build order and Starter Fields tab
   do not yet cover stages 4 to 6, the 22 fields from migration 017, the 11 Location fields
-  from 022, or rent rolls.
+  from 022, Property Subtype and managed option lists from 023, or rent rolls.
 
 ## Ideas offered but not started
 
