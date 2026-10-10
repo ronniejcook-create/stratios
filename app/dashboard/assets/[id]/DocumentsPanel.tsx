@@ -4,13 +4,18 @@ import Link from 'next/link'
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AiIcon } from '@/components/AiIcon'
+import { DataGrid, type GridColumn, type GridRow } from '@/components/DataGrid'
 import { CANNOT_UPLOAD, canUpload as isUploadable, DOCUMENT_ACCEPT, loadCashFlow, readUploadedDocument, recalculateKpis, uploadDocument } from '@/lib/documentClient'
 
 export type DocumentRow = {
   id: string
   name: string
   size: string
+  /** The file's size in bytes, to sort by. */
+  sizeBytes: number
   uploaded: string
+  /** When it was uploaded, as a number, to sort by. */
+  uploadedAt: number
   status: 'uploaded' | 'reading' | 'read' | 'failed'
   /** Reading started long enough ago that it must have stopped. */
   stalled: boolean
@@ -21,11 +26,22 @@ export type DocumentRow = {
   undecided: number
 }
 
+const COLUMNS: GridColumn[] = [
+  { key: 'name', label: 'Document', display: 'link' },
+  { key: 'type', label: 'Type' },
+  { key: 'uploaded', label: 'Uploaded', numeric: true },
+  { key: 'size', label: 'Size', numeric: true },
+  { key: 'status', label: 'Status' },
+  { key: 'found', label: 'What Was Found' },
+  { key: 'actions', label: 'Actions', plain: true },
+]
+
 type Progress = { stage: 'uploading' | 'reading'; name: string; done: number } | null
 
 /**
- * The Documents tab of an asset: upload a PDF, have the agent read it, and
- * open each document's review list.
+ * The Documents tab of an asset: upload a file, have the agent read it, and
+ * open each document's review list. The documents are a list like any
+ * other: newest first, and it can be searched, sorted and filtered.
  */
 export function DocumentsPanel({ assetId, documents, canUpload, maxMb }: { assetId: string; documents: DocumentRow[]; canUpload: boolean; maxMb: number }) {
   const router = useRouter()
@@ -72,6 +88,44 @@ export function DocumentsPanel({ assetId, documents, canUpload, maxMb }: { asset
   }
 
   const busy = progress !== null
+
+  const statusOf = (document: DocumentRow) =>
+    document.status === 'read' ? (document.undecided > 0 ? `${document.undecided} to Decide` : 'Reviewed') :
+    document.status === 'reading' && !document.stalled ? 'Reading…' :
+    document.status === 'failed' ? 'Could Not Be Read' :
+    'Not Read Yet'
+  const rows: GridRow[] = documents.map((document) => {
+    const href = `/dashboard/assets/${assetId}/documents/${document.id}`
+    const waiting = document.status === 'uploaded' || document.status === 'failed' || document.stalled
+    const status = statusOf(document)
+    return {
+      id: document.id,
+      href,
+      cells: {
+        name: document.name,
+        type: document.documentType ?? '',
+        size: document.size,
+        uploaded: document.uploaded,
+        status,
+        found: document.status === 'read' ? document.found : document.status === 'failed' ? document.error ?? '' : '',
+        actions: '',
+      },
+      order: { size: document.sizeBytes, uploaded: document.uploadedAt },
+      render: {
+        status: <span className={`chip${document.status === 'failed' ? ' chip-failed' : document.status === 'read' && document.undecided > 0 ? ' chip-modified' : ''}`}>{status}</span>,
+        actions: (
+          <div className="row-actions">
+            {waiting && canUpload ? (
+              <button type="button" className="link-button" disabled={busy} onClick={() => void read(document.id, document.name)}>
+                {document.status === 'failed' || document.stalled ? 'Try Again' : 'Read Document'}
+              </button>
+            ) : null}
+            {document.status === 'read' ? <Link href={href}>Review</Link> : null}
+          </div>
+        ),
+      },
+    }
+  })
 
   return (
     <section className="panel">
@@ -120,66 +174,15 @@ export function DocumentsPanel({ assetId, documents, canUpload, maxMb }: { asset
       ) : null}
       {error ? <p className="form-error" role="alert">{error}</p> : null}
 
-      {documents.length === 0 ? (
-        <p className="empty">No documents yet.</p>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Document</th>
-                <th>Uploaded</th>
-                <th>Status</th>
-                <th><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map((document) => {
-                const href = `/dashboard/assets/${assetId}/documents/${document.id}`
-                const waiting = document.status === 'uploaded' || document.status === 'failed' || document.stalled
-                return (
-                  <tr key={document.id}>
-                    <td>
-                      <Link href={href}>{document.name}</Link>
-                      <div className="doc-sub">{[document.documentType, document.size].filter(Boolean).join(' · ')}</div>
-                    </td>
-                    <td>{document.uploaded}</td>
-                    <td>
-                      {document.status === 'read' ? (
-                        <>
-                          <span className={`chip${document.undecided > 0 ? ' chip-modified' : ''}`}>
-                            {document.undecided > 0 ? `${document.undecided} to Decide` : 'Reviewed'}
-                          </span>
-                          <div className="doc-sub">{document.found}</div>
-                        </>
-                      ) : document.status === 'reading' && !document.stalled ? (
-                        <span className="chip">Reading…</span>
-                      ) : document.status === 'failed' ? (
-                        <>
-                          <span className="chip chip-failed">Could Not Be Read</span>
-                          {document.error ? <div className="doc-sub">{document.error}</div> : null}
-                        </>
-                      ) : (
-                        <span className="chip">Not Read Yet</span>
-                      )}
-                    </td>
-                    <td>
-                      <div className="row-actions">
-                      {waiting && canUpload ? (
-                        <button type="button" className="link-button" disabled={busy} onClick={() => void read(document.id, document.name)}>
-                          {document.status === 'failed' || document.stalled ? 'Try Again' : 'Read Document'}
-                        </button>
-                      ) : null}
-                      {document.status === 'read' ? <Link href={href}>Review</Link> : null}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataGrid
+        columns={COLUMNS}
+        rows={rows}
+        noun="documents"
+        searchColumns={['name', 'type', 'status', 'found']}
+        searchPlaceholder="Search documents"
+        emptyText="No documents yet."
+        defaultSort={{ column: 'uploaded', descending: true }}
+      />
     </section>
   )
 }

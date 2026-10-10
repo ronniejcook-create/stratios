@@ -1082,3 +1082,60 @@ td.muted { color: var(--dim); }
 .lease-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 10px 0 4px; }
 .lease-pick label { font-size: 13px; color: var(--muted); }
 .lease-pick select { max-width: 420px; }
+
+/* ---------------------------------------------------------------------------
+   Compact controls (October 10). Buttons, boxes and drop-downs across the
+   signed-in pages are 30px tall instead of 36px, with less padding. These
+   rules sit last so they apply over the sizes set further up.
+   --------------------------------------------------------------------------- */
+.shell-main .btn { min-height: 30px; padding: 0 10px; font-size: 13px; }
+.shell-main .button-row { margin-top: 10px; gap: 6px; }
+.shell-main .link-button { min-height: 26px; font-size: 13px; }
+.shell-main .form-row { margin-top: 10px; gap: 10px; }
+.shell-main .field { gap: 4px; }
+.shell-main .field label { font-size: 12px; }
+.shell-main .field input, .shell-main .field select { height: 30px; padding: 0 8px; font-size: 13px; }
+.shell-main .field textarea { padding: 5px 8px; font-size: 13px; }
+.shell-main .field-textarea { min-height: 30px; padding: 5px 8px; }
+.shell-main .grid-toolbar input, .shell-main .grid-toolbar select { height: 30px; padding: 0 8px; font-size: 13px; }
+.shell-main .mode-toggle button { min-height: 30px; min-width: 68px; padding: 0 10px; font-size: 13px; }
+.shell-main .rule-line { min-height: 32px; }
+.shell-main .rule-line select, .shell-main .rule-fields select { height: 28px; }
+.shell-main .options-table input[type="text"], .shell-main .options-table select { height: 30px; padding: 0 8px; font-size: 13px; }
+.shell-main .photo-edit input, .shell-main .photo-edit select, .shell-main .map-around select { height: 30px; }
+.shell-main .column-menu-search { height: 28px; }
+.shell-main .column-menu-item { min-height: 28px; }
+.shell-main .column-menu-actions .btn, .shell-main .review-actions .btn { min-height: 26px; }
+.shell-main .map-tab { padding: 4px 10px; }
+.shell-main .field-edit, .shell-main .inline-form { gap: 10px; }
+.shell-main th, .shell-main td { padding: 6px 10px; }
+
+/* Lists: the count, the buttons and the search share one row; search is a magnifying glass until it is clicked. */
+.grid-toolbar { margin-top: 8px; justify-content: space-between; gap: 6px 10px; }
+.shell-main .grid-toolbar .grid-count { margin: 0; }
+.grid-tools { margin-left: auto; display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.grid-toolbar .grid-search { flex: 0 1 220px; width: 220px; max-width: 100%; }
+.grid-search-button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--muted); }
+.grid-search-button:hover { border-color: var(--border-hover); }
+
+/* A wide table can be dragged sideways with the mouse. */
+.scroll-box.can-drag { cursor: grab; }
+.scroll-box.dragging { cursor: grabbing; user-select: none; }
+.scroll-box.can-drag a, .scroll-box.can-drag button { cursor: pointer; }
+
+/* A list scrolls inside its own box, so its sideways scroll bar is always on screen; the header row stays at the top,
+   and when the list is wider than the box its first column stays at the left. */
+.shell-main .grid-scroll { margin-top: 8px; max-height: calc(100vh - 150px); overflow: auto; }
+.grid-scroll .fields-grid { border-collapse: separate; border-spacing: 0; }
+.grid-scroll .fields-grid thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line-strong); }
+.grid-scroll.can-drag .fields-grid th:first-child, .grid-scroll.can-drag .fields-grid td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); border-right: 1px solid var(--line); }
+.grid-scroll.can-drag .fields-grid td:first-child { max-width: 320px; overflow-wrap: anywhere; }
+.grid-scroll.can-drag .fields-grid thead th:first-child { z-index: 3; }
+.fields-grid .row-actions { flex-wrap: nowrap; white-space: nowrap; }
+
+/* The pop-up for adding or changing a list entry. */
+.list-form { margin-top: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.list-form-wide { grid-column: 1 / -1; }
+.shell-main .list-form .form-error { margin: 0; }
+@media (max-width: 640px) { .list-form { grid-template-columns: minmax(0, 1fr); } }
+.fields-grid .grid-figure { white-space: nowrap; }

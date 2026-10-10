@@ -27,7 +27,7 @@ import { listLeases, listTenantQuestions, tenantsReady, type Lease, type TenantQ
 import { DocumentsPanel, type DocumentRow } from './DocumentsPanel'
 import { PhotosPanel, type PhotoRow } from './PhotosPanel'
 import { FieldGroup, type FieldView, type Target } from './FieldGroup'
-import { ListSection } from './ListSection'
+import { ListGrid, type ListSource } from './ListGrid'
 import { DeleteAssetButton } from './DeleteAssetButton'
 import { ScreenTabs } from './ScreenTabs'
 
@@ -325,7 +325,9 @@ export default async function AssetPage({
     id: document.id,
     name: document.name,
     size: document.sizeBytes >= 1024 * 1024 ? `${(document.sizeBytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(document.sizeBytes / 1024))} KB`,
+    sizeBytes: document.sizeBytes,
     uploaded: new Date(document.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    uploadedAt: Date.parse(document.uploadedAt) || 0,
     status: document.status === 'uploading' ? 'uploaded' : document.status,
     stalled: document.stalled,
     error: document.error,
@@ -416,44 +418,11 @@ export default async function AssetPage({
     })
 
   /**
-   * What goes inside one section for one record: its fields, or its lists.
-   * Null when the person may not see any of it, so the section is left out.
+   * What goes inside one section for one record: its fields. Null when the
+   * person may not see any of it, so the section is left out. Sections that
+   * hold lists are drawn by listPanels, one grid for the whole asset.
    */
   const sectionBody = (section: Section, record: RecordContext) => {
-    if (section.displayStyle === 'list') {
-      const level = access.sectionLevel(section.id)
-      if (level === 'hidden') return null
-      const sectionLists = lists.filter((list) => list.sectionId === section.id && list.appliesTo === record.type)
-      if (sectionLists.length === 0) return access.admin ? <p className="note">No list is set up for this section yet.</p> : null
-      return sectionLists.map((list) => {
-        const columns = fields.filter((field) => field.listId === list.id)
-        const sortField = columns.find((column) => column.key === list.sortFieldKey)
-        const listRowsForRecord = sortRows(
-          rows.filter((row) => row.listId === list.id && row.recordId === record.id),
-          sortField?.id ?? null,
-          list.sortDescending,
-        )
-        return (
-          <ListSection
-            key={list.id}
-            target={targetOf(record)}
-            list={{ id: list.id, key: list.key, name: list.name }}
-            columns={columns.map((column) => ({
-              id: column.id,
-              key: column.key,
-              name: column.name,
-              dataType: column.dataType,
-              unit: column.unit,
-              options: column.options,
-              defaultValue: column.defaultValue,
-            }))}
-            rows={listRowsForRecord.map((row) => ({ id: row.id, rowNumber: row.rowNumber, values: row.values }))}
-            currentUserName={currentUserName}
-            canEdit={level === 'edit'}
-          />
-        )
-      })
-    }
     const sectionFields = section.fieldIds
       .map((fieldId) => fieldById.get(fieldId))
       .filter((field): field is FieldDefinition => Boolean(field) && field!.appliesTo === record.type && !field!.listId)
@@ -464,11 +433,86 @@ export default async function AssetPage({
   }
 
   const assetRecord: RecordContext = { type: 'asset', id: tree.id, name: tree.name, ref: `asset:${tree.key}`, core: { name: tree.name } }
+  const propertyRecordOf = (property: AssetTree['properties'][number]): RecordContext => ({
+    type: 'property',
+    id: property.id,
+    name: property.name,
+    ref: `property:${property.key}`,
+    core: { name: property.name, property_type: property.propertyType },
+  })
+
+  /**
+   * The list sections of a screen (Critical Dates, Commentary), each as one
+   * grid for the whole asset. The asset and each property keep their own
+   * entries, under sections of the same name; shown apart they read as the
+   * same list twice, so sections that share a name are drawn together, with
+   * a Belongs To column once the asset has more than one property.
+   */
+  const listPanels = (screen: Screen) => {
+    const named = new Map<string, Section[]>()
+    for (const section of screen.sections) {
+      if (section.displayStyle !== 'list' || section.appliesTo === 'lease') continue
+      named.set(section.name, [...(named.get(section.name) ?? []), section])
+    }
+    return [...named.entries()].flatMap(([name, sections]) => {
+      // One grid per list: a section normally holds one, but an organization can add more.
+      const byList = new Map<string, { title: string; sortKey: string | null; sortDescending: boolean; sources: ListSource[] }>()
+      for (const section of sections) {
+        const level = access.sectionLevel(section.id)
+        if (level === 'hidden') continue
+        const records: { record: RecordContext; label: string }[] =
+          section.appliesTo === 'asset'
+            ? [{ record: assetRecord, label: 'Asset' }]
+            : section.appliesTo === 'property'
+              ? tree.properties.filter((property) => shownForType(section, typeKeyOf(property.propertyType))).map((property) => ({ record: propertyRecordOf(property), label: property.name }))
+              : section.appliesTo === 'building'
+                ? tree.properties.flatMap((property) =>
+                    property.buildings.map((building) => ({
+                      record: { type: 'building' as const, id: building.id, name: building.name, ref: `property:${property.key}/building:${building.key}`, core: { name: building.name } },
+                      label: building.name,
+                    })),
+                  )
+                : []
+        for (const list of lists.filter((candidate) => candidate.sectionId === section.id)) {
+          const columns = fields.filter((field) => field.listId === list.id)
+          const sortField = columns.find((column) => column.key === list.sortFieldKey)
+          const group = byList.get(list.key) ?? { title: list.name, sortKey: list.sortFieldKey ?? null, sortDescending: list.sortDescending, sources: [] }
+          for (const { record, label } of records.filter((entry) => entry.record.type === list.appliesTo)) {
+            group.sources.push({
+              target: targetOf(record),
+              label,
+              list: { id: list.id, key: list.key, name: list.name },
+              columns: columns.map((column) => ({ id: column.id, key: column.key, name: column.name, dataType: column.dataType, unit: column.unit, options: column.options, defaultValue: column.defaultValue })),
+              rows: sortRows(rows.filter((row) => row.listId === list.id && row.recordId === record.id), sortField?.id ?? null, list.sortDescending).map((row) => ({ id: row.id, rowNumber: row.rowNumber, values: row.values })),
+              canEdit: level === 'edit',
+            })
+          }
+          byList.set(list.key, group)
+        }
+      }
+      const groups = [...byList.values()].filter((group) => group.sources.length > 0)
+      if (groups.length === 0) return []
+      // Which record an entry belongs to only needs saying when there is more than one property (or a building's list).
+      const several = tree.properties.length > 1 || groups.some((group) => group.sources.some((source) => source.target.recordType === 'building'))
+      return [
+        <section key={`list-${name}`} className="panel">
+          <h2>{name}</h2>
+          {groups.map((group) => (
+            <div key={group.title} className={groups.length > 1 ? 'record-group' : undefined}>
+              {groups.length > 1 ? <h3>{group.title}</h3> : null}
+              <ListGrid sources={group.sources} sortKey={group.sortKey} sortDescending={group.sortDescending} showBelongsTo={several} currentUserName={currentUserName} />
+            </div>
+          ))}
+        </section>,
+      ]
+    })
+  }
   const propertyCount = tree.properties.length
 
   /** Everything one screen shows: its sections for the asset, each property and each building. */
   const screenContent = (screen: Screen, isFirstScreen: boolean) => {
-    const sectionsFor = (type: RecordType) => screen.sections.filter((section) => section.appliesTo === type)
+    // Sections that hold lists are drawn once for the whole asset (listPanels), not under each record.
+    const sectionsFor = (type: RecordType) => screen.sections.filter((section) => section.appliesTo === type && section.displayStyle !== 'list')
     /** Fields that aren't in any section yet (for example ones an organization added) show on the first screen. */
     const unplacedFor = (type: RecordType) =>
       isFirstScreen ? fields.filter((field) => field.appliesTo === type && !field.listId && !placed.has(field.id)) : []
@@ -498,15 +542,11 @@ export default async function AssetPage({
           </section>
         ) : null}
 
+        {listPanels(screen)}
+
         {showProperties
           ? tree.properties.map((property) => {
-              const propertyRecord: RecordContext = {
-                type: 'property',
-                id: property.id,
-                name: property.name,
-                ref: `property:${property.key}`,
-                core: { name: property.name, property_type: property.propertyType },
-              }
+              const propertyRecord = propertyRecordOf(property)
               const propertyUnplaced = visibleViews(unplacedFor('property'), propertyRecord, null)
               return (
                 <section key={property.id} className="panel record">
@@ -743,7 +783,7 @@ export default async function AssetPage({
           },
           {
             key: '_documents',
-            name: 'Documents',
+            name: documents.length > 0 ? `Documents (${documents.length})` : 'Documents',
             content: documentsError ? (
               <section className="panel notice">
                 <h2>Documents</h2>

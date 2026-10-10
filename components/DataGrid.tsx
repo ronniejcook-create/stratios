@@ -2,9 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
+import { ScrollBox } from './ScrollBox'
 
 /** How a cell is drawn: a link to the row's page, a small code-style key, a chip, or plain text. */
-export type GridColumn = { key: string; label: string; display?: 'link' | 'code' | 'chip' | 'text'; numeric?: boolean }
+export type GridColumn = {
+  key: string
+  label: string
+  display?: 'link' | 'code' | 'chip' | 'text'
+  numeric?: boolean
+  /** A column with no sort and filter menu, for example a row's buttons. Its label is read out but not shown. */
+  plain?: boolean
+}
 
 export type GridTone = 'plain' | 'own' | 'modified' | 'muted'
 
@@ -22,9 +30,23 @@ export type GridRow = {
   tones?: Record<string, GridTone>
   /** A small picture shown before the row's link, when the grid has `thumbnails` on. */
   image?: string
+  /** What to draw in a cell in place of its text, by column key: buttons, or text with a second line. Sorting, filtering and search still go by `cells`. */
+  render?: Record<string, ReactNode>
 }
 
-type Sort = { column: string; descending: boolean } | null
+/** The column a grid is sorted by before anyone picks one. */
+export type GridSort = { column: string; descending: boolean }
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <circle cx="8.5" cy="8.5" r="5.5" />
+      <path d="M12.8 12.8L17 17" />
+    </svg>
+  )
+}
+
+type Sort = GridSort | null
 /** The values ticked for each filtered column. A column with no entry shows everything. */
 type Filters = Record<string, string[]>
 
@@ -81,7 +103,10 @@ function ColumnMenu({
       if (event.key === 'Escape') onClose()
     }
     // The menu is pinned to the screen, so it closes when the page behind it scrolls.
+    // A scroll that was already under way when the menu opened (the heading being brought into view) is not a reason to close it.
+    const opened = Date.now()
     const scrolled = (event: Event) => {
+      if (Date.now() - opened < 250) return
       if (box.current && !box.current.contains(event.target as Node)) onClose()
     }
     document.addEventListener('mousedown', outside)
@@ -181,9 +206,11 @@ export function Modal({ open, title, onClose, children, wide }: { open: boolean;
 }
 
 /**
- * A spreadsheet-style grid used by the Assets list and both Fields Library
- * pages. Each column heading opens a menu (sort, and tick the values to
- * show) and a search box narrows by the `searchColumns`. `rows` arrive in
+ * A spreadsheet-style grid used by every list in the app. Each column
+ * heading opens a menu (sort, and tick the values to show), and the
+ * magnifying glass at the top right opens a search box that narrows by the
+ * `searchColumns`. The header row and the first column stay put while the
+ * rest scrolls, and a wide grid can be dragged sideways with the mouse. `rows` arrive in
  * their standard order, which is used until a column is sorted. Everything
  * happens in the browser; nothing is remembered between visits.
  */
@@ -197,6 +224,7 @@ export function DataGrid({
   notice,
   emptyText,
   thumbnails,
+  defaultSort,
 }: {
   columns: GridColumn[]
   rows: GridRow[]
@@ -212,10 +240,18 @@ export function DataGrid({
   emptyText?: string
   /** Leaves room for a small picture before each row's link (rows without one get an empty box). */
   thumbnails?: boolean
+  /** The order the rows start in, and go back to when sorting is cleared. Without it they stay in the order given. */
+  defaultSort?: GridSort
 }) {
   const [search, setSearch] = useState('')
+  const [searching, setSearching] = useState(false)
   const [filters, setFilters] = useState<Filters>({})
-  const [sort, setSort] = useState<Sort>(null)
+  const [sort, setSort] = useState<Sort>(defaultSort ?? null)
+  const searchBox = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (searching) searchBox.current?.focus()
+  }, [searching])
+  const resorted = sort ? !defaultSort || sort.column !== defaultSort.column || sort.descending !== defaultSort.descending : Boolean(defaultSort)
   const [menu, setMenu] = useState<{ column: string; left: number; top: number } | null>(null)
 
   const closeMenu = useCallback(() => setMenu(null), [])
@@ -264,8 +300,9 @@ export function DataGrid({
   const filtered = Boolean(term || Object.keys(filters).length > 0)
   const clear = () => {
     setSearch('')
+    setSearching(false)
     setFilters({})
-    setSort(null)
+    setSort(defaultSort ?? null)
   }
 
   const openMenu = (column: string, button: HTMLElement) => {
@@ -277,6 +314,7 @@ export function DataGrid({
   const heading = (column: GridColumn) => {
     const direction = sort?.column === column.key ? (sort.descending ? 'descending' : 'ascending') : null
     const isFiltered = Boolean(filters[column.key])
+    if (column.plain) return <th key={column.key} scope="col"><span className="sr-only">{column.label}</span></th>
     return (
       <th key={column.key} scope="col" aria-sort={direction ?? 'none'}>
         <button
@@ -300,6 +338,7 @@ export function DataGrid({
 
   const cell = (row: GridRow, column: GridColumn) => {
     const text = row.cells[column.key] ?? ''
+    if (row.render && column.key in row.render) return row.render[column.key]
     if (column.display === 'link' && row.href) {
       if (!thumbnails) return <Link href={row.href}>{text}</Link>
       return (
@@ -320,25 +359,42 @@ export function DataGrid({
   return (
     <>
       <div className="grid-toolbar">
-        <input
-          type="search"
-          className="grid-search"
-          aria-label={searchPlaceholder}
-          placeholder={searchPlaceholder}
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        {filtered || sort ? <button type="button" className="btn btn-ghost btn-small" onClick={clear}>Clear Filters and Sorting</button> : null}
-        {toolbar ? <span className="grid-add">{toolbar}</span> : null}
+        <p className="note grid-count" role="status" title="Click a column heading to sort or filter.">
+          {filtered ? `Showing ${shown.length} of ${rows.length} ${noun}` : `${rows.length} ${noun}`}
+        </p>
+        <span className="grid-tools">
+          {filtered || resorted ? <button type="button" className="btn btn-ghost btn-small" onClick={clear}>Clear Filters and Sorting</button> : null}
+          {toolbar}
+          {searching || search ? (
+            <input
+              ref={searchBox}
+              type="search"
+              className="grid-search"
+              aria-label={searchPlaceholder}
+              placeholder={searchPlaceholder}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onBlur={() => {
+                if (!search.trim()) setSearching(false)
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setSearch('')
+                  setSearching(false)
+                }
+              }}
+            />
+          ) : (
+            <button type="button" className="icon-button grid-search-button" aria-label={searchPlaceholder} title={searchPlaceholder} onClick={() => setSearching(true)}>
+              <SearchIcon />
+            </button>
+          )}
+        </span>
       </div>
 
       {notice}
 
-      <p className="note grid-count" role="status">
-        {filtered ? `Showing ${shown.length} of ${rows.length} ${noun}.` : `${rows.length} ${noun}.`} Click a column heading to sort or filter.
-      </p>
-
-      <div className="table-scroll">
+      <ScrollBox className="table-scroll grid-scroll">
         <table className="fields-grid">
           <thead>
             <tr>{columns.map((column) => heading(column))}</tr>
@@ -347,7 +403,7 @@ export function DataGrid({
             {shown.map((row) => (
               <tr key={row.id}>
                 {columns.map((column) => (
-                  <td key={column.key}>{cell(row, column)}</td>
+                  <td key={column.key} className={column.numeric ? 'grid-figure' : undefined}>{cell(row, column)}</td>
                 ))}
               </tr>
             ))}
@@ -358,7 +414,7 @@ export function DataGrid({
             ) : null}
           </tbody>
         </table>
-      </div>
+      </ScrollBox>
 
       {menu && menuColumn ? (
         <ColumnMenu

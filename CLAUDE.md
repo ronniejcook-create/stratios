@@ -1448,6 +1448,44 @@ work and how data is isolated; this file covers how we work and where things sta
       wire protocol (simple queries, parameters written in as literals), so `withOrg` and the
       whole `lib/` run unchanged against the scratch database; it has to be rebuilt in a new
       session, as do stand-ins for Clerk and the type-check stubs.
+  - **Lists clean-up** (October 10, afternoon; Ronnie's twelve requests; no migration).
+    - `DataGrid` is now the one list everywhere. Its top row holds the count, the page's own
+      buttons (`toolbar`) and a **magnifying glass** that opens the search box (Escape or
+      leaving it empty closes it); the "Click a column heading" hint is a tooltip. New props:
+      `defaultSort` (the starting order, which Clear Filters and Sorting goes back to; the
+      Clear button shows only when something differs from it), a `plain` column (no menu, for
+      a row's buttons), `GridRow.render` (a cell drawn from React instead of text; sorting,
+      filtering and search still use `cells`), and numeric columns do not wrap.
+    - **Wide lists**: `components/ScrollBox.tsx` wraps the grid and the cash flow table. Hold
+      the mouse button and drag left or right to slide a table that is wider than its box
+      (6 px before it counts as a drag; a press on a link, button or box is left alone; text
+      in such a table can no longer be selected by dragging). The grid also scrolls inside its
+      own box (`.grid-scroll`, at most the screen's height less 150 px) so the sideways scroll
+      bar is always on screen, the header row stays at the top, and the first column stays at
+      the left while the list is wider than the box. Shift + mouse wheel scrolls sideways too.
+    - **Compact controls**: a block at the very end of `globals.css` makes buttons, boxes and
+      drop-downs in the signed-in pages 30 px tall (was 36), 13 px text, and table rows 6 px
+      padding. It sits last on purpose; change sizes there. The agent column was left as it was.
+    - Rent Roll: sorted by Unit to start (natural order, so 100 comes before 1100), and a
+      tenant's name links to its lease (`RentRollRow.leaseId`, read through `to_jsonb`).
+    - Leases tab: **Update From Rent Rolls is gone from the header.** Leases were already
+      rebuilt whenever a rent roll is loaded, deleted or re-dated; the button was for rent
+      rolls older than migration 024. `rebuildLeases` is still offered, as Build Leases From
+      Rent Rolls, only when an asset has rent rolls and no leases at all.
+    - Documents tab: the tab reads "Documents (18)", and the documents are a `DataGrid`,
+      newest upload first, searchable by name, type, status and what was found.
+    - **Dates and Commentary**: `ListSection.tsx` is replaced by `ListGrid.tsx`. The asset
+      and each property keep their own Critical Dates and Commentary (separate lists and
+      sections of the same name, which is why he saw each twice); `listPanels` in the asset
+      page now draws sections that share a name as **one** panel with one grid, sorted the
+      list's own way. A Belongs To column and a Belongs To choice when adding appear only
+      when the asset has more than one property; with one property a new entry goes on the
+      property. Entries are added and changed in a pop-up; each row has Copy to Agent (what
+      clicking the row's number used to do), Edit and Remove. Nothing changed in the database.
+    - Checked: the real components in Chromium with stand-in rows (starting sort, the clear
+      button, lease links, dragging, search open and close, documents newest first, a list
+      merged from an asset and a property, add, edit, remove, the Belongs To choice). Not
+      opened inside the app.
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
@@ -1481,10 +1519,9 @@ Everything described above is committed, pushed to `main` and copied to his fold
 of October 10 built cash flow from operating statements (stage 6, third part, under "What's
 built"), against the Yardi statement he supplied for Knoll Trail.
 
-**Waiting on Ronnie:** run `db/migrations/030_cash_flows.sql` in Supabase. Until then the Cash
-Flow tab says a database update is needed and everything else works as before. Then load his
-statement (drop it on the analyst, or upload it on the Documents tab) and compare the Cash Flow
-tab with the file: 84 lines, total revenue 1,142,778.31, NOI 398,997.15.
+**Nothing is waiting on Ronnie.** He ran 030 and said (October 10, afternoon) "Cash Flow looks
+good for now". The same afternoon his twelve list and sizing requests were built ("Lists
+clean-up" under "What's built"); he has not yet said how they look inside the app.
 
 **He has not said how these came out** (he pressed the buttons on October 10 and "hadn't looked
 closely" when asked): the Keeks lease's fields, the first lease read by the real agent; its

@@ -59,9 +59,11 @@ export function LeasesPanel({
       if (result.ok) router.refresh()
     })
   }
-  const update = (
-    <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={rebuild} title="Builds units, tenants and leases from this asset's rent rolls again">
-      {busy ? 'Updating…' : 'Update From Rent Rolls'}
+  // Leases are built by themselves whenever a rent roll is loaded, deleted or re-dated. This button is only offered when
+  // an asset has rent rolls and no leases, which means that step did not finish (or the rent rolls are older than leases).
+  const build = (
+    <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={rebuild}>
+      {busy ? 'Building…' : 'Build Leases From Rent Rolls'}
     </button>
   )
   const notice = message ? <p className={message.error ? 'form-error' : 'form-ok'} role={message.error ? 'alert' : 'status'}>{message.text}</p> : null
@@ -133,22 +135,20 @@ export function LeasesPanel({
       <TenantQuestions questions={questions} assetId={assetId} />
       {kpis}
       <section className="panel">
-        <div className="panel-head">
-          <h2>Leases</h2>
-          {update}
-        </div>
+        <h2>Leases</h2>
         <p className="note">
-          Built from this asset&apos;s rent rolls. A lease is active while the latest rent roll{latestDate ? ` (${day(latestDate)})` : ''} shows it, and past once it no longer does. Click a tenant to open its lease, where the lease agreement is loaded and its terms are kept. Which
+          Built from this asset&apos;s rent rolls, and brought up to date whenever a rent roll is loaded, deleted or given a new date. A lease is active while the latest rent roll{latestDate ? ` (${day(latestDate)})` : ''} shows it, and past once it no longer does. Click a tenant to open its lease, where the lease agreement is loaded and its terms are kept. Which
           rows count as tenants, which names are asked about and what makes a row the same lease are set by the Reading a Rent Roll skill in the Skills Library.
         </p>
         {notice}
 
         {leases.length === 0 ? (
-          <p className="note" role="status">
-            {questions.length > 0
-              ? 'No leases yet: every tenant name is waiting to be confirmed above.'
-              : 'No leases have been built from the rent rolls yet. Use Update From Rent Rolls to build them.'}
-          </p>
+          <>
+            <p className="note" role="status">
+              {questions.length > 0 ? 'No leases yet: every tenant name is waiting to be confirmed above.' : 'No leases have been built from the rent rolls yet.'}
+            </p>
+            {questions.length === 0 ? <div className="button-row">{build}</div> : null}
+          </>
         ) : (
           <>
             <div className="field-list tiles rent-roll-tiles">

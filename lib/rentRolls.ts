@@ -248,7 +248,7 @@ export async function rivalRentRolls(
   }
 }
 
-export type RentRollRow = RentRollRowInput & { id: string; position: number }
+export type RentRollRow = RentRollRowInput & { id: string; position: number; /** The lease built from this row, when it has one (migration 024). */ leaseId?: string | null }
 
 /** The rows of one rent roll, in the document's order. */
 export async function listRentRollRows(client: Queryable, orgId: string, rentRollId: string): Promise<RentRollRow[]> {
@@ -258,7 +258,8 @@ export async function listRentRollRows(client: Queryable, orgId: string, rentRol
             rent_per_sf::float8 as rent_per_sf, annual_rent::float8 as annual_rent, monthly_rent::float8 as monthly_rent,
             recovery_type, note, steps, page,
             (to_jsonb(rent_roll_rows) ->> 'floor')::int as floor,
-            coalesce((to_jsonb(rent_roll_rows) ->> 'floor_inferred')::boolean, false) as floor_inferred
+            coalesce((to_jsonb(rent_roll_rows) ->> 'floor_inferred')::boolean, false) as floor_inferred,
+            to_jsonb(rent_roll_rows) ->> 'lease_id' as lease_id
      from rent_roll_rows where org_id = $1 and rent_roll_id = $2 order by position`,
     [orgId, rentRollId],
   )
@@ -282,6 +283,7 @@ export async function listRentRollRows(client: Queryable, orgId: string, rentRol
       page: row.page ?? null,
       floor: number(row.floor),
       floorInferred: Boolean(row.floor_inferred),
+      leaseId: row.lease_id ?? null,
     }
   })
 }

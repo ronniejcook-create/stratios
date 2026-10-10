@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AiIcon } from '@/components/AiIcon'
 import { Modal } from '@/components/DataGrid'
+import { ScrollBox } from '@/components/ScrollBox'
 import {
   byCategory, CASH_FLOW_COLUMN_LABELS, CASH_FLOW_SECTION_LABELS, CASH_FLOW_SECTIONS, checkTotals, columnSums, periodTotals,
   type CashFlowColumn, type CashFlowFigure, type CashFlowLine, type CashFlowSection,
@@ -306,7 +307,7 @@ export function CashFlowPanel({
         {view === 'categories' ? <span className="doc-sub">Item lines added up under the categories the Reading an Operating Statement skill lists.</span> : null}
       </div>
 
-      <div className="table-scroll cash-flow-scroll">
+      <ScrollBox className="table-scroll cash-flow-scroll">
         <table className="cash-flow-table">
           {head}
           {view === 'lines' ? (
@@ -351,7 +352,7 @@ export function CashFlowPanel({
             </tbody>
           )}
         </table>
-      </div>
+      </ScrollBox>
       {view === 'categories' && uncategorized ? <p className="doc-sub">Lines the reading gave no category are under Not Categorized.</p> : null}
       {view === 'categories' ? <p className="doc-sub">Total Income, Total Operating Expenses and Net Operating Income are the document&apos;s own lines where it shows them.</p> : null}
     </section>

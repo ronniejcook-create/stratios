@@ -38,7 +38,7 @@ const stamp = (value: string | null) => (value ? Date.parse(`${value}T00:00:00Z`
 const COLUMNS: GridColumn[] = [
   { key: 'suite', label: 'Unit' },
   { key: 'floor', label: 'Floor', numeric: true },
-  { key: 'tenant', label: 'Tenant' },
+  { key: 'tenant', label: 'Tenant', display: 'link' },
   { key: 'status', label: 'Status', display: 'chip' },
   { key: 'sf', label: 'Square Feet', numeric: true },
   { key: 'start', label: 'Lease Start', numeric: true },
@@ -136,6 +136,8 @@ export function RentRollPanel({
 
   const gridRows: GridRow[] = rows.map((row) => ({
     id: row.id,
+    // A row with a lease on file opens that lease from its tenant's name.
+    href: row.leaseId ? `/dashboard/leases/${row.leaseId}` : undefined,
     cells: {
       suite: row.suite ?? '',
       floor: row.floor === null || row.floor === undefined ? '' : String(row.floor),
@@ -255,7 +257,7 @@ export function RentRollPanel({
         ) : null}
         {selected.asOfStated ? null : 'The document gave no date, so the day it was loaded is shown. '}
         {!selected.asOfStated && canEdit ? 'Use Change Date to set the right one. ' : null}
-        The rows are copied as the document shows them.
+        The rows are copied as the document shows them. A tenant&apos;s name opens its lease.
       </p>
 
       <div className="field-list tiles rent-roll-tiles">
@@ -283,6 +285,7 @@ export function RentRollPanel({
         noun="rows"
         searchColumns={['suite', 'tenant']}
         searchPlaceholder="Search units and tenants"
+        defaultSort={{ column: 'suite', descending: false }}
         emptyText="This rent roll has no rows."
       />
     </section>
