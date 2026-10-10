@@ -1412,11 +1412,7 @@ tool. Each has its own part under "What's built".
 
 **For Ronnie to do:**
 
-1. Run `029_lease_expiration_rule.sql` in Supabase. 028 is run (the lease page shows its
-   fields); 022 to 027 are presumably run too, but he has not said so. If something from those
-   looks missing (no Location section, no Property Subtype, no Leases tab, Recalculate KPIs
-   saying a database update is needed), run the missing ones in number order; all are safe to
-   run again.
+1. Nothing to run: he confirmed (October 10) that every migration through 029 is on Supabase.
 2. Open the Keeks lease page (Tenants > Keeks-Plano > Unit 425), and under Lease Documents use
    "Already loaded on this asset?" to pick the Keeks lease and press Read Into This Lease.
 3. On Knoll Trail: Refresh Location (Overview), Update From Rent Rolls and Recalculate KPIs
