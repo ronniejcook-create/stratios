@@ -18,7 +18,7 @@ import { listLists, listRows, sortRows } from './lists'
 import { loadAccess, type Access } from './permissions'
 import { getAssetTree, isUuid, listAssets, RECORD_LABELS, type Queryable } from './records'
 import { listRentRollRows, listRentRolls, RENT_ROLL_STATUS_LABELS } from './rentRolls'
-import { findLease, leaseLabel, listLeases, listTenantQuestions, listTenants, tenantsReady, type Lease } from './tenants'
+import { findLease, leaseLabel, listLeases, listTenantQuestions, listTenants, ruleTenant, syncAsset, tenantsReady, type Lease } from './tenants'
 
 export type LookupLink = { label: string; href: string }
 export type Lookup = { ok: true; result: Record<string, unknown>; links: LookupLink[] } | { ok: false; error: string }
@@ -422,6 +422,72 @@ export async function documentsForAgent(caller: Caller, assetId: string): Promis
         ...(documents.length === 0 ? { note: 'No documents have been loaded for this asset.' } : {}),
       },
       links: [{ label: 'Open Documents', href: `/dashboard/assets/${assetId}?screen=_documents` }],
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Repairs: the two things the analyst may put right about tenants and leases.
+// Both need the same permission as the Leases tab.
+// ---------------------------------------------------------------------------
+
+/** Rebuilds an asset's units, tenants and leases from its rent rolls, as the Leases tab does. */
+export async function rebuildLeasesForAgent(caller: Caller, assetId: string): Promise<Lookup> {
+  const { orgId, userId } = caller
+  if (!isUuid(assetId)) return { ok: false, error: NO_ASSET }
+  return withOrg(orgId, async (client) => {
+    const access = await loadAccess(client, orgId, userId, caller.isAdmin)
+    if (!access.canAddRecords) return { ok: false as const, error: NOT_ALLOWED }
+    if (!(await tenantsReady(client))) return { ok: false as const, error: 'Tenants and leases are not set up yet: the database needs db/migrations/024_tenants_and_leases.sql.' }
+    const tree = await getAssetTree(client, orgId, assetId)
+    if (!tree) return { ok: false as const, error: NO_ASSET }
+    const before = await listLeases(client, orgId, { assetId })
+    const built = await syncAsset(client, orgId, userId, assetId)
+    const after = await listLeases(client, orgId, { assetId })
+    const was = new Map(before.map((lease) => [lease.id, lease.status]))
+    const changed = after.filter((lease) => was.get(lease.id) !== lease.status)
+    const gone = before.filter((lease) => !after.some((now) => now.id === lease.id))
+    return {
+      ok: true as const,
+      result: {
+        asset: tree.name,
+        leases_now: after.length,
+        active_leases: after.filter((lease) => lease.status === 'active').length,
+        new_or_changed: changed.map((lease) => ({ ...describeLease(lease), was: was.get(lease.id) ?? 'not on file' })),
+        removed: gone.map((lease) => leaseLabel(lease)),
+        names_now_waiting_to_be_confirmed: built.questions,
+        about: changed.length + gone.length === 0
+          ? 'Nothing changed: the leases already matched the rent rolls. If a tenant in the latest rent roll still has no active lease, its row was probably marked as not a tenant when the rent roll was read; use set_tenant_ruling for that name.'
+          : 'The leases were rebuilt from the rent rolls. KPIs are not recalculated by this; offer recalculate_kpis.',
+      },
+      links: [{ label: 'Open the Leases Tab', href: `/dashboard/assets/${assetId}?screen=_leases` }],
+    }
+  })
+}
+
+/** Records the person's ruling that a name in the rent rolls is, or is not, a tenant, and brings the leases up to date. */
+export async function ruleTenantForAgent(caller: Caller, input: { assetId: string | null; name: string; isTenant: boolean }): Promise<Lookup> {
+  const { orgId, userId } = caller
+  if (input.assetId !== null && !isUuid(input.assetId)) return { ok: false, error: NO_ASSET }
+  return withOrg(orgId, async (client) => {
+    const access = await loadAccess(client, orgId, userId, caller.isAdmin)
+    if (!access.canAddRecords) return { ok: false as const, error: NOT_ALLOWED }
+    if (!(await tenantsReady(client))) return { ok: false as const, error: 'Tenants and leases are not set up yet: the database needs db/migrations/024_tenants_and_leases.sql.' }
+    if (input.assetId && !(await getAssetTree(client, orgId, input.assetId))) return { ok: false as const, error: NO_ASSET }
+    const ruled = await ruleTenant(client, orgId, userId, { name: input.name, isTenant: input.isTenant, assetId: input.assetId })
+    if (!ruled.ok) return { ok: false as const, error: ruled.candidates ? `${ruled.error} Names that fit: ${ruled.candidates.join('; ')}` : ruled.error }
+    const links: LookupLink[] = ruled.leases.slice(0, 2).map((lease) => ({ label: `Open the Lease: ${leaseLabel(lease)}`.slice(0, 80), href: `/dashboard/leases/${lease.id}` }))
+    for (const assetId of ruled.assetIds.slice(0, 1)) links.push({ label: 'Open the Leases Tab', href: `/dashboard/assets/${assetId}?screen=_leases` })
+    return {
+      ok: true as const,
+      result: {
+        ruled: ruled.names,
+        as: ruled.isTenant ? 'a tenant' : 'not a tenant',
+        rent_rolls_brought_up_to_date: ruled.rentRolls,
+        leases_now: ruled.leases.map(describeLease),
+        about: `This ruling is kept and applies to every rent roll, including ones loaded later. ${ruled.isTenant ? '' : 'A lease that holds values from its lease agreement, or documents, is kept as a past lease rather than removed. '}KPIs are not recalculated by this; offer recalculate_kpis.`,
+      },
+      links,
     }
   })
 }

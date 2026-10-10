@@ -4,7 +4,7 @@
 // as the signed-in person, inside their organization and with their
 // permissions, so the agent can never see or change more than they can.
 
-import { documentsForAgent, leaseForAgent, listsForAgent, rentRollForAgent, searchPortfolio, tenantsForAgent, type Lookup } from './agentLookups'
+import { documentsForAgent, leaseForAgent, listsForAgent, rebuildLeasesForAgent, rentRollForAgent, ruleTenantForAgent, searchPortfolio, tenantsForAgent, type Lookup } from './agentLookups'
 import { setValueForAgent } from './agentValues'
 import { buildAnalystPrompt, DEFAULT_ANALYST_INSTRUCTIONS, getAnalystInstructions } from './analystInstructions'
 import { createAssetWithDefaults, fallbackPropertyType, listPropertyTypes, matchPropertyType } from './assets'
@@ -33,7 +33,7 @@ export type AgentStatement = { assetId: string; documentId: string }
 export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[]; statements?: AgentStatement[] } | { ok: false; error: string }
 
 const MAX_TURNS = 40
-const MAX_STEPS = 16
+const MAX_STEPS = 18
 /** Leaves room inside the web host's five-minute limit for the conversation steps around a document reading. */
 const TIME_BUDGET_MS = 285000
 
@@ -129,6 +129,27 @@ const TOOLS: ToolDefinition[] = [
     description:
       'Calculates an asset\'s KPIs again from its stored leases and latest rent roll, following the KPI skill that fits each property\'s kind (commercial and residential properties have different KPIs). Use when the person asks to calculate, recalculate or refresh KPIs, for example after confirming tenant names. It takes up to a minute or two. A figure a document shows or a person entered is never overwritten; such values are reported as kept. After a rent roll is read this already runs by itself, so do not call it then.',
     input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
+  },
+  {
+    name: 'rebuild_leases',
+    description:
+      'Rebuilds an asset\'s units, tenants and leases from its rent rolls, and reports what changed. Use it when a lease looks out of step with the rent rolls: marked Past although the latest rent roll shows the tenant, missing, or showing old terms. It changes nothing in the rent rolls themselves and is safe to run at any time. If it reports that nothing changed and the tenant still has no active lease, use set_tenant_ruling.',
+    input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
+  },
+  {
+    name: 'set_tenant_ruling',
+    description:
+      'Records the person\'s ruling that a name written in the rent rolls IS a tenant (for example a tenant on free rent, or one that pays only electricity, that a reading marked as space the owner uses) or is NOT a tenant (for example a management office that was given a lease). The ruling is kept, comes before the reading agent\'s own call in every rent roll loaded before or after, and the leases are brought up to date at once. Use it only when the person asks for the fix or agrees to it in this conversation. Give the name as the rent roll writes it (get_rent_roll shows it).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The name as written in the rent roll' },
+        is_tenant: { type: 'boolean', description: 'true: it is a tenant. false: it is not a tenant.' },
+        asset_id: { type: 'string', description: 'The asset whose rent rolls write the name; empty to look in every asset' },
+      },
+      required: ['name', 'is_tenant', 'asset_id'],
+      additionalProperties: false,
+    },
   },
   {
     name: 'search_portfolio',
@@ -485,6 +506,18 @@ async function runTool(session: Session, name: string, input: Record<string, unk
         }).slice(0, 30000),
         isError: false,
       }
+    }
+    const repairs: Record<string, () => Promise<Lookup>> = {
+      rebuild_leases: () => rebuildLeasesForAgent(caller, asText(input.asset_id, 60)),
+      set_tenant_ruling: () => ruleTenantForAgent(caller, { assetId: asText(input.asset_id, 60) || null, name: asText(input.name, 200), isTenant: input.is_tenant === true }),
+    }
+    if (repairs[name]) {
+      if (name === 'set_tenant_ruling' && typeof input.is_tenant !== 'boolean') return fail('Say whether the name is a tenant: is_tenant true or false.')
+      const done = await repairs[name]()
+      if (!done.ok) return fail(done.error)
+      session.changed = true
+      session.links.push(...done.links)
+      return { content: JSON.stringify({ ok: true, ...done.result }).slice(0, 30000), isError: false }
     }
     const lookups: Record<string, () => Promise<Lookup>> = {
       search_portfolio: () => searchPortfolio(caller, asText(input.query, 200)),

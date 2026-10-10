@@ -1541,6 +1541,36 @@ work and how data is isolated; this file covers how we work and where things sta
       no tenant record, by lease field text, wildcards, nothing found, a view-only member,
       another organization, each tool, and the analyst end to end with a scripted Claude).
       **Not run against the real Claude API.**
+  - **The analyst can repair tenants and leases** (October 10, late; `db/migrations/031_tenant_rulings.sql`).
+    Ronnie found Journey House (Unit 108, lease to December 2028, no rent, pays electricity
+    only) marked Past. Cause: the Reading a Rent Roll skill says a leased row with no rent is
+    space the owner uses; the October 8 reading left it a tenant, the October 9 reading marked
+    it "not a tenant", so the latest rent roll no longer showed the lease. The analyst
+    explained it but had no way to fix it, and he asked that it could.
+    - `tenant_rulings` (one row per name, `is_tenant`): **a person's ruling on a name comes
+      before the agent's call** in `syncRentRoll`, for every rent roll loaded before or after
+      (`loadRulings`; empty before 031 is run, so nothing breaks). `ruleTenant` in
+      `lib/tenants.ts` takes the name or part of it (it must fit exactly one name written on
+      a leased row, else the fitting names are returned), rules the tenant's other spellings
+      with it, and syncs every rent roll that writes the name.
+    - Two analyst tools (nineteen now, `MAX_STEPS` 18), in `lib/agentLookups.ts`, both needing
+      `canAddRecords`: `rebuild_leases` (the Leases tab's rebuild, reporting what changed) and
+      `set_tenant_ruling` (name, is a tenant or not, asset). The introduction gained "What you
+      can put right" (field values, leases out of step, KPIs): say what looks wrong, offer or
+      make the fix, check it, and do not send the person to fix by hand what a tool can fix.
+    - 031 also appends **Tenants Already on File** to the standard Reading a Rent Roll skill:
+      a name on file as a tenant stays one whatever its rent; "not a tenant" is for space
+      named for what it is. An organization's edited copy does not get it.
+    - There is no screen for rulings: they are made and reversed through the analyst only.
+      A ruling of "not a tenant" removes the lease (kept as Past when it holds lease
+      agreement values or documents); the tenant record stays. KPIs are not recalculated by
+      either tool; the analyst is told to offer it.
+    - Checked: 031 twice as a role without BYPASSRLS; 21 cases on the scratch database (the
+      fault reproduced, rebuild alone, ruling by part of a name, a later rent roll that says
+      "not a tenant" again, reversing, two names fitting, a member, another organization, the
+      analyst end to end with a scripted Claude); the lookup suite again. **Not run against
+      the real Claude API.** The cause was worked out from the code and his screenshot, not
+      seen in his database.
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
@@ -1574,7 +1604,7 @@ Everything described above is committed, pushed to `main` and copied to his fold
 of October 10 built cash flow from operating statements (stage 6, third part, under "What's
 built"), against the Yardi statement he supplied for Knoll Trail.
 
-**Nothing is waiting on Ronnie.** He ran 030 and said (October 10, afternoon) "Cash Flow looks
+**Waiting on Ronnie:** run `db/migrations/031_tenant_rulings.sql`, then ask the analyst to fix Journey House (see "The analyst can repair tenants and leases"). Before that: He ran 030 and said (October 10, afternoon) "Cash Flow looks
 good for now". The same afternoon his twelve list and sizing requests were built ("Lists
 clean-up" under "What's built"); he has not yet said how they look inside the app.
 

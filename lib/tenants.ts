@@ -356,6 +356,14 @@ function freeKeyIn(taken: Set<string>, name: string, fallback: string): string {
   return key
 }
 
+/** What people have ruled about names: true is a tenant, false is not. Empty before migration 031 is run. */
+async function loadRulings(client: Queryable, orgId: string): Promise<Map<string, boolean>> {
+  const ready = await client.query(`select to_regclass('tenant_rulings') is not null as ready`)
+  if (ready.rows[0]?.ready !== true) return new Map()
+  const { rows } = await client.query('select name_key, is_tenant from tenant_rulings where org_id = $1', [orgId])
+  return new Map(rows.map((row) => [String(row.name_key), row.is_tenant === true]))
+}
+
 export type SyncResult = { units: number; tenants: number; leases: number; questions: number }
 
 /**
@@ -460,11 +468,14 @@ export async function syncRentRoll(client: Queryable, orgId: string, userId: str
   const asked = new Map<string, string>(
     (await client.query('select name_key, status from tenant_questions where org_id = $1', [orgId])).rows.map((row) => [String(row.name_key), String(row.status)]),
   )
+  const rulings = await loadRulings(client, orgId)
   const tenantOf = new Map<string, string | null>()
   for (const row of rows) {
     const written = String(row.tenant ?? '').replace(/\s+/g, ' ').trim().slice(0, 200)
-    // Is the row a tenant at all? The agent's call when it made one; with no decisions saved, the built-in rent rule.
-    const notTenant = row.tenant_call === 'not_tenant' || (row.tenant_call !== 'tenant' && !decided && rentsShown && !paying(row))
+    // Is the row a tenant at all? A person's ruling on the name comes first; then the agent's call when it made one;
+    // with no decisions saved, the built-in rent rule.
+    const ruling = rulings.get(nameKey(written))
+    const notTenant = ruling === false || (ruling !== true && (row.tenant_call === 'not_tenant' || (row.tenant_call !== 'tenant' && !decided && rentsShown && !paying(row))))
     if (row.status !== 'leased' || !nameKey(written) || notTenant) {
       tenantOf.set(row.id, null)
       continue
@@ -640,6 +651,67 @@ export async function syncAsset(client: Queryable, orgId: string, userId: string
     total.questions += one.questions
   }
   return total
+}
+
+export type RulingResult =
+  | { ok: true; names: string[]; isTenant: boolean; rentRolls: number; assetIds: string[]; leases: Lease[] }
+  | { ok: false; error: string; candidates?: string[] }
+
+/**
+ * A person's ruling that a name written in rent rolls is, or is not, a
+ * tenant. It is kept and comes before the agent's own call in every rent
+ * roll, loaded before or after. Every rent roll that writes the name is then
+ * brought up to date, so its leases appear, become active again, or go.
+ *
+ * `name` may be part of the name; it must fit exactly one name in the rent
+ * rolls (of the asset, when one is given), otherwise the fitting names are
+ * returned to choose from.
+ */
+export async function ruleTenant(client: Queryable, orgId: string, userId: string, input: { name: string; isTenant: boolean; assetId?: string | null }): Promise<RulingResult> {
+  const ready = await client.query(`select to_regclass('tenant_rulings') is not null as ready`)
+  if (ready.rows[0]?.ready !== true) return { ok: false, error: 'This needs a database update that has not been run yet (migration 031).' }
+  const wanted = nameKey(input.name)
+  if (wanted.length < 2) return { ok: false, error: 'Give the name as the rent roll writes it.' }
+  const written = await client.query(
+    `select distinct w.tenant, w.rent_roll_id::text as rent_roll_id, r.asset_id::text as asset_id, r.as_of_date, r.created_at
+     from rent_roll_rows w join rent_rolls r on r.id = w.rent_roll_id
+     where w.org_id = $1 and w.status = 'leased' and w.tenant is not null and ($2::uuid is null or r.asset_id = $2::uuid)
+     order by r.as_of_date, r.created_at`,
+    [orgId, input.assetId ?? null],
+  )
+  const keyed = written.rows.map((row) => ({ name: String(row.tenant).replace(/\s+/g, ' ').trim(), key: nameKey(String(row.tenant)), rentRollId: row.rent_roll_id as string, assetId: row.asset_id as string })).filter((row) => row.key)
+  let keys = new Set(keyed.filter((row) => row.key === wanted).map((row) => row.key))
+  if (keys.size === 0) keys = new Set(keyed.filter((row) => ` ${row.key} `.includes(` ${wanted} `)).map((row) => row.key))
+  const namesOf = (set: Set<string>) => [...new Set(keyed.filter((row) => set.has(row.key)).map((row) => row.name))]
+  if (keys.size === 0) return { ok: false, error: `No leased row in ${input.assetId ? 'this asset\'s rent rolls' : 'any rent roll'} is written "${input.name}".` }
+  if (keys.size > 1) return { ok: false, error: 'More than one name in the rent rolls fits. Say which one, as written.', candidates: namesOf(keys).slice(0, 20) }
+  // Other spellings confirmed as the same tenant are ruled with it.
+  const tenants = await listTenantRefs(client, orgId)
+  const [key] = [...keys]
+  const tenant = tenants.find((candidate) => [candidate.name, ...candidate.aliases].some((name) => nameKey(name) === key))
+  const ruled = new Map<string, string>([[key, namesOf(keys)[0]]])
+  for (const name of tenant ? [tenant.name, ...tenant.aliases] : []) if (nameKey(name) && !ruled.has(nameKey(name))) ruled.set(nameKey(name), name)
+  for (const [nameKeyed, name] of ruled) {
+    await client.query(
+      `insert into tenant_rulings (org_id, written_name, name_key, is_tenant, decided_by) values ($1, $2, $3, $4, $5)
+       on conflict (org_id, name_key) do update set is_tenant = excluded.is_tenant, written_name = excluded.written_name, decided_by = excluded.decided_by, decided_at = now()`,
+      [orgId, name.slice(0, 200), nameKeyed, input.isTenant, userId],
+    )
+  }
+  // Every rent roll that writes one of the names, in the organization, oldest first.
+  const touched = await client.query(
+    `select distinct r.id::text as id, r.asset_id::text as asset_id, r.as_of_date, r.created_at
+     from rent_roll_rows w join rent_rolls r on r.id = w.rent_roll_id
+     where w.org_id = $1 and w.tenant is not null order by r.as_of_date, r.created_at`,
+    [orgId],
+  )
+  const rollNames = await client.query('select distinct rent_roll_id::text as id, tenant from rent_roll_rows where org_id = $1 and tenant is not null', [orgId])
+  const holding = new Set(rollNames.rows.filter((row) => ruled.has(nameKey(String(row.tenant)))).map((row) => row.id as string))
+  const rolls = touched.rows.filter((row) => holding.has(row.id as string))
+  for (const roll of rolls) await syncRentRoll(client, orgId, userId, roll.id as string)
+  const now = (await listTenantRefs(client, orgId)).find((candidate) => [candidate.name, ...candidate.aliases].some((name) => ruled.has(nameKey(name))))
+  const leases = now ? await listLeases(client, orgId, { tenantId: now.id }) : []
+  return { ok: true, names: [...ruled.values()], isTenant: input.isTenant, rentRolls: rolls.length, assetIds: [...new Set(rolls.map((row) => row.asset_id as string))], leases }
 }
 
 /**
