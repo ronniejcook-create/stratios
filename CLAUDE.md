@@ -1410,13 +1410,10 @@ from rent rolls, the tenant rules in the skill, KPIs calculated from leases by s
 Source Wins as a skill, lease fields with a page per lease, and the analyst's lease-reading
 tool. Each has its own part under "What's built".
 
-**For Ronnie to do:**
-
-1. Nothing to run: he confirmed (October 10) that every migration through 029 is on Supabase.
-2. Open the Keeks lease page (Tenants > Keeks-Plano > Unit 425), and under Lease Documents use
-   "Already loaded on this asset?" to pick the Keeks lease and press Read Into This Lease.
-3. On Knoll Trail: Refresh Location (Overview), Update From Rent Rolls and Recalculate KPIs
-   (Leases tab), if not done yet.
+**Nothing is waiting on Ronnie.** He confirmed (October 10) that every migration through 029
+is run, that the Keeks lease was read onto its lease from the lease page, and that Refresh
+Location, Update From Rent Rolls and Recalculate KPIs were pressed on Knoll Trail. He said the
+steps were done, not how the results looked.
 
 **Worth checking with him first thing:** whether the Keeks lease filled in its fields, and how
 good they are (this is the first lease read by the real agent); the lease's worked-out
