@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, type ReactNode } from 'react'
+import { useUser } from '@clerk/nextjs'
+import { useEffect, useState, type ReactNode } from 'react'
 
 const icon = (path: ReactNode) => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -49,7 +50,36 @@ const SECTIONS: { title: string; adminOnly?: boolean; stratiosOnly?: boolean; it
  */
 export function SideNav({ isAdmin, isStratiosAdmin = false }: { isAdmin: boolean; isStratiosAdmin?: boolean }) {
   const pathname = usePathname()
+  const { user } = useUser()
   const [filter, setFilter] = useState('')
+  // The groups the person has closed, by title. Kept in this browser for an instant start and on
+  // their account so it follows them to another computer (like the agent column's width).
+  const [closed, setClosed] = useState<string[]>([])
+  const closedKey = user ? `stratios.navClosed.${user.id}` : null
+  const onAccount = user?.unsafeMetadata?.navClosed
+  useEffect(() => {
+    if (!closedKey) return
+    let saved: unknown = null
+    try {
+      saved = JSON.parse(window.localStorage.getItem(closedKey) ?? 'null')
+    } catch {
+      saved = null
+    }
+    const wanted = Array.isArray(saved) ? saved : Array.isArray(onAccount) ? onAccount : []
+    setClosed(wanted.map(String))
+    // Read once per person; later changes come from the clicks below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closedKey])
+  const toggle = (title: string) => {
+    const next = closed.includes(title) ? closed.filter((item) => item !== title) : [...closed, title]
+    setClosed(next)
+    try {
+      if (closedKey) window.localStorage.setItem(closedKey, JSON.stringify(next))
+    } catch {
+      // A private window may refuse; the account copy below still remembers it.
+    }
+    user?.update({ unsafeMetadata: { ...user.unsafeMetadata, navClosed: next } }).catch((error) => console.error('Saving the navigation groups failed', error))
+  }
   const term = filter.trim().toLowerCase()
 
   const sections = SECTIONS.filter((section) => (isAdmin || !section.adminOnly) && (isStratiosAdmin || !section.stratiosOnly)).map((section) => ({
@@ -68,9 +98,18 @@ export function SideNav({ isAdmin, isStratiosAdmin = false }: { isAdmin: boolean
         </svg>
         <input type="search" placeholder="Search…" aria-label="Search navigation" value={filter} onChange={(e) => setFilter(e.target.value)} />
       </div>
-      {sections.map((section) => (
+      {sections.map((section) => {
+        // A search opens every group that has a match, without changing what is remembered.
+        const open = term !== '' || !closed.includes(section.title)
+        return (
         <div key={section.title} className="side-section">
-          <div className="side-title">{section.title}</div>
+          <button type="button" className="side-title" aria-expanded={open} title={open ? 'Collapse' : 'Expand'} onClick={() => toggle(section.title)}>
+            <span>{section.title}</span>
+            <svg className={`side-chevron${open ? ' open' : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </button>
+          {open ? (
           <ul>
             {section.items.map((item) => {
               // An asset's own page still counts as being in Assets.
@@ -87,8 +126,10 @@ export function SideNav({ isAdmin, isStratiosAdmin = false }: { isAdmin: boolean
               )
             })}
           </ul>
+          ) : null}
         </div>
-      ))}
+        )
+      })}
       {sections.length === 0 ? <p className="side-empty">Nothing matches “{filter}”.</p> : null}
     </nav>
   )

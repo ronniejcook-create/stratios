@@ -358,7 +358,13 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
 .side-search input { flex: 1; min-width: 0; background: none; border: 0; color: var(--heading); font: inherit; font-size: 14px; }
 .side-search input:focus { outline: none; }
 .side-search:focus-within { border-color: var(--link); }
-.side-title { padding: 0 8px 6px; font-size: 13px; font-weight: 600; color: var(--link); }
+.side-title {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 0; padding: 0 8px 6px;
+  background: none; border: 0; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); text-align: left; cursor: pointer;
+}
+.side-title:hover { color: var(--heading); }
+.side-chevron { flex: none; transition: transform 0.12s ease; }
+.side-chevron.open { transform: rotate(90deg); }
 .side-section ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .side-link {
   display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 6px;

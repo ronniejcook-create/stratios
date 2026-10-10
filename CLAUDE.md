@@ -1627,9 +1627,14 @@ work and how data is isolated; this file covers how we work and where things sta
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
-  - **Navigation headers** (October 10, his request): the group above Assets and Tenants reads
-    **Investment Management** (was Portfolio), and all three group headers (`.side-title`)
-    are in the highlight color (`--link`, the accent as readable text).
+  - **Navigation headers** (October 10, his requests): the group above Assets and Tenants reads
+    **Investment Management** (was Portfolio). The headers were tried in the highlight color
+    and put back to the muted one. Each header is a button that collapses or expands its
+    group (chevron at the right). What is closed is remembered per person: in localStorage
+    (`stratios.navClosed.<userId>`) and on their Clerk account (`unsafeMetadata.navClosed`),
+    like the agent column's width. The search box opens every group with a match without
+    changing what is remembered. A closed group stays closed even when its page is open.
+    Not opened in a browser by Claude.
   - **Navigation icons** (October 9, night; his request): Assets uses the buildings icon that
     Tenants had, and Tenants has a key (`SideNav.tsx`).
   - Not built yet (later stages): stored formulas
