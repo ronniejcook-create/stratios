@@ -1401,15 +1401,34 @@ work and how data is isolated; this file covers how we work and where things sta
   Settings storage: `lib/orgSettings.ts` (`organization_settings` table; falls back to Clerk
   metadata without a database).
 
-## Where we left off (October 9, 2026, evening)
+## Where we left off (October 10, 2026)
 
 Everything described above is committed, pushed to `main` and copied to his folder. Nothing is
-half done. The latest pieces are "Stage 5, second part: KPIs calculated from the stored leases, by
-skills", "Which source wins is a skill" and "Lease fields, read from the lease agreement". **He
-needs to run migration 029** in Supabase (028 is run: the lease page shows its fields; 022 to
-027 are presumably run too but he has not said so), then on Knoll Trail press Refresh Location (Overview),
-Update From Rent Rolls and then Recalculate KPIs (Leases tab). **Agreed next step:** cash flow,
-then outside feeds.
+half done. The session of October 9 (night) built, in order: the analyst's lookups and
+set-a-value tool, Location fields, property types and managed option lists, tenants and leases
+from rent rolls, the tenant rules in the skill, KPIs calculated from leases by skills, Which
+Source Wins as a skill, lease fields with a page per lease, and the analyst's lease-reading
+tool. Each has its own part under "What's built".
+
+**For Ronnie to do:**
+
+1. Run `029_lease_expiration_rule.sql` in Supabase. 028 is run (the lease page shows its
+   fields); 022 to 027 are presumably run too, but he has not said so. If something from those
+   looks missing (no Location section, no Property Subtype, no Leases tab, Recalculate KPIs
+   saying a database update is needed), run the missing ones in number order; all are safe to
+   run again.
+2. Open the Keeks lease page (Tenants > Keeks-Plano > Unit 425), and under Lease Documents use
+   "Already loaded on this asset?" to pick the Keeks lease and press Read Into This Lease.
+3. On Knoll Trail: Refresh Location (Overview), Update From Rent Rolls and Recalculate KPIs
+   (Leases tab), if not done yet.
+
+**Worth checking with him first thing:** whether the Keeks lease filled in its fields, and how
+good they are (this is the first lease read by the real agent); the lease's worked-out
+expiration of May 31, 2028 against the rent roll's June 30, 2028; and what Recalculate KPIs
+produced on Knoll Trail.
+
+**Agreed next step:** cash flow, then outside feeds. He set tenant lookup on the web aside for
+now.
 
 **The day's last stretch was the Map tab.** It now has a row of tabs, one layer at a time: None,
 Demographics, Schools, Jobs and Commuting, Transit, Flood Zones, Natural Hazards, plus a separate
@@ -1422,9 +1441,13 @@ figures; and readings work again after the answer-format fix (he deleted and rel
 Trail rent roll). Every migration through 021 is on Supabase. Notes above that say "whether
 Vercel can reach ... is not known" are answered by this.
 
-**Not yet tried by him:** asking the analyst about a property's surroundings, asking it to
-set a value, the Location fields, the Options panel, the Leases tab and Tenants pages,
-Recalculate KPIs, and the lease page with a real lease agreement.
+**Tried by him (October 9, night):** the Tenants pages and the lease page open and show their
+fields; a lease dropped on the analyst was read into the asset instead of the lease (since
+fixed, not yet retried).
+
+**Not yet tried by him, as far as he has said:** asking the analyst about a property's
+surroundings, asking it to set a value, the Location fields, the Options panel, Recalculate
+KPIs, Which Source Wins on a second rent roll, and a lease read onto its lease.
 
 **How the federal services were checked:** the cloud workspace can't reach them, so questions
 were run in the built-in browser on his computer (he allowed hazards.fema.gov, nces.ed.gov and
