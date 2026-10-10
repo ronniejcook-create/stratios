@@ -213,6 +213,15 @@ export async function setDocumentLease(client: Queryable, orgId: string, documen
   await client.query('update documents set lease_id = $3::uuid where id = $1 and org_id = $2', [documentId, orgId, leaseId])
 }
 
+/**
+ * Lets a document that was read as an ordinary document be read again, onto a
+ * lease: a lease agreement first loaded on the asset or handed to the analyst.
+ * Only a document that is read and tied to no lease yet.
+ */
+export async function reopenForLease(client: Queryable, orgId: string, documentId: string): Promise<void> {
+  await client.query(`update documents set status = 'uploaded' where id = $1 and org_id = $2 and status = 'read' and (to_jsonb(documents) ->> 'lease_id') is null`, [documentId, orgId])
+}
+
 /** The whole file, put back together from its pieces. */
 export async function readDocumentFile(client: Queryable, orgId: string, documentId: string): Promise<Buffer | null> {
   const { rows } = await client.query(

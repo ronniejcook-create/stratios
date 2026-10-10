@@ -10,7 +10,7 @@ import { followAddressChange, pointOfProperty, type Point } from './locationFact
 import { createAssetWithDefaults, fallbackPropertyType, propertyTypesOf } from './assets'
 import { withOrg } from './db'
 import { describeFailure, NO_PERMISSION, type Caller } from './documentRequests'
-import { applyReading, attachDocument, failReading, getDocument, listCurrentValues, readDocumentFile, setDocumentLease, startReading, type Outcome } from './documents'
+import { applyReading, attachDocument, failReading, getDocument, listCurrentValues, readDocumentFile, reopenForLease, setDocumentLease, startReading, type Outcome } from './documents'
 import { editText } from './fieldFormat'
 import { extractableFields, extractableLists, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField, type DocumentAddress, type DocumentRentRoll, type Reading } from './extraction'
 import { listFields } from './fields'
@@ -356,6 +356,8 @@ export async function readIntoLease(caller: Caller, documentId: string, leaseId:
       if (fields.length === 0) {
         return { ok: false as const, error: allFields.some((field) => field.appliesTo === 'lease') ? 'There are no lease fields you can change, so there is nothing to fill in.' : 'Lease fields need a database update: run db/migrations/028_lease_fields.sql.', status: 409 }
       }
+      // A lease first read as an ordinary document (loaded on the asset, or handed to the analyst) is read again here.
+      if (document.status === 'read' && !document.leaseId) await reopenForLease(client, orgId, documentId)
       if (!(await startReading(client, orgId, userId, documentId))) return { ok: false as const, error: busyMessage(document.status), status: 409 }
       if (!document.assetId) await attachDocument(client, orgId, documentId, lease.assetId)
       if (!document.leaseId) await setDocumentLease(client, orgId, documentId, leaseId)

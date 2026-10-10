@@ -1054,3 +1054,8 @@ td.muted { color: var(--dim); }
 .kpi-period { font-weight: 400; color: var(--muted); }
 .kpi-kept { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
 .kpi-working { min-width: 260px; color: var(--muted); }
+
+/* Lease page: picking a document already on the asset */
+.lease-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 10px 0 4px; }
+.lease-pick label { font-size: 13px; color: var(--muted); }
+.lease-pick select { max-width: 420px; }

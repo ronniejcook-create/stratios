@@ -51,11 +51,14 @@ export default async function LeasePage({ params }: { params: Promise<{ id: stri
       values: await listValues(client, orgId, [id]),
       screens: await listScreens(client, orgId),
       sources: await listSourceTypes(client),
-      documents: (await listDocuments(client, orgId, lease.assetId)).filter((document) => document.leaseId === id),
+      documents: await listDocuments(client, orgId, lease.assetId),
     }
   })
   if (!loaded) notFound()
-  const { lease, access, fields, values, screens, sources, documents } = loaded!
+  const { lease, access, fields, values, screens, sources } = loaded!
+  const documents = loaded!.documents.filter((document) => document.leaseId === id)
+  // Documents on the asset that are tied to no lease: a lease first loaded on the asset or through the analyst can be picked from these.
+  const loose = loaded!.documents.filter((document) => !document.leaseId && document.status !== 'reading').map((document) => ({ id: document.id, name: document.name }))
   const sourceNames = new Map(sources.map((source) => [source.key, source.name]))
 
   const viewOf = (field: FieldDefinition, canEdit: boolean): FieldView => {
@@ -151,7 +154,7 @@ export default async function LeasePage({ params }: { params: Promise<{ id: stri
         </p>
       </section>
 
-      <LeaseDocuments leaseId={lease.id} assetId={lease.assetId} documents={documentRows} maxMb={MAX_DOCUMENT_BYTES / 1024 / 1024} />
+      <LeaseDocuments leaseId={lease.id} assetId={lease.assetId} documents={documentRows} assetDocuments={loose} maxMb={MAX_DOCUMENT_BYTES / 1024 / 1024} />
 
       {groups.length === 0 ? (
         <section className="panel notice">

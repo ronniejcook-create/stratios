@@ -9,7 +9,8 @@ import { buildAnalystPrompt, DEFAULT_ANALYST_INSTRUCTIONS, getAnalystInstruction
 import { createAssetWithDefaults, fallbackPropertyType, listPropertyTypes, matchPropertyType } from './assets'
 import { ApiError, claudeApiKey, converse, type ChatMessage, type ContentBlock, type ToolDefinition } from './claude'
 import { withOrg } from './db'
-import { createAssetFromDocument, readIntoAsset, type ReadOutcome } from './documentReading'
+import { createAssetFromDocument, readIntoAsset, readIntoLease, type ReadOutcome } from './documentReading'
+import { findLease, leaseLabel, listLeases, tenantsReady } from './tenants'
 import type { Caller } from './documentRequests'
 import { sectionByField } from './extraction'
 import { formatPeriod, formatValue } from './fieldFormat'
@@ -28,7 +29,7 @@ export type AgentPages = { assetId: string; documentId: string; pages: { page: n
 export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[] } | { ok: false; error: string }
 
 const MAX_TURNS = 40
-const MAX_STEPS = 9
+const MAX_STEPS = 10
 /** Leaves room inside the web host's five-minute limit for the conversation steps around a document reading. */
 const TIME_BUDGET_MS = 285000
 
@@ -100,6 +101,22 @@ const TOOLS: ToolDefinition[] = [
         clear: { type: 'boolean', description: 'True to empty the field when the person asks for that' },
       },
       required: ['asset_id', 'field', 'value'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'read_lease_document',
+    description:
+      'Reads an attached lease agreement, lease amendment, commencement date letter, assignment or guaranty for ONE tenant into that tenant\'s lease, filling in the lease\'s own fields (term, rent, options, recoveries, restrictions, security and so on) and adding its critical dates to the property. Use this, not read_document_into_asset, whenever the document is a lease or an amendment to one. Give the tenant\'s name and the suite or unit as far as the person or the file name tells you; if they are not known, give what you have and the tool lists the asset\'s leases to choose from. It can also be used on a document already read with read_document_into_asset that turned out to be a lease. Takes a few minutes.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        document_id: { type: 'string', description: 'The id of the attached document' },
+        asset_id: { type: 'string', description: 'The id of the asset the lease is in, from list_assets or the page the person is on' },
+        tenant: { type: 'string', description: 'The tenant\'s name, or the part of it that is known; empty if not known' },
+        unit: { type: 'string', description: 'The suite or unit number; empty if not known' },
+      },
+      required: ['document_id', 'asset_id', 'tenant', 'unit'],
       additionalProperties: false,
     },
   },
@@ -195,7 +212,59 @@ async function runTool(session: Session, name: string, input: Record<string, unk
         if (!isUuid(assetId)) return fail('That asset could not be found. Use list_assets to get its id.')
         result = await readIntoAsset(caller, documentId, assetId, timeoutMs)
       }
+      // A lease read this way fills only the asset's fields. Its terms belong on the tenant's lease.
+      if (result.ok && name === 'read_document_into_asset' && /lease|amendment|guarant/i.test(result.documentType ?? '') && !/rent roll|memorandum|abstract of title/i.test(result.documentType ?? '')) {
+        return {
+          content: JSON.stringify({ ...JSON.parse(describeReading(session, result)), this_is_a_lease: 'The document is a lease, so its terms belong on the tenant\'s lease, not on the asset. Call read_lease_document now with this same document_id, the asset_id, and the tenant and unit from the document summary. Do not tell the person the lease was loaded until that has been done.' }),
+          isError: false,
+        }
+      }
       return { content: describeReading(session, result), isError: !result.ok }
+    }
+
+    if (name === 'read_lease_document') {
+      const documentId = asText(input.document_id, 60)
+      if (!isUuid(documentId) || !session.documentIds.has(documentId)) return fail('That document is not attached to this conversation.')
+      const assetId = asText(input.asset_id, 60)
+      if (!isUuid(assetId)) return fail('That asset could not be found. Use list_assets to get its id.')
+      if (remaining < 60000) return fail('There is not enough time left in this turn to read a document. Ask the person to send the request again.')
+      const found = await withOrg(orgId, async (client) => {
+        const access = await loadAccess(client, orgId, userId, caller.isAdmin)
+        if (!access.canAddRecords) return { error: 'The person\'s role does not allow loading documents.' }
+        if (!(await tenantsReady(client))) return { error: 'Leases are not set up yet (database update 024 is needed).' }
+        const leases = (await listLeases(client, orgId, { assetId })).map((lease) => ({ id: lease.id, tenantName: lease.tenantName, unitName: lease.unitName, status: lease.status, propertyName: lease.propertyName }))
+        return { leases }
+      })
+      if ('error' in found) return fail(found.error ?? 'That could not be done.')
+      if (found.leases.length === 0) return fail('This asset has no leases yet. Leases are built from rent rolls: ask the person to load a rent roll for the asset first, then load the lease.')
+      const match = findLease(found.leases, asText(input.tenant, 200) || null, asText(input.unit, 50) || null)
+      if (!('lease' in match)) {
+        const listed = (match.candidates.length > 0 ? match.candidates : found.leases).slice(0, 60)
+        return fail(`${match.candidates.length > 0 ? 'More than one lease could be meant' : 'No lease fits that tenant and unit'}. Ask the person which lease this document is for, then call again with that tenant and unit exactly as listed: ${listed.map((lease) => `${lease.tenantName} | unit ${lease.unitName ?? 'none'} | ${lease.status}`).join('; ')}.`)
+      }
+      const result = await readIntoLease(caller, documentId, match.lease.id, Math.min(240000, remaining))
+      if (!result.ok) return fail(result.error)
+      session.changed = true
+      session.links.push({ label: 'Open the Lease', href: `/dashboard/leases/${match.lease.id}` })
+      session.links.push({ label: 'Review What Was Found', href: `/dashboard/assets/${result.assetId}/documents/${result.documentId}` })
+      return {
+        content: JSON.stringify({
+          ok: true,
+          read_into_lease: `${leaseLabel(match.lease)} at ${match.lease.propertyName}`,
+          document: result.documentName,
+          document_type: result.documentType,
+          document_summary: result.summary,
+          lease_fields_filled_in: result.counts.filled,
+          lease_fields_replaced: result.counts.replaced,
+          lease_fields_confirmed: result.counts.confirmed,
+          lease_fields_waiting_for_a_decision: result.counts.decision,
+          lease_fields_kept_as_they_were: result.counts.kept,
+          critical_dates_added_to_the_property: result.listRows,
+          values_the_agent_returned_that_did_not_fit_a_field: result.skipped,
+          where_to_see_it: 'The lease\'s page (Open the Lease) shows every term; the review list shows where each came from.',
+        }),
+        isError: false,
+      }
     }
 
     if (name === 'create_asset') {

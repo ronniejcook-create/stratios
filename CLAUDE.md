@@ -1340,8 +1340,7 @@ work and how data is isolated; this file covers how we work and where things sta
       no rent roll shows it any more; it becomes Past. `deleteAsset` removes lease values.
       A renewal with a new start date is a new lease record (the lease match rule), so the
       agreement loaded on the old one stays there.
-    - Not built: dropping a lease on the chat agent (it would be read as an ordinary
-      document; load it on the lease page), lease-level lists, proposed lease fields, a
+    - Not built: lease-level lists, proposed lease fields, a
       rent schedule as rows rather than text, tenant-level fields, KPIs from lease fields,
       and comparing a lease's terms with its rent roll row.
     - Checked: 028 twice as a role without BYPASSRLS; 21 cases on the scratch database with
@@ -1350,6 +1349,31 @@ work and how data is isolated; this file covers how we work and where things sta
       view-only member, the lease surviving its rent roll, asset deletion); the lease, KPI,
       source, option and analyst suites again. **Not run against the real Claude API, and
       the lease page was not opened in a browser** (type-checked only).
+  - **A lease handed to the analyst goes onto its lease** (October 9, night;
+    `db/migrations/029_lease_expiration_rule.sql`, a skill text change only). Ronnie dropped
+    his Keeks lease (42 pages, Suite 425, Knoll Trail) on the chat; the analyst read it with
+    `read_document_into_asset`, so nothing landed on the lease page. Fixes:
+    - A tenth analyst tool, `read_lease_document` (document, asset, tenant, unit;
+      `MAX_STEPS` 10). `findLease` in `lib/tenants.ts` picks the lease: the tenant name
+      given is, is contained in or looks like the lease's tenant, and/or the unit matches;
+      exactly one lease must fit, otherwise the tool lists the leases for the analyst to
+      ask. Then `readIntoLease`. The reply gets Open the Lease and Review buttons.
+    - `read_document_into_asset` on a document whose type turns out to be a lease tells the
+      analyst to call `read_lease_document` with the same document. `readIntoLease` reads a
+      document again when it was already read as an ordinary document and belongs to no
+      lease (`reopenForLease`); list entries are not added twice.
+    - Lease page: under Lease Documents, **Already loaded on this asset?** lists the asset's
+      documents tied to no lease, with Read Into This Lease. That is how his Keeks document,
+      read before this fix, gets onto its lease.
+    - 029: the Reading a Lease skill now lets the agent work out an expiration date (or a
+      notice deadline) from a fixed commencement date and a stated term, at medium
+      confidence, saying so; dates that hang on something not yet happened stay empty. His
+      lease prints no expiration date and its commencement memorandum is blank.
+    - Known gap: a document read onto the wrong lease can't be moved to another; there is no
+      way to detach a document from a lease.
+    - Checked on the scratch database with scripted answers: `findLease`, the hand-over
+      note, re-reading onto the lease, the links; the lease suite again. Not run against
+      the real Claude API; the picker was not opened in a browser.
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
@@ -1382,8 +1406,8 @@ work and how data is isolated; this file covers how we work and where things sta
 Everything described above is committed, pushed to `main` and copied to his folder. Nothing is
 half done. The latest pieces are "Stage 5, second part: KPIs calculated from the stored leases, by
 skills", "Which source wins is a skill" and "Lease fields, read from the lease agreement". **He
-needs to run migrations 022, 023, 024, 025, 026, 027 and 028** in Supabase, in that order
-(022 to 025 were not confirmed as run), then on Knoll Trail press Refresh Location (Overview),
+needs to run migration 029** in Supabase (028 is run: the lease page shows its fields; 022 to
+027 are presumably run too but he has not said so), then on Knoll Trail press Refresh Location (Overview),
 Update From Rent Rolls and then Recalculate KPIs (Leases tab). **Agreed next step:** cash flow,
 then outside feeds.
 

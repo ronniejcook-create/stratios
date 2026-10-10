@@ -205,6 +205,32 @@ export async function getLease(client: Queryable, orgId: string, leaseId: string
 /** How a lease is named on screen and to the agents: "Acme Corp, Unit 450". */
 export const leaseLabel = (lease: Pick<Lease, 'tenantName' | 'unitName'>) => `${lease.tenantName}${lease.unitName ? `, Unit ${lease.unitName}` : ''}`
 
+const unitKey = (unit: string | null | undefined) => nameKey(String(unit ?? '')).replace(/^(suite|ste|unit|space|no)\s+/, '').replace(/\s+/g, '')
+
+/**
+ * The lease a tenant name and unit point at, among an asset's leases: for a
+ * lease agreement the person hands to the analyst. Exactly one lease must fit;
+ * otherwise the ones that could are returned, so the person can be asked.
+ * A tenant fits when the name given is its name, is contained in it or looks
+ * like it ("Keeks" for "Keeks-Plano LLC dba Keeks Handbags"). Pure.
+ */
+export function findLease<T extends Pick<Lease, 'id' | 'tenantName' | 'unitName' | 'status'>>(leases: T[], tenant: string | null, unit: string | null): { lease: T } | { candidates: T[] } {
+  const wantedTenant = nameKey(tenant ?? '')
+  const wantedUnit = unitKey(unit)
+  const scored = leases.map((lease) => {
+    const name = nameKey(lease.tenantName)
+    const tenantFits = wantedTenant.length >= 3 && (name === wantedTenant || name.includes(wantedTenant) || wantedTenant.includes(name) || lookAlike(lease.tenantName, tenant ?? '') > 0)
+    const unitFits = wantedUnit !== '' && unitKey(lease.unitName) === wantedUnit
+    return { lease, tenantFits, unitFits, score: (tenantFits ? 2 : 0) + (unitFits ? 2 : 0) + (lease.status === 'active' ? 0.5 : 0) }
+  }).filter((entry) => entry.tenantFits || entry.unitFits)
+  if (scored.length === 0) return { candidates: [] }
+  const best = Math.max(...scored.map((entry) => entry.score))
+  const top = scored.filter((entry) => entry.score === best)
+  // A unit alone is not enough when a tenant was named and does not fit it: that is two different answers.
+  if (top.length === 1 && !(wantedTenant && wantedUnit && !(top[0].tenantFits && top[0].unitFits) && scored.length > 1)) return { lease: top[0].lease }
+  return { candidates: scored.sort((a, b) => b.score - a.score).map((entry) => entry.lease) }
+}
+
 /** The leases of one asset or one tenant: active ones first, then by lease end, soonest first. */
 export async function listLeases(client: Queryable, orgId: string, of: { assetId: string } | { tenantId: string }): Promise<Lease[]> {
   const column = 'assetId' in of ? 'l.asset_id' : 'l.tenant_id'
