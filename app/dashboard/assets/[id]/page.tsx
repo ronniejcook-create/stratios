@@ -19,6 +19,8 @@ import { AddAddressForm, AddChildForm, AddressList, RefreshLocationButton } from
 import { AssetMap } from './AssetMap'
 import { listPhotos, listPlanPages, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo, type PlanPage } from '@/lib/photos'
 import { RentRollPanel, type RentRollChoice } from './RentRollPanel'
+import { CashFlowPanel, type CashFlowChoice } from './CashFlowPanel'
+import { cashFlowsReady, listCashFlowLines, listCashFlows, periodLabel, type CashFlowLine } from '@/lib/cashFlows'
 import { KpiPanel, type KpiRunView } from './KpiPanel'
 import { LeasesPanel } from './LeasesPanel'
 import { listLeases, listTenantQuestions, tenantsReady, type Lease, type TenantQuestion } from '@/lib/tenants'
@@ -63,13 +65,13 @@ export default async function AssetPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ screen?: string; rentRoll?: string }>
+  searchParams: Promise<{ screen?: string; rentRoll?: string; cashFlow?: string }>
 }) {
   const { orgId, userId, orgRole } = await auth()
   if (!orgId || !userId) return null // the layout redirects before this renders
   const isAdmin = orgRole === 'org:admin'
   const { id } = await params
-  const { screen: screenKey, rentRoll: rentRollParam } = await searchParams
+  const { screen: screenKey, rentRoll: rentRollParam, cashFlow: cashFlowParam } = await searchParams
   if (!isDatabaseConfigured()) notFound()
 
   let loaded: Loaded | null = null
@@ -162,6 +164,44 @@ export default async function AssetPage({
       rentRollError = isMissingSchema(error)
         ? 'Rent rolls need a database update: run db/migrations/019_rent_rolls.sql, then reload this page.'
         : 'The rent rolls could not be loaded. Try again.'
+    }
+  }
+
+  // Cash flows: operating statements copied line by line from documents, for the same people and for the same
+  // reason. On their own, so the page loads before migration 030 is run.
+  let cashFlowChoices: CashFlowChoice[] = []
+  let cashFlowLines: CashFlowLine[] = []
+  let cashFlowSelected: string | null = null
+  let cashFlowError: string | null = null
+  if (access.canAddRecords) {
+    try {
+      const found = await withOrg(orgId, async (client) => {
+        if (!(await cashFlowsReady(client))) return null
+        const all = await listCashFlows(client, orgId, tree.id)
+        const chosen = all.find((cashFlow) => cashFlow.id === cashFlowParam) ?? all[0] ?? null
+        return { all, chosen, lines: chosen ? await listCashFlowLines(client, orgId, chosen.id, chosen.columns.length) : [] }
+      })
+      if (found) {
+        cashFlowChoices = found.all.map((cashFlow) => ({
+          id: cashFlow.id,
+          period: periodLabel(cashFlow.periodStart, cashFlow.periodEnd),
+          propertyName: tree.properties.find((property) => property.id === cashFlow.propertyId)?.name ?? '',
+          title: cashFlow.title,
+          basis: cashFlow.basis,
+          documentId: cashFlow.documentId,
+          documentName: cashFlow.documentName,
+          lineCount: cashFlow.lineCount,
+          notes: cashFlow.notes,
+          columns: cashFlow.columns,
+        }))
+        cashFlowLines = found.lines
+        cashFlowSelected = found.chosen?.id ?? null
+      } else {
+        cashFlowError = 'Cash flows need a database update: run db/migrations/030_cash_flows.sql, then reload this page.'
+      }
+    } catch (error) {
+      console.error('Listing cash flows failed', error)
+      cashFlowError = 'The cash flows could not be loaded. Try again.'
     }
   }
 
@@ -627,6 +667,26 @@ export default async function AssetPage({
                       latestDate={rentRollChoices.reduce<string | null>((latest, choice) => (latest === null || choice.asOfDate > latest ? choice.asOfDate : latest), null)}
                       severalProperties={tree.properties.length > 1}
                       kpis={<KpiPanel assetId={tree.id} runs={kpiRuns} canCalculate={access.canAddRecords} severalProperties={tree.properties.length > 1} />}
+                    />
+                  ),
+                },
+                {
+                  key: '_cashflow',
+                  name: 'Cash Flow',
+                  content: cashFlowError ? (
+                    <section className="panel notice">
+                      <h2>Cash Flow</h2>
+                      <p>{cashFlowError}</p>
+                    </section>
+                  ) : (
+                    <CashFlowPanel
+                      assetId={tree.id}
+                      choices={cashFlowChoices}
+                      selectedId={cashFlowSelected}
+                      lines={cashFlowLines}
+                      canEdit={access.canAddRecords}
+                      severalProperties={tree.properties.length > 1}
+                      documents={documents.filter((document) => document.status === 'read' && !document.leaseId).map((document) => ({ id: document.id, name: document.name }))}
                     />
                   ),
                 },

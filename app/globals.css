@@ -782,6 +782,29 @@ td.muted { color: var(--dim); }
 .modal-check input { margin-top: 3px; accent-color: var(--accent); }
 .field-list.tiles.rent-roll-tiles { margin: 12px 0 4px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
 .rent-roll-tile, .field-list.tiles .rent-roll-tile:hover { cursor: default; border-color: var(--line); }
+/* Cash Flow tab */
+.cash-flow-tile-sub { font-size: 12px; font-weight: 400; color: var(--muted); }
+.cash-flow-progress { display: flex; align-items: center; gap: 6px; flex-basis: 100%; }
+.inline-form > .note { flex-basis: 100%; margin-top: 0; }
+.cash-flow-view { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 16px; }
+.cash-flow-view .doc-sub { margin-top: 0; }
+.shell-main .cash-flow-scroll { margin-top: 10px; max-height: 72vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.cash-flow-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.shell-main .cash-flow-table th, .shell-main .cash-flow-table td { padding: 5px 10px; white-space: nowrap; background: var(--panel); }
+.cash-flow-table thead th { position: sticky; top: 0; z-index: 2; vertical-align: bottom; font-weight: 600; color: var(--heading); border-bottom: 1px solid var(--line-strong); }
+.cash-flow-table tbody th { font-weight: 400; font-size: 13px; color: var(--text); }
+.cash-flow-table th:first-child { position: sticky; left: 0; z-index: 1; min-width: 240px; max-width: 380px; overflow: hidden; text-overflow: ellipsis; border-right: 1px solid var(--line); }
+.cash-flow-table thead th:first-child { z-index: 3; }
+.cash-flow-amount { text-align: right; font-variant-numeric: tabular-nums; color: var(--heading); }
+.shell-main .cash-flow-table .cash-flow-total-column { border-left: 1px solid var(--line); font-weight: 600; }
+.cash-flow-negative { color: var(--danger); }
+.cash-flow-column-kind { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+.cash-flow-code { margin-right: 8px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.shell-main .cash-flow-table .cash-flow-heading th { position: static; padding: 12px 0 5px; font-size: 12px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--dim); border-right: 0; max-width: none; overflow: visible; }
+/* A heading runs the full width of the table, so its words are what stay in view when the months are scrolled sideways. */
+.cash-flow-heading-text { position: sticky; left: 10px; display: inline-block; }
+.cash-flow-table .cash-flow-sum th, .cash-flow-table .cash-flow-sum td, .cash-flow-table .cash-flow-noi th, .cash-flow-table .cash-flow-noi td { font-weight: 600; color: var(--heading); border-top: 1px solid var(--line-strong); }
+.shell-main .cash-flow-table .cash-flow-noi th, .shell-main .cash-flow-table .cash-flow-noi td { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-bottom: 1px solid var(--line-strong); }
 .review-entry > div + div { margin-top: 2px; }
 .review-where .chip { display: block; width: fit-content; margin-top: 4px; }
 .review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 6px; }

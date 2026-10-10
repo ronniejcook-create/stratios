@@ -14,6 +14,7 @@ import { isPhotoCategory, removePhoto, savePhotosFromDocument, setMainPhoto, upd
 import { LOCATION_SOURCE, lookUpAddress, type AddressMatch, type FoundAddress } from '@/lib/geocode'
 import { addressOfSuggestion, suggestAddresses, type Suggestion } from '@/lib/googlePlaces'
 import { deleteRentRoll, getRentRoll, setRentRollDate } from '@/lib/rentRolls'
+import { deleteCashFlow, getCashFlow } from '@/lib/cashFlows'
 import { KPI_NEEDS_UPDATE, applyCalculatedValue } from '@/lib/kpis'
 import { refreshLeases, tenantsReady } from '@/lib/tenants'
 import { followAddressChange, pointOfProperty, propertyOfAddress, propertyOfOwner, refreshLocationFacts, type Point } from '@/lib/locationFacts'
@@ -583,6 +584,32 @@ export async function removeRentRoll(input: { rentRollId: string; withDocument?:
   } catch (error) {
     console.error('Deleting a rent roll failed', error)
     return { ok: false, error: 'The rent roll could not be deleted. Try again.' }
+  }
+}
+
+/**
+ * Deletes one cash flow: an operating statement copied from a document, with
+ * its lines and amounts. The document it came from is kept, and so are the
+ * values filled in from it.
+ */
+export async function removeCashFlow(input: { cashFlowId: string }): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  const { userId, orgId, orgRole } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (!isUuid(input.cashFlowId)) return { ok: false, error: 'That cash flow could not be found.' }
+  try {
+    const result = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
+      if (!access.canAddRecords) return { ok: false as const, error: NO_PERMISSION }
+      const cashFlow = await getCashFlow(client, orgId, input.cashFlowId)
+      if (!cashFlow || !(await deleteCashFlow(client, orgId, input.cashFlowId))) return { ok: false as const, error: 'That cash flow could not be found. It may already have been deleted; reload the page.' }
+      return { ok: true as const, assetId: cashFlow.assetId }
+    })
+    if (!result.ok) return result
+    revalidatePath(`/dashboard/assets/${result.assetId}`)
+    return { ok: true, message: 'The cash flow was deleted.' }
+  } catch (error) {
+    console.error('Deleting a cash flow failed', error)
+    return { ok: false, error: 'The cash flow could not be deleted. Try again.' }
   }
 }
 

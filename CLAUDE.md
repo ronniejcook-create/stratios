@@ -1374,13 +1374,87 @@ work and how data is isolated; this file covers how we work and where things sta
     - Checked on the scratch database with scripted answers: `findLease`, the hand-over
       note, re-reading onto the lease, the links; the lease suite again. Not run against
       the real Claude API; the picker was not opened in a browser.
+  - **Stage 6, third part: cash flow, from operating statements** (October 10;
+    `db/migrations/030_cash_flows.sql`). Ronnie chose trailing-twelve-month statements first.
+    Built against his real file: a Yardi "Statement (12 months)" for Knoll Trail Crossing, Excel,
+    accrual, January to August 2026 plus a Total column, account numbers on every line, headings
+    with no figures, a TOTAL line closing each group, and it stops at NET OPERATING INCOME
+    (84 lines; total revenue 1,142,778.31, operating expenses 743,781.16, NOI 398,997.15).
+    - Like a rent roll, each statement loaded is **its own copy of the document**; a later one
+      never changes an earlier one. Tables: `cash_flows` (asset, property, document, title,
+      basis, first and last day covered, the columns as JSON, the agent's notes),
+      `cash_flow_lines` (position, name, account code, section income / expense / other, kind,
+      category, indent) and `cash_flow_amounts` (one row per line and column, with the column's
+      first month, months covered, actual / budget / forecast and whether it is a total).
+      Deleting the asset deletes them (cascade); removing the document keeps the statement.
+      All reads, writes and sums are in `lib/cashFlows.ts` (the sums are browser-safe).
+    - **It is a second question to Claude, not part of the reading.** The reading's answer
+      format is at Claude's size limit and a statement is a thousand figures, so
+      `lib/cashFlowReading.ts` (`loadCashFlow`, `POST /api/cash-flow` with `documentId`,
+      `maxDuration` 300, three steps like KPIs) asks once more with a small format of its own:
+      columns (label, first and last month, kind) and lines (name, account, section, kind,
+      category, indent, and **one text cell of figures separated by |**). 28,000 tokens,
+      270 seconds. Loading the same document again replaces its statement.
+    - When it runs: the reading says whether the document is or contains an operating
+      statement (`looksLikeStatement`: the agent is told to put "Operating Statement" or
+      "with Operating Statement" in `document_type`, a description change that did not grow
+      the format; money values for three or more months count too). `ReadSuccess.operatingStatement`
+      then has **the browser** ask for the copy after the reading has answered
+      (`DocumentsPanel`, and `AgentPanel` through `statements` on the analyst's reply, with a
+      status line), as with KPIs. **Load From a Document** on the Cash Flow tab does the same
+      for any read document, which is also the way to retry.
+    - **The rules are in the skill.** 030 appends to the standard Reading an Operating
+      Statement skill: Copying the Statement, Columns (months plus longer periods; leave out
+      per square foot, percent and variance), What Each Line Is, and Categories (a list of
+      names an organization can edit to match its chart of accounts). Only skills about
+      statements are sent (`statementSkills`); the prompt has defaults for when none are. An
+      organization that edited the skill does not get the new parts.
+    - What stays in code: every figure is stored as given (`interpretCashFlow` only drops a
+      column whose months can't be read, a line with no name, and pads a short line, saying
+      so in the notes); a column is a **total** when two or more shorter columns of the same
+      kind lie inside it (`markTotals`); and the sums. `columnSums` uses the document's own
+      total_income, total_expenses and noi lines where it shows them, else adds the item
+      lines. `periodTotals` uses the document's total column, else adds month columns, else
+      (years side by side) shows the latest column alone. `checkTotals` notes where the item
+      lines do not add up to the document's total.
+    - Screen: a **Cash Flow** tab on the asset (key `_cashflow`, after Leases;
+      `CashFlowPanel.tsx`), for people with `canAddRecords` like the Rent Roll tab: statement
+      picker (`?cashFlow=<id>`, latest period first), three tiles each saying "As the
+      document shows" or "Added up from the lines", the agent's notes, and the table with a
+      **Lines as Shown / By Category** switch, the line names and the header staying put while
+      the months scroll. Cents show when the document has any. Negatives are in parentheses.
+      Delete Cash Flow (pop-up; the document is kept). The review page links to the statement.
+    - Analyst: an eleventh tool, `get_cash_flow` (asset, optional statement number; `MAX_STEPS`
+      11), returns the statements on file and the latest in full as tab-separated lines, with
+      the three figures per column. Needs `canAddRecords`.
+    - The property's monthly Total Revenue, Operating Expenses and Net Operating Income
+      fields are still filled by the first reading, as before; the cash flow does not write
+      fields, so Which Source Wins is not involved.
+    - Not built: one statement per document only (a memorandum with history and a forecast
+      gets the latest actuals by month); lines can't be edited; no check against loading the
+      same months twice and no view across statements (a month in two statements is shown in
+      each); KPIs from the cash flow; budgets against actuals side by side; a chart; the
+      organization-level mapping of accounts to categories (the category is the agent's call
+      per statement, by the skill's list).
+    - Checked: every migration 001 to 030 on a fresh scratch database as a role without
+      BYPASSRLS, and 030 twice; 62 cases through the real code with a scripted answer built
+      from his statement's own figures (upload of his real file, the prompt, storage, the
+      three totals matching his page to the cent, categories, a wrongly marked line caught,
+      reload, a document with no statement, malformed answers, a view-only member, another
+      organization, the analyst's tool, deleting, asset deletion); the real panel in Chromium
+      with his figures. **Not run against the real Claude API**: whether the agent copies all
+      84 lines in time and marks them well shows on his first try.
+    - For tests there is now a stand-in `pg` in the session scratchpad that speaks Postgres's
+      wire protocol (simple queries, parameters written in as literals), so `withOrg` and the
+      whole `lib/` run unchanged against the scratch database; it has to be rebuilt in a new
+      session, as do stand-ins for Clerk and the type-check stubs.
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
   - **Navigation icons** (October 9, night; his request): Assets uses the buildings icon that
     Tenants had, and Tenants has a key (`SideNav.tsx`).
   - Not built yet (later stages): stored formulas
-    (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
+    (calculated fields with no value show "Not calculated yet"), feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
     single list cell yet (the history is stored).
 - Members page (admins): invite by email, roles.
@@ -1403,25 +1477,24 @@ work and how data is isolated; this file covers how we work and where things sta
 
 ## Where we left off (October 10, 2026)
 
-Everything described above is committed, pushed to `main` and copied to his folder. Nothing is
-half done. The session of October 9 (night) built, in order: the analyst's lookups and
-set-a-value tool, Location fields, property types and managed option lists, tenants and leases
-from rent rolls, the tenant rules in the skill, KPIs calculated from leases by skills, Which
-Source Wins as a skill, lease fields with a page per lease, and the analyst's lease-reading
-tool. Each has its own part under "What's built".
+Everything described above is committed, pushed to `main` and copied to his folder. The session
+of October 10 built cash flow from operating statements (stage 6, third part, under "What's
+built"), against the Yardi statement he supplied for Knoll Trail.
 
-**Nothing is waiting on Ronnie.** He confirmed (October 10) that every migration through 029
-is run, that the Keeks lease was read onto its lease from the lease page, and that Refresh
-Location, Update From Rent Rolls and Recalculate KPIs were pressed on Knoll Trail. He said the
-steps were done, not how the results looked.
+**Waiting on Ronnie:** run `db/migrations/030_cash_flows.sql` in Supabase. Until then the Cash
+Flow tab says a database update is needed and everything else works as before. Then load his
+statement (drop it on the analyst, or upload it on the Documents tab) and compare the Cash Flow
+tab with the file: 84 lines, total revenue 1,142,778.31, NOI 398,997.15.
 
-**Worth checking with him first thing:** whether the Keeks lease filled in its fields, and how
-good they are (this is the first lease read by the real agent); the lease's worked-out
-expiration of May 31, 2028 against the rent roll's June 30, 2028; and what Recalculate KPIs
-produced on Knoll Trail.
+**He has not said how these came out** (he pressed the buttons on October 10 and "hadn't looked
+closely" when asked): the Keeks lease's fields, the first lease read by the real agent; its
+worked-out expiration of May 31, 2028 against the rent roll's June 30, 2028; and what
+Recalculate KPIs produced on Knoll Trail.
 
-**Agreed next step:** cash flow, then outside feeds. He set tenant lookup on the web aside for
-now.
+**Agreed next step:** outside feeds, after cash flow settles. He set tenant lookup on the web
+aside for now. Natural follow-ons for cash flow, offered: KPIs from the statement (expense
+ratio, NOI per square foot, trailing NOI), budget against actual, a chart of NOI by month, and
+a view across statements.
 
 **The day's last stretch was the Map tab.** It now has a row of tabs, one layer at a time: None,
 Demographics, Schools, Jobs and Commuting, Transit, Flood Zones, Natural Hazards, plus a separate
@@ -1471,7 +1544,8 @@ The same route works for checking any new public service.
 - The design document "Stratios Data Design" is behind: its build order and Starter Fields tab
   do not yet cover stages 4 to 6, the 22 fields from migration 017, the 11 Location fields
   from 022, Property Subtype and managed option lists from 023, tenants and leases from
-  024, the KPI skills and fields from 026, or rent rolls.
+  024, the KPI skills and fields from 026, lease fields from 028, rent rolls, or cash flows
+  from 030.
 
 ## Ideas offered but not started
 

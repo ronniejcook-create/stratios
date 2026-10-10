@@ -19,6 +19,7 @@ import { listScreens } from './layout'
 import { loadAccess } from './permissions'
 import { formatAddress, getAssetTree, isUuid, listAssets, RECORD_LABELS, type Address } from './records'
 import { calculateKpis, describeKpiRuns } from './kpis'
+import { CASH_FLOW_COLUMN_LABELS, CASH_FLOW_SECTION_LABELS, cashFlowsReady, columnSums, listCashFlowLines, listCashFlows, periodLabel, periodTotals } from './cashFlows'
 import { loadSkillsForAgent, skillIndex, type Skill } from './skills'
 import { isSurroundingTopic, lookUpSurroundings, SURROUNDING_TOPICS } from './surroundings'
 
@@ -26,10 +27,12 @@ export type AgentTurn = { role: 'user' | 'assistant'; text: string; attachments?
 export type AgentLink = { label: string; href: string }
 /** Pages of a document for the browser to draw as pictures and add to an asset's photos (plans and maps). */
 export type AgentPages = { assetId: string; documentId: string; pages: { page: number; caption: string | null }[] }
-export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[] } | { ok: false; error: string }
+/** A document whose operating statement the browser asks to have copied as a cash flow, once the agent has answered. */
+export type AgentStatement = { assetId: string; documentId: string }
+export type AgentReply = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[]; statements?: AgentStatement[] } | { ok: false; error: string }
 
 const MAX_TURNS = 40
-const MAX_STEPS = 10
+const MAX_STEPS = 11
 /** Leaves room inside the web host's five-minute limit for the conversation steps around a document reading. */
 const TIME_BUDGET_MS = 285000
 
@@ -126,9 +129,20 @@ const TOOLS: ToolDefinition[] = [
       'Calculates an asset\'s KPIs again from its stored leases and latest rent roll, following the KPI skill that fits each property\'s kind (commercial and residential properties have different KPIs). Use when the person asks to calculate, recalculate or refresh KPIs, for example after confirming tenant names. It takes up to a minute or two. A figure a document shows or a person entered is never overwritten; such values are reported as kept. After a rent roll is read this already runs by itself, so do not call it then.',
     input_schema: { type: 'object', properties: { asset_id: { type: 'string' } }, required: ['asset_id'], additionalProperties: false },
   },
+  {
+    name: 'get_cash_flow',
+    description:
+      'Returns an asset\'s stored cash flow: an operating statement (for example a trailing twelve months) copied line by line from a document, with income, operating expenses and net operating income for each month and every line item. Use for questions about income, expenses or net operating income over time, or about one line such as utilities or real estate taxes. It lists the statements on file and returns the latest in full; give statement_number to get another from that list. Every figure is as the document shows it.',
+    input_schema: {
+      type: 'object',
+      properties: { asset_id: { type: 'string' }, statement_number: { type: 'integer', description: 'Which statement from the list, 1 for the latest. Leave out for the latest.' } },
+      required: ['asset_id'],
+      additionalProperties: false,
+    },
+  },
 ]
 
-type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string>; skills: Skill[]; pages: AgentPages[]; kpis: string[] }
+type Session = { caller: Caller; links: AgentLink[]; changed: boolean; deadline: number; documentIds: Set<string>; skills: Skill[]; pages: AgentPages[]; kpis: string[]; statements: AgentStatement[] }
 
 const READ_SKILL: ToolDefinition = {
   name: 'read_skill',
@@ -154,6 +168,11 @@ function describeReading(session: Session, result: ReadOutcome): string {
   if (result.rentRollRows > 0 && result.tenantQuestions > 0) session.links.push({ label: 'Confirm Tenants', href: `/dashboard/assets/${result.assetId}?screen=_leases` })
   // The KPIs are calculated from the new leases next, by the browser, so this turn is not held up by it.
   if (result.rentRollRows > 0 && !session.kpis.includes(result.assetId)) session.kpis.push(result.assetId)
+  // An operating statement is copied line by line as a cash flow next, by the browser too.
+  if (result.operatingStatement) {
+    if (!session.statements.some((entry) => entry.documentId === result.documentId)) session.statements.push({ assetId: result.assetId, documentId: result.documentId })
+    session.links.push({ label: 'Open Cash Flow', href: `/dashboard/assets/${result.assetId}?screen=_cashflow` })
+  }
   return JSON.stringify({
     ok: true,
     asset_created: result.created,
@@ -177,6 +196,9 @@ function describeReading(session: Session, result: ReadOutcome): string {
           about_kpis: 'The property\'s KPIs are now being calculated from these leases, following the KPI skill for its kind of property; that finishes a minute or so after this reply, and the results are on the Leases tab. Say so; do not call recalculate_kpis for it.',
           about_tenants: 'Units, tenants and leases were built from the rent roll and are on the asset\'s Leases tab. Names that only look like an existing tenant are never matched by guesswork; tell the person how many are waiting there to be confirmed, if any.',
         }
+      : {}),
+    ...(result.operatingStatement
+      ? { about_the_operating_statement: 'The document holds an operating statement. Its lines are now being copied, month by month, as a cash flow; that finishes a minute or two after this reply and shows on the asset\'s Cash Flow tab. Say so. Until then get_cash_flow will not have it.' }
       : {}),
     street_addresses_set_from_the_document: result.addresses,
     photos_added_to_the_asset: result.photos,
@@ -425,6 +447,63 @@ async function runTool(session: Session, name: string, input: Record<string, unk
         isError: false,
       }
     }
+    if (name === 'get_cash_flow') {
+      const assetId = asText(input.asset_id, 60)
+      if (!isUuid(assetId)) return fail('That asset could not be found. Use list_assets to get its id.')
+      const found = await withOrg(orgId, async (client) => {
+        const access = await loadAccess(client, orgId, userId, caller.isAdmin)
+        // Like a document's file, a statement shows every figure whatever a role's field rules say.
+        if (!access.canAddRecords) return { ok: false as const, error: 'This person\'s role does not allow opening cash flows. An administrator can give them a role that can edit.' }
+        if (!(await cashFlowsReady(client))) return { ok: false as const, error: 'Cash flows are not set up yet: the database needs db/migrations/030_cash_flows.sql.' }
+        const tree = await getAssetTree(client, orgId, assetId)
+        if (!tree) return { ok: false as const, error: 'That asset could not be found. Use list_assets to get its id.' }
+        const all = await listCashFlows(client, orgId, assetId)
+        const wanted = Number.isInteger(input.statement_number) ? (input.statement_number as number) : 1
+        const chosen = all.find((_entry, index) => index === wanted - 1) ?? null
+        return { ok: true as const, tree, all, wanted, chosen, lines: chosen ? await listCashFlowLines(client, orgId, chosen.id, chosen.columns.length) : [] }
+      })
+      if (!found.ok) return fail(found.error)
+      const { tree, all, chosen, lines } = found
+      if (all.length === 0) return { content: JSON.stringify({ ok: true, asset: tree.name, statements_on_file: 0, note: 'No cash flow has been loaded for this asset. One is saved when an operating statement, such as a trailing twelve months, is read for it.' }), isError: false }
+      if (!chosen) return fail(`There is no statement number ${found.wanted}. There ${all.length === 1 ? 'is 1 statement' : `are ${all.length} statements`} on file.`)
+      const propertyName = (id: string) => tree.properties.find((property) => property.id === id)?.name ?? ''
+      const figure = (amount: number | null) => (amount === null ? '' : String(Math.round(amount * 100) / 100))
+      const sums = columnSums(lines, chosen.columns.length)
+      const totals = periodTotals(chosen.columns, lines)
+      session.links.push({ label: 'Open Cash Flow', href: `/dashboard/assets/${assetId}?screen=_cashflow&cashFlow=${chosen.id}` })
+      const table = lines.map((line) => [CASH_FLOW_SECTION_LABELS[line.section], line.kind === 'item' ? '' : line.kind.replace(/_/g, ' '), line.code ?? '', line.name, line.category ?? '', ...line.amounts.map(figure)].join('\t'))
+      const shown: string[] = []
+      let length = 0
+      for (const row of table) {
+        if (length + row.length > 40000) break
+        shown.push(row)
+        length += row.length + 1
+      }
+      return {
+        content: JSON.stringify({
+          ok: true,
+          asset: tree.name,
+          statements_on_file: all.map((entry, index) => ({ statement_number: index + 1, period: periodLabel(entry.periodStart, entry.periodEnd), property: propertyName(entry.propertyId), title: entry.title, from_document: entry.documentName, lines: entry.lineCount })),
+          statement: {
+            statement_number: found.wanted,
+            period: periodLabel(chosen.periodStart, chosen.periodEnd),
+            property: propertyName(chosen.propertyId),
+            title: chosen.title,
+            basis: chosen.basis,
+            from_document: chosen.documentName,
+            notes_from_the_reading: chosen.notes,
+            columns: chosen.columns.map((column) => `${column.label} (${CASH_FLOW_COLUMN_LABELS[column.kind]}${column.total ? ', a total of other columns' : column.months > 1 ? `, ${column.months} months from ${column.start}` : `, ${column.start}`})`),
+            ...(totals ? { for_the_period: { covers: totals.from === 'months' ? `${totals.months} months added up` : `the column "${totals.label}"`, total_income: figure(totals.income.amount), operating_expenses: figure(totals.expenses.amount), net_operating_income: figure(totals.noi.amount) } } : {}),
+            by_column: chosen.columns.map((column, index) => ({ column: column.label, total_income: figure(sums[index].income.amount), operating_expenses: figure(sums[index].expenses.amount), net_operating_income: figure(sums[index].noi.amount) })),
+            about_the_figures: 'Total income, operating expenses and net operating income are the document\'s own total lines where it shows them; otherwise they are its item lines added up. Every line below is as the document shows it. Do not add up or average lines yourself unless the person asks, and say so when you do.',
+            lines_header: ['part', 'kind of line (empty for an item)', 'account', 'name', 'category', ...chosen.columns.map((column) => column.label)].join('\t'),
+            lines: shown,
+            ...(shown.length < table.length ? { note: `Only the first ${shown.length} of ${table.length} lines are listed.` } : {}),
+          },
+        }),
+        isError: false,
+      }
+    }
     return fail(`There is no tool called ${name}.`)
   } catch (error) {
     console.error(`Agent tool ${name} failed`, error)
@@ -443,7 +522,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
   const turns = input.turns.slice(-MAX_TURNS)
   if (turns.length === 0 || turns[turns.length - 1].role !== 'user') return { ok: false, error: 'Type a message first.' }
 
-  const session: Session = { caller, links: [], changed: false, deadline: Date.now() + TIME_BUDGET_MS, documentIds: new Set(), skills: [], pages: [], kpis: [] }
+  const session: Session = { caller, links: [], changed: false, deadline: Date.now() + TIME_BUDGET_MS, documentIds: new Set(), skills: [], pages: [], kpis: [], statements: [] }
   const messages: ChatMessage[] = []
   turns.forEach((turn, index) => {
     let content = asText(turn.text, 8000)
@@ -486,7 +565,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
       const said = answer.content.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text').map((block) => block.text).join('\n').trim()
       const requests = answer.content.filter((block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use')
       if (answer.stopReason !== 'tool_use' || requests.length === 0) {
-        return { ok: true, text: said || 'Done.', links: dedupe(session.links), changed: session.changed, pages: session.pages, kpis: session.kpis }
+        return { ok: true, text: said || 'Done.', links: dedupe(session.links), changed: session.changed, pages: session.pages, kpis: session.kpis, statements: session.statements }
       }
       messages.push({ role: 'assistant', content: answer.content })
       const results: ContentBlock[] = []
@@ -496,7 +575,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
       }
       messages.push({ role: 'user', content: results })
     }
-    return { ok: true, text: 'I did part of that but ran out of steps. Tell me what is still missing and I will carry on.', links: dedupe(session.links), changed: session.changed, pages: session.pages, kpis: session.kpis }
+    return { ok: true, text: 'I did part of that but ran out of steps. Tell me what is still missing and I will carry on.', links: dedupe(session.links), changed: session.changed, pages: session.pages, kpis: session.kpis, statements: session.statements }
   } catch (error) {
     // Anything already done (an asset created, a document read) is still done; say so through the buttons.
     const reason =
@@ -504,7 +583,7 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
       error instanceof Error && error.name === 'TimeoutError' ? 'Claude took too long to answer.' :
       'Stratios could not reach the Claude API.'
     if (!(error instanceof ApiError)) console.error('Agent failed', error)
-    if (session.changed) return { ok: true, text: `The work was done, but I could not write up the result (${reason}) Use the buttons below to see it.`, links: dedupe(session.links), changed: true, pages: session.pages, kpis: session.kpis }
+    if (session.changed) return { ok: true, text: `The work was done, but I could not write up the result (${reason}) Use the buttons below to see it.`, links: dedupe(session.links), changed: true, pages: session.pages, kpis: session.kpis, statements: session.statements }
     return { ok: false, error: reason }
   }
 }

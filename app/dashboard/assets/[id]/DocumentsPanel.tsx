@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AiIcon } from '@/components/AiIcon'
-import { CANNOT_UPLOAD, canUpload as isUploadable, DOCUMENT_ACCEPT, readUploadedDocument, recalculateKpis, uploadDocument } from '@/lib/documentClient'
+import { CANNOT_UPLOAD, canUpload as isUploadable, DOCUMENT_ACCEPT, loadCashFlow, readUploadedDocument, recalculateKpis, uploadDocument } from '@/lib/documentClient'
 
 export type DocumentRow = {
   id: string
@@ -45,6 +45,8 @@ export function DocumentsPanel({ assetId, documents, canUpload, maxMb }: { asset
     }
     // A rent roll's leases are in place now; the KPIs are calculated from them in the background.
     if (result.rentRollRows > 0) void recalculateKpis(assetId).then((done) => (done.ok ? router.refresh() : undefined))
+    // An operating statement is copied line by line as a cash flow, in the background too; it shows on the Cash Flow tab when done.
+    if (result.operatingStatement) void loadCashFlow(id).then((done) => (done.ok ? router.refresh() : undefined))
     router.push(`/dashboard/assets/${assetId}/documents/${id}`)
   }
 

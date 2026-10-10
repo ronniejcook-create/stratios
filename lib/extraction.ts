@@ -119,7 +119,7 @@ function describeField(field: FieldDefinition, column = false): string {
 const SCHEMA = {
   type: 'object',
   properties: {
-    document_type: { type: 'string', description: 'What kind of document this is, for example Offering Memorandum, Rent Roll, Operating Statement, Appraisal, Loan Agreement' },
+    document_type: { type: 'string', description: 'What kind of document this is, for example Offering Memorandum, Rent Roll, Operating Statement, Appraisal, Loan Agreement. When a document that is mainly something else also contains an operating statement, add "with Operating Statement"' },
     summary: { type: 'string', description: 'Two or three plain sentences on what the document covers and anything the reviewer should know, such as figures that were unclear or did not fit a field' },
     values: {
       type: 'array',
@@ -341,6 +341,7 @@ ${library}
 - Return a value the document states with basis "stated". When the document shows a figure, always return it exactly as shown, even if you would have calculated it differently: the reader will compare your answer with the page.
 - Calculate a value (basis "calculated") only when all of these hold: the document does not show the value itself; a skill that fits this document lists the field under values to calculate; the field's instructions have a "How to Calculate" part; and every input that part needs is in the document. Then follow "How to Calculate" exactly, put the working (the inputs and the arithmetic) in "quote", give the page the main inputs are on, and use medium or low confidence. If any of these is missing, leave the value out and say in the summary what could not be calculated and why.
 - when_different: ${newAsset ? 'not asked for here.' : 'for each value, look the record and field (and month) up under "Values already on record". If the record holds a different value there, decide what should happen by the skills that say which source wins, weighing what kind of document this is and its date against where the current value came from: "replace" (this document\'s value takes its place without asking), "ask" (a person decides in review) or "keep" (the current value stays; this one is only noted). Answer "field" when no skill covers the case, when the record holds no value, or when it holds the same value; the field\'s own settings then apply. Return the document\'s value exactly as shown whatever you decide here.'}
+- document_type: name the kind of document in a few words. An operating statement is a table of a property's income and expenses by month or by year (also called an income statement, a profit and loss report, a trailing twelve months or a budget). When the document is one, call it "Operating Statement"; when a document that is mainly something else contains one, add "with Operating Statement", for example "Offering Memorandum with Operating Statement". Stratios then copies that table line by line in a second step, so do not return its line items here.
 - Never estimate, and never carry a value over from general knowledge.
 - Write each value the way its "value" line asks. Convert units when the document uses different ones (for example a figure stated in thousands), and lower the confidence when you do.
 - For a field tracked per month, give the month the figure is for. If the document gives only an annual or trailing-twelve-month figure for such a field, leave it out and say so in the summary.
@@ -702,6 +703,30 @@ export type NewAsset = { name: string; propertyType: string; city: string | null
 export type ReadResult = { ok: true; reading: Reading; newAsset: NewAsset | null } | { ok: false; error: string }
 
 /**
+ * A document as it is handed to Claude: a PDF as it is, a workbook as text,
+ * sheet by sheet. A workbook is opened here, before anything is sent, so a
+ * file that can't be read is reported plainly.
+ */
+export function attachmentFor(file: Buffer, kind: DocumentKind | undefined): { ok: true; block: Record<string, unknown> } | { ok: false; error: string } {
+  if (kind !== 'xlsx') return { ok: true, block: { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: file.toString('base64') } } }
+  let workbook
+  try {
+    workbook = readWorkbook(file)
+  } catch (error) {
+    console.error('Reading a workbook failed', error)
+    return { ok: false, error: 'This Excel file could not be opened. Save it again as an Excel Workbook (.xlsx) and upload it, or upload a PDF of it.' }
+  }
+  if (!workbook.text.trim()) return { ok: false, error: 'This Excel file has no values in it.' }
+  return {
+    ok: true,
+    block: {
+      type: 'text',
+      text: `The document is an Excel workbook. Its sheets follow as text: each sheet starts with a line "### Sheet N: name", and each row is the row number, then its cells separated by tabs (an empty cell is an empty gap). Wherever a "page" is asked for, give the sheet number.${workbook.truncated ? ' The workbook was too long to include in full; say so in the summary.' : ''}\n\n<workbook>\n${workbook.text}\n</workbook>`,
+    },
+  }
+}
+
+/**
  * Sends the document and the dictionary to Claude and returns what it found.
  * `fields` must already be limited to the fields the person reading the
  * document is allowed to change. With `newAsset`, the records are stand-ins
@@ -740,23 +765,9 @@ export async function readDocument(input: {
   const lists = (input.lists ?? []).filter((entry) => levels.has(entry.list.appliesTo))
 
   // A workbook is read here, before anything is sent, so a file that can't be read is reported plainly.
-  let attachment: Record<string, unknown>
-  if (input.kind === 'xlsx') {
-    let workbook
-    try {
-      workbook = readWorkbook(input.file)
-    } catch (error) {
-      console.error('Reading a workbook failed', error)
-      return { ok: false, error: 'This Excel file could not be opened. Save it again as an Excel Workbook (.xlsx) and upload it, or upload a PDF of it.' }
-    }
-    if (!workbook.text.trim()) return { ok: false, error: 'This Excel file has no values in it.' }
-    attachment = {
-      type: 'text',
-      text: `The document is an Excel workbook. Its sheets follow as text: each sheet starts with a line "### Sheet N: name", and each row is the row number, then its cells separated by tabs (an empty cell is an empty gap). Wherever a "page" is asked for, give the sheet number.${workbook.truncated ? ' The workbook was too long to include in full; say so in the summary.' : ''}\n\n<workbook>\n${workbook.text}\n</workbook>`,
-    }
-  } else {
-    attachment = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: input.file.toString('base64') } }
-  }
+  const attached = attachmentFor(input.file, input.kind)
+  if (!attached.ok) return attached
+  const attachment = attached.block
 
   try {
     const answer = await askClaudeWith(

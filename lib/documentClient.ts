@@ -51,19 +51,31 @@ export async function uploadDocument(assetId: string | null, file: File, onProgr
 export type AgentTurn = { role: 'user' | 'assistant'; text: string; attachments?: { id: string; name: string }[] }
 export type AgentLink = { label: string; href: string }
 export type AgentPages = { assetId: string; documentId: string; pages: { page: number; caption: string | null }[] }
-export type AgentAnswer = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[] } | { ok: false; error: string }
+/** A document whose operating statement is to be copied as a cash flow once the agent has answered. */
+export type AgentStatement = { assetId: string; documentId: string }
+export type AgentAnswer = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[]; statements?: AgentStatement[] } | { ok: false; error: string }
 
 /** Sends the conversation so far to the agent and returns its reply. A turn that reads a document can take a few minutes. */
 export async function askAgent(input: { turns: AgentTurn[]; pageAssetId: string | null; references: string[] }): Promise<AgentAnswer> {
   const result = await call('/api/agent', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
   if (!result.ok) return { ok: false, error: result.error ?? 'The agent could not answer. Try again.' }
-  return { ok: true, text: String(result.text ?? ''), links: Array.isArray(result.links) ? (result.links as AgentLink[]) : [], changed: result.changed === true, pages: Array.isArray(result.pages) ? (result.pages as AgentPages[]) : [], kpis: Array.isArray(result.kpis) ? result.kpis.map(String) : [] }
+  return { ok: true, text: String(result.text ?? ''), links: Array.isArray(result.links) ? (result.links as AgentLink[]) : [], changed: result.changed === true, pages: Array.isArray(result.pages) ? (result.pages as AgentPages[]) : [], kpis: Array.isArray(result.kpis) ? result.kpis.map(String) : [], statements: Array.isArray(result.statements) ? (result.statements as AgentStatement[]) : [] }
 }
 
 /** Asks the agent to read an uploaded document. This can take a few minutes. */
-export async function readUploadedDocument(id: string): Promise<{ ok: true; rentRollRows: number } | { ok: false; error: string }> {
+export async function readUploadedDocument(id: string): Promise<{ ok: true; rentRollRows: number; operatingStatement: boolean } | { ok: false; error: string }> {
   const result = await call(`/api/documents/${id}/read`, { method: 'POST' })
-  return result.ok ? { ok: true, rentRollRows: Number(result.rentRollRows) || 0 } : { ok: false, error: result.error ?? 'The document could not be read.' }
+  return result.ok ? { ok: true, rentRollRows: Number(result.rentRollRows) || 0, operatingStatement: result.operatingStatement === true } : { ok: false, error: result.error ?? 'The document could not be read.' }
+}
+
+/**
+ * Copies the operating statement in a document that has been read, line by
+ * line, and saves it as a cash flow on its asset. Takes a minute or two.
+ */
+export async function loadCashFlow(documentId: string): Promise<{ ok: true; found: boolean; cashFlowId: string | null; message: string } | { ok: false; error: string }> {
+  const result = await call('/api/cash-flow', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ documentId }) })
+  if (!result.ok) return { ok: false, error: result.error ?? 'The statement could not be copied. Try again.' }
+  return { ok: true, found: result.found === true, cashFlowId: typeof result.cashFlowId === 'string' ? result.cashFlowId : null, message: String(result.message ?? 'The statement was saved.') }
 }
 
 /** Asks the agent to read an uploaded lease agreement or amendment into one lease. This can take a few minutes. */

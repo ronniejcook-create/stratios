@@ -11,6 +11,7 @@ import { listDocumentRows, listLists } from '@/lib/lists'
 import { loadAccess } from '@/lib/permissions'
 import { getAssetTree, isUuid, RECORD_LABELS } from '@/lib/records'
 import { rentRollOfDocument } from '@/lib/rentRolls'
+import { cashFlowOfDocument, periodLabel } from '@/lib/cashFlows'
 import { getLease, leaseLabel } from '@/lib/tenants'
 import { DecisionButtons, EntryRemoveButton, ProposalButtons, ReadButton, RemoveButton, ReviewNotices, ReviewSection } from './ReviewControls'
 
@@ -58,6 +59,7 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
         lists: await listLists(client, orgId),
         listRows: await listDocumentRows(client, orgId, docId),
         rentRoll: await rentRollOfDocument(client, orgId, docId),
+        cashFlow: await cashFlowOfDocument(client, orgId, docId),
         // A lease agreement's findings belong to its lease.
         lease: document.leaseId ? await getLease(client, orgId, document.leaseId) : null,
       }
@@ -75,7 +77,7 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
     )
   }
   if (!loaded) notFound()
-  const { document, tree, findings, proposals, fields, sections, sources, access, lists, listRows, rentRoll, lease } = loaded
+  const { document, tree, findings, proposals, fields, sections, sources, access, lists, listRows, rentRoll, cashFlow, lease } = loaded
 
   const fieldById = new Map(fields.map((field) => [field.id, field]))
   const sourceName = (key: string | null) => (key ? sources.find((source) => source.key === key)?.name ?? key : '')
@@ -195,6 +197,12 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
               <p className="note">
                 Its rent roll was saved as a snapshot of {rentRoll.rowCount} {rentRoll.rowCount === 1 ? 'row' : 'rows'}.{' '}
                 <Link href={`/dashboard/assets/${tree.id}?screen=_rentroll&rentRoll=${rentRoll.id}`}>Open Rent Roll</Link>
+              </p>
+            ) : null}
+            {cashFlow && canOpenFile ? (
+              <p className="note">
+                Its operating statement for {periodLabel(cashFlow.periodStart, cashFlow.periodEnd)} was saved as a cash flow of {cashFlow.lineCount} {cashFlow.lineCount === 1 ? 'line' : 'lines'}.{' '}
+                <Link href={`/dashboard/assets/${tree.id}?screen=_cashflow&cashFlow=${cashFlow.id}`}>Open Cash Flow</Link>
               </p>
             ) : null}
           </>

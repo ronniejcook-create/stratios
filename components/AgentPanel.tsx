@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { askAgent, CANNOT_UPLOAD, canUpload, DOCUMENT_ACCEPT, recalculateKpis, uploadDocument, type AgentLink, type AgentPages } from '@/lib/documentClient'
+import { askAgent, CANNOT_UPLOAD, canUpload, DOCUMENT_ACCEPT, loadCashFlow, recalculateKpis, uploadDocument, type AgentLink, type AgentPages, type AgentStatement } from '@/lib/documentClient'
 import { addDocumentPages } from '@/lib/pagePictures'
 import { toHtml } from '@/lib/richText'
 import { useAgentReferences } from './AgentContext'
@@ -32,6 +32,7 @@ export function AgentPanel() {
   const [working, setWorking] = useState(false)
   const [planStatus, setPlanStatus] = useState<string | null>(null)
   const [kpiStatus, setKpiStatus] = useState<string | null>(null)
+  const [statementStatus, setStatementStatus] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const end = useRef<HTMLDivElement>(null)
@@ -93,6 +94,21 @@ export function AgentPanel() {
     if (answer.changed) router.refresh()
     if (answer.pages && answer.pages.length > 0) void addPlanPages(answer.pages)
     if (answer.kpis && answer.kpis.length > 0) void calculateKpis(answer.kpis)
+    if (answer.statements && answer.statements.length > 0) void copyStatements(answer.statements)
+  }
+
+  // An operating statement is copied line by line as a cash flow after the
+  // reply, on its own like the KPIs, so the person can keep chatting. If it
+  // fails, Load From a Document on the asset's Cash Flow tab does the same.
+  const copyStatements = async (jobs: AgentStatement[]) => {
+    setStatementStatus('Copying the operating statement line by line…')
+    const said: string[] = []
+    for (const job of jobs) {
+      const result = await loadCashFlow(job.documentId)
+      said.push(result.ok ? `Cash flow: ${result.message}` : `The cash flow was not saved: ${result.error}`)
+    }
+    setStatementStatus(said.join(' '))
+    router.refresh()
   }
 
   // After a rent roll is read, the property's KPIs are calculated from the
@@ -189,6 +205,7 @@ export function AgentPanel() {
         ) : null}
         {planStatus ? <p className="agent-status" role="status">{planStatus}</p> : null}
         {kpiStatus ? <p className="agent-status" role="status">{kpiStatus}</p> : null}
+        {statementStatus ? <p className="agent-status" role="status">{statementStatus}</p> : null}
         <div ref={end} />
       </div>
 

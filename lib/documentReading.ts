@@ -24,6 +24,7 @@ import { planPagesOf, saveDocumentPhotoNotes, savePhotosFromDocument, type PlanP
 import { getAssetTree, insertAddress, type Queryable } from './records'
 import { listRentRollsIfAny, rivalRentRolls, saveRentRoll } from './rentRolls'
 import { loadSkillsForAgent } from './skills'
+import { looksLikeStatement } from './cashFlowReading'
 
 export type ReadSuccess = {
   ok: true
@@ -52,6 +53,8 @@ export type ReadSuccess = {
   photos: number
   /** Pages the agent marked as plans or maps. The browser draws these as pictures and adds them to the photos. */
   planPages: PlanPage[]
+  /** True when the document is, or contains, an operating statement. The browser then asks for it to be copied as a cash flow, in its own step. */
+  operatingStatement: boolean
 }
 export type ReadOutcome = ReadSuccess | { ok: false; error: string; status: number }
 
@@ -320,6 +323,7 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
       addresses,
       photos,
       planPages: planPagesOf(result.reading.photos),
+      operatingStatement: looksLikeStatement(result.reading),
     }
   } catch (error) {
     console.error('Applying a reading failed', error)
@@ -413,6 +417,7 @@ export async function readIntoLease(caller: Caller, documentId: string, leaseId:
       addresses: 0,
       photos: 0,
       planPages: [],
+      operatingStatement: false,
     }
   } catch (error) {
     console.error('Applying a lease reading failed', error)
@@ -497,6 +502,7 @@ export async function createAssetFromDocument(caller: Caller, documentId: string
         found: reading.addresses,
         photos: 0,
         planPages: planPagesOf(reading.photos),
+        operatingStatement: looksLikeStatement(reading),
       }
     })
     const { found, ...success } = created
