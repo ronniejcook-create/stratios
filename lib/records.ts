@@ -10,7 +10,9 @@ export type Queryable = {
   query: (text: string, params?: any[]) => Promise<{ rows: any[] }>
 }
 
-export const RECORD_TYPES = ['asset', 'property', 'building', 'floor', 'unit'] as const
+// A lease is a record too: it carries fields read from the lease agreement. It hangs off a property and is
+// built from rent rolls (lib/tenants.ts), so it is never created through insertChild.
+export const RECORD_TYPES = ['asset', 'property', 'building', 'floor', 'unit', 'lease'] as const
 export type RecordType = (typeof RECORD_TYPES)[number]
 
 export const RECORD_LABELS: Record<RecordType, string> = {
@@ -19,6 +21,7 @@ export const RECORD_LABELS: Record<RecordType, string> = {
   building: 'Building',
   floor: 'Floor',
   unit: 'Unit',
+  lease: 'Lease',
 }
 
 // Table and column names come only from this fixed list, never from user input.
@@ -28,6 +31,7 @@ const TABLES: Record<RecordType, { table: string; parent: RecordType | null; par
   building: { table: 'buildings', parent: 'property', parentColumn: 'property_id' },
   floor: { table: 'floors', parent: 'building', parentColumn: 'building_id' },
   unit: { table: 'units', parent: 'floor', parentColumn: 'floor_id' },
+  lease: { table: 'leases', parent: 'property', parentColumn: 'property_id' },
 }
 
 export function isRecordType(value: string): value is RecordType {

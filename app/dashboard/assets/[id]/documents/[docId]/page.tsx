@@ -11,6 +11,7 @@ import { listDocumentRows, listLists } from '@/lib/lists'
 import { loadAccess } from '@/lib/permissions'
 import { getAssetTree, isUuid, RECORD_LABELS } from '@/lib/records'
 import { rentRollOfDocument } from '@/lib/rentRolls'
+import { getLease, leaseLabel } from '@/lib/tenants'
 import { DecisionButtons, EntryRemoveButton, ProposalButtons, ReadButton, RemoveButton, ReviewNotices, ReviewSection } from './ReviewControls'
 
 export const dynamic = 'force-dynamic'
@@ -57,6 +58,8 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
         lists: await listLists(client, orgId),
         listRows: await listDocumentRows(client, orgId, docId),
         rentRoll: await rentRollOfDocument(client, orgId, docId),
+        // A lease agreement's findings belong to its lease.
+        lease: document.leaseId ? await getLease(client, orgId, document.leaseId) : null,
       }
     })
   } catch (error) {
@@ -72,7 +75,7 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
     )
   }
   if (!loaded) notFound()
-  const { document, tree, findings, proposals, fields, sections, sources, access, lists, listRows, rentRoll } = loaded
+  const { document, tree, findings, proposals, fields, sections, sources, access, lists, listRows, rentRoll, lease } = loaded
 
   const fieldById = new Map(fields.map((field) => [field.id, field]))
   const sourceName = (key: string | null) => (key ? sources.find((source) => source.key === key)?.name ?? key : '')
@@ -81,7 +84,8 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
     recordNames.set(property.id, property.name)
     for (const building of property.buildings) recordNames.set(building.id, `${property.name} / ${building.name}`)
   }
-  const backHref = `/dashboard/assets/${tree.id}?screen=_documents`
+  if (lease) recordNames.set(lease.id, leaseLabel(lease))
+  const backHref = lease ? `/dashboard/leases/${lease.id}` : `/dashboard/assets/${tree.id}?screen=_documents`
   // The file, the agent's summary and its proposed fields can mention anything in the document,
   // so they are shown only to people who may add documents (administrators and roles that can edit).
   const canOpenFile = access.canAddRecords
@@ -160,7 +164,7 @@ export default async function DocumentReviewPage({ params }: { params: Promise<{
       <p className="crumbs">
         <Link href="/dashboard">Assets</Link>
         <span aria-hidden="true"> / </span>
-        <Link href={backHref}>{tree.name}</Link>
+        <Link href={backHref}>{lease ? leaseLabel(lease) : tree.name}</Link>
         <span aria-hidden="true"> / </span>
         <span>{document.name}</span>
       </p>

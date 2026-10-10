@@ -125,6 +125,13 @@ export async function deleteAsset(client: Queryable, orgId: string, assetId: str
   for (const table of ['field_value_history', 'field_source_values', 'field_values', 'field_list_rows']) {
     await client.query(`delete from ${table} where org_id = $1 and record_id in (${ASSET_RECORD_IDS})`, [orgId, assetId])
   }
+  // Leases carry values too (read from lease agreements). Their table arrives with migration 024, so it is checked for first.
+  const leases = await client.query(`select to_regclass(current_schema() || '.leases') is not null as ready`)
+  if (leases.rows[0]?.ready === true) {
+    for (const table of ['field_value_history', 'field_source_values', 'field_values', 'field_list_rows']) {
+      await client.query(`delete from ${table} where org_id = $1 and record_id in (select l.id from leases l where l.asset_id = $2 and l.org_id = $1)`, [orgId, assetId])
+    }
+  }
   await client.query('delete from assets where id = $2 and org_id = $1', [orgId, assetId])
   return found.rows[0].name as string
 }

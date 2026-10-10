@@ -585,7 +585,10 @@ export default async function AssetPage({
 
       <ScreenTabs
         screens={[
-          ...screens.map((screen, index) => ({ key: screen.key, name: screen.name, content: screenContent(screen, index === 0) })),
+          // A screen that holds only lease sections belongs to the lease page, not here.
+          ...screens
+            .filter((screen) => screen.sections.length === 0 || screen.sections.some((section) => section.appliesTo !== 'lease'))
+            .map((screen, index) => ({ key: screen.key, name: screen.name, content: screenContent(screen, index === 0) })),
           ...(access.canAddRecords
             ? [
                 {

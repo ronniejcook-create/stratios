@@ -5,12 +5,12 @@
 // Each reading takes three steps, so no database transaction is held open
 // while Claude reads: claim the document, read it, then apply what was found.
 
-import { listTenantNames, listTenantQuestions, syncRentRoll, tenantsReady } from './tenants'
+import { getLease, leaseLabel, listTenantNames, listTenantQuestions, syncRentRoll, tenantsReady } from './tenants'
 import { followAddressChange, pointOfProperty, type Point } from './locationFacts'
 import { createAssetWithDefaults, fallbackPropertyType, propertyTypesOf } from './assets'
 import { withOrg } from './db'
 import { describeFailure, NO_PERMISSION, type Caller } from './documentRequests'
-import { applyReading, attachDocument, failReading, getDocument, listCurrentValues, readDocumentFile, startReading, type Outcome } from './documents'
+import { applyReading, attachDocument, failReading, getDocument, listCurrentValues, readDocumentFile, setDocumentLease, startReading, type Outcome } from './documents'
 import { editText } from './fieldFormat'
 import { extractableFields, extractableLists, NEW_RECORDS, newAssetRecords, readDocument, recordsOf, sectionByField, type DocumentAddress, type DocumentRentRoll, type Reading } from './extraction'
 import { listFields } from './fields'
@@ -237,6 +237,9 @@ async function giveUp(caller: Caller, documentId: string, error: string, status 
  */
 export async function readIntoAsset(caller: Caller, documentId: string, assetId: string | null = null, timeoutMs?: number): Promise<ReadOutcome> {
   const { orgId, userId } = caller
+  // A document that was loaded onto a lease is read into that lease, wherever the reading is started from.
+  const leaseId = await withOrg(orgId, async (client) => (await getDocument(client, orgId, documentId))?.leaseId ?? null).catch(() => null)
+  if (leaseId) return readIntoLease(caller, documentId, leaseId, timeoutMs)
   let prepared
   try {
     prepared = await withOrg(orgId, async (client) => {
@@ -320,6 +323,97 @@ export async function readIntoAsset(caller: Caller, documentId: string, assetId:
     }
   } catch (error) {
     console.error('Applying a reading failed', error)
+    return giveUp(caller, documentId, describeFailure(error, 'The findings could not be saved. Try reading the document again.'), 500)
+  }
+}
+
+/**
+ * Reads a lease agreement (or an amendment, a commencement letter, a
+ * guaranty) into one lease. The agent is given the lease's fields the person
+ * may change, what they hold now, and the property's lists, so it can add the
+ * lease's critical dates there. Nothing else is taken from the document: no
+ * rent roll, address or photographs.
+ */
+export async function readIntoLease(caller: Caller, documentId: string, leaseId: string, timeoutMs?: number): Promise<ReadOutcome> {
+  const { orgId, userId } = caller
+  let prepared
+  try {
+    prepared = await withOrg(orgId, async (client) => {
+      const access = await loadAccess(client, orgId, userId, caller.isAdmin)
+      if (!access.canAddRecords) return { ok: false as const, error: NO_PERMISSION, status: 403 }
+      const document = await getDocument(client, orgId, documentId)
+      if (!document || document.status === 'uploading') return { ok: false as const, error: NOT_FOUND, status: 404 }
+      if (!(await tenantsReady(client))) return { ok: false as const, error: 'Leases need a database update: run db/migrations/024_tenants_and_leases.sql.', status: 409 }
+      const lease = await getLease(client, orgId, leaseId)
+      if (!lease) return { ok: false as const, error: 'That lease could not be found.', status: 404 }
+      if (document.assetId && document.assetId !== lease.assetId) return { ok: false as const, error: 'That document belongs to a different asset.', status: 400 }
+      if (document.leaseId && document.leaseId !== leaseId) return { ok: false as const, error: 'That document was loaded onto a different lease.', status: 400 }
+      const tree = await getAssetTree(client, orgId, lease.assetId)
+      if (!tree) return { ok: false as const, error: 'That asset could not be found.', status: 404 }
+      const allFields = await listFields(client, orgId)
+      const sections = sectionByField(await listScreens(client, orgId))
+      const fields = allFields.filter((field) => field.appliesTo === 'lease' && !field.listId && access.fieldLevel(field.id, sections.get(field.id) ?? null) === 'edit')
+      if (fields.length === 0) {
+        return { ok: false as const, error: allFields.some((field) => field.appliesTo === 'lease') ? 'There are no lease fields you can change, so there is nothing to fill in.' : 'Lease fields need a database update: run db/migrations/028_lease_fields.sql.', status: 409 }
+      }
+      if (!(await startReading(client, orgId, userId, documentId))) return { ok: false as const, error: busyMessage(document.status), status: 409 }
+      if (!document.assetId) await attachDocument(client, orgId, documentId, lease.assetId)
+      if (!document.leaseId) await setDocumentLease(client, orgId, documentId, leaseId)
+      const file = await readDocumentFile(client, orgId, documentId)
+      // Critical dates from a lease go on the lease's property.
+      const lists = extractableLists(await listLists(client, orgId), allFields, access.sectionLevel).filter((entry) => entry.list.appliesTo === 'property')
+      const current = await listCurrentValues(client, orgId, [leaseId])
+      return { ok: true as const, document, lease, tree, file, fields, lists, current, skills: await loadSkillsForAgent(client, orgId) }
+    })
+  } catch (error) {
+    console.error('Preparing to read a lease document failed', error)
+    return { ok: false, error: describeFailure(error, 'The document could not be opened. Try again.'), status: 500 }
+  }
+  if (!prepared.ok) return prepared
+  const { document, lease, tree } = prepared
+  if (!prepared.file) return giveUp(caller, documentId, 'The file for this document is missing. Upload it again.', 500)
+
+  const leaseRef = `lease:${lease.id}`
+  const property = recordsOf(tree).find((record) => record.id === lease.propertyId)
+  const records = [
+    { type: 'lease' as const, id: lease.id, ref: leaseRef, label: `Lease: ${leaseLabel(lease)} at ${lease.propertyName} (the lease this document was loaded onto; every value belongs here)` },
+    ...(property && prepared.lists.length > 0 ? [property] : []),
+  ]
+  const currentValues = prepared.current.flatMap((value) => {
+    const field = prepared.fields.find((entry) => entry.id === value.fieldId)
+    return field ? [{ record: leaseRef, fieldKey: field.key, month: null, value: editText(field, value.value), source: value.source }] : []
+  })
+  const result = await readDocument({ file: prepared.file, kind: document.kind, documentName: document.name, records, fields: prepared.fields, lists: prepared.lists, currentValues, skills: prepared.skills, timeoutMs })
+  if (!result.ok) return giveUp(caller, documentId, result.error)
+
+  try {
+    const { counts, listRows } = await withOrg(orgId, async (client) => {
+      const reading = { ...result.reading, candidates: result.reading.candidates.filter((candidate) => candidate.recordType === 'lease' && candidate.recordId === lease.id), proposals: [] }
+      const applied = await applyReading(client, orgId, userId, { id: documentId, name: document.name }, reading)
+      return { counts: applied, listRows: await addListRows(client, caller, { id: documentId, name: document.name }, result.reading.rows) }
+    })
+    return {
+      ok: true,
+      assetId: tree.id,
+      assetName: tree.name,
+      created: false,
+      documentId,
+      documentName: document.name,
+      documentType: result.reading.documentType,
+      summary: result.reading.summary,
+      counts,
+      proposals: 0,
+      skipped: result.reading.skipped,
+      listRows,
+      calculated: 0,
+      rentRollRows: 0,
+      tenantQuestions: 0,
+      addresses: 0,
+      photos: 0,
+      planPages: [],
+    }
+  } catch (error) {
+    console.error('Applying a lease reading failed', error)
     return giveUp(caller, documentId, describeFailure(error, 'The findings could not be saved. Try reading the document again.'), 500)
   }
 }

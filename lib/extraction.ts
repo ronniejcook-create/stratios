@@ -603,7 +603,7 @@ export function interpretAnswer(answer: Record<string, unknown>, records: Record
     const name = text(raw?.name, 100)
     const dataType = text(raw?.type, 20).toLowerCase()
     const value = text(raw?.value, 500)
-    if (!record || record.type === 'floor' || record.type === 'unit' || !name || !value) continue
+    if (!record || record.type === 'floor' || record.type === 'unit' || record.type === 'lease' || !name || !value) continue
     if (!['text', 'number', 'money', 'percent', 'date', 'boolean'].includes(dataType)) continue
     if (existingNames.has(name.toLowerCase()) || proposals.some((proposal) => proposal.name.toLowerCase() === name.toLowerCase())) continue
     proposals.push({

@@ -41,6 +41,8 @@ export type DocumentRecord = {
   id: string
   /** Null while the document has been handed to the agent but not yet tied to an asset. */
   assetId: string | null
+  /** The lease this document was loaded onto (a lease agreement or amendment); null for any other document. */
+  leaseId: string | null
   name: string
   kind: DocumentKind
   sizeBytes: number
@@ -56,7 +58,8 @@ export type DocumentRecord = {
   stalled: boolean
 }
 
-const DOCUMENT_COLUMNS = `id::text as id, asset_id::text as asset_id, name, content_type, size_bytes::float8 as size_bytes, chunk_count, status, error,
+// lease_id arrives with migration 028; read this way documents still load before it is run.
+const DOCUMENT_COLUMNS = `id::text as id, asset_id::text as asset_id, to_jsonb(documents) ->> 'lease_id' as lease_id, name, content_type, size_bytes::float8 as size_bytes, chunk_count, status, error,
   document_type, summary, uploaded_by,
   to_char(uploaded_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as uploaded_at,
   to_char(read_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as read_at,
@@ -67,6 +70,7 @@ function toDocument(row: any): DocumentRecord {
   return {
     id: row.id,
     assetId: row.asset_id ?? null,
+    leaseId: row.lease_id ?? null,
     name: row.name,
     kind: row.content_type === WORKBOOK_TYPE ? 'xlsx' : 'pdf',
     sizeBytes: Number(row.size_bytes),
@@ -202,6 +206,11 @@ export async function attachDocument(client: Queryable, orgId: string, documentI
     [documentId, orgId, assetId],
   )
   return rows.length > 0
+}
+
+/** Ties a document to the lease it was loaded onto. */
+export async function setDocumentLease(client: Queryable, orgId: string, documentId: string, leaseId: string): Promise<void> {
+  await client.query('update documents set lease_id = $3::uuid where id = $1 and org_id = $2', [documentId, orgId, leaseId])
 }
 
 /** The whole file, put back together from its pieces. */

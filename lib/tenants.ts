@@ -196,6 +196,15 @@ function toLease(row: any): Lease {
   }
 }
 
+/** One lease, or null when it isn't this organization's. */
+export async function getLease(client: Queryable, orgId: string, leaseId: string): Promise<Lease | null> {
+  const { rows } = await client.query(`select ${LEASE_COLUMNS} ${LEASE_FROM} where l.org_id = $1 and l.id = $2`, [orgId, leaseId])
+  return rows[0] ? toLease(rows[0]) : null
+}
+
+/** How a lease is named on screen and to the agents: "Acme Corp, Unit 450". */
+export const leaseLabel = (lease: Pick<Lease, 'tenantName' | 'unitName'>) => `${lease.tenantName}${lease.unitName ? `, Unit ${lease.unitName}` : ''}`
+
 /** The leases of one asset or one tenant: active ones first, then by lease end, soonest first. */
 export async function listLeases(client: Queryable, orgId: string, of: { assetId: string } | { tenantId: string }): Promise<Lease[]> {
   const column = 'assetId' in of ? 'l.asset_id' : 'l.tenant_id'
@@ -575,7 +584,21 @@ export async function refreshLeases(client: Queryable, orgId: string, propertyId
     if (unlinked.length > 0) await client.query('update rent_roll_rows set lease_id = $3::uuid where org_id = $1 and id = any($2::uuid[])', [orgId, unlinked, leaseId])
   }
   const gone = existing.rows.map((lease) => lease.id as string).filter((id) => !kept.has(id))
-  if (gone.length > 0) await client.query('delete from leases where org_id = $1 and id = any($2::uuid[])', [orgId, gone])
+  if (gone.length > 0) {
+    // A lease that holds values from its lease agreement, or has documents loaded onto it, is never removed:
+    // it becomes a past lease, so what was read from the agreement is not lost when a rent roll is deleted.
+    const held = await client.query(
+      `select l.id::text as id from leases l
+       where l.org_id = $1 and l.id = any($2::uuid[])
+         and (exists (select 1 from field_values v where v.org_id = l.org_id and v.record_id = l.id)
+           or exists (select 1 from documents d where d.org_id = l.org_id and (to_jsonb(d) ->> 'lease_id') = l.id::text))`,
+      [orgId, gone],
+    )
+    const keep = new Set(held.rows.map((row) => row.id as string))
+    const remove = gone.filter((id) => !keep.has(id))
+    if (keep.size > 0) await client.query(`update leases set status = 'past' where org_id = $1 and id = any($2::uuid[])`, [orgId, [...keep]])
+    if (remove.length > 0) await client.query('delete from leases where org_id = $1 and id = any($2::uuid[])', [orgId, remove])
+  }
   return added
 }
 

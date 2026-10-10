@@ -66,6 +66,7 @@ export async function saveField(input: {
   }
 
   revalidatePath(`/dashboard/assets/${input.assetId}`)
+  if (recordType === 'lease') revalidatePath(`/dashboard/leases/${input.recordId}`)
   revalidatePath('/dashboard')
   return { ok: true }
 }

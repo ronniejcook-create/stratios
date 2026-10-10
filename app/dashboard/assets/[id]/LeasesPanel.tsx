@@ -89,7 +89,7 @@ export function LeasesPanel({
   ]
 
   const columns: GridColumn[] = [
-    { key: 'tenant', label: 'Tenant' },
+    { key: 'tenant', label: 'Tenant', display: 'link' as const },
     { key: 'unit', label: 'Unit' },
     ...(severalProperties ? [{ key: 'property', label: 'Property' }] : []),
     { key: 'status', label: 'Status', display: 'chip' as const },
@@ -103,6 +103,7 @@ export function LeasesPanel({
   ]
   const rows: GridRow[] = leases.map((lease) => ({
     id: lease.id,
+    href: `/dashboard/leases/${lease.id}`,
     cells: {
       tenant: lease.tenantName,
       unit: lease.unitName ?? '',
@@ -137,7 +138,7 @@ export function LeasesPanel({
           {update}
         </div>
         <p className="note">
-          Built from this asset&apos;s rent rolls. A lease is active while the latest rent roll{latestDate ? ` (${day(latestDate)})` : ''} shows it, and past once it no longer does. Which
+          Built from this asset&apos;s rent rolls. A lease is active while the latest rent roll{latestDate ? ` (${day(latestDate)})` : ''} shows it, and past once it no longer does. Click a tenant to open its lease, where the lease agreement is loaded and its terms are kept. Which
           rows count as tenants, which names are asked about and what makes a row the same lease are set by the Reading a Rent Roll skill in the Skills Library.
         </p>
         {notice}

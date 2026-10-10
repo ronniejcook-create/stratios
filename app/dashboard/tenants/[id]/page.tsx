@@ -20,9 +20,9 @@ function day(value: string | null): string {
 const stamp = (value: string | null) => (value ? Date.parse(`${value}T00:00:00Z`) : Number.MAX_SAFE_INTEGER)
 
 const COLUMNS: GridColumn[] = [
-  { key: 'asset', label: 'Asset', display: 'link' },
+  { key: 'unit', label: 'Lease', display: 'link' },
+  { key: 'asset', label: 'Asset' },
   { key: 'property', label: 'Property' },
-  { key: 'unit', label: 'Unit' },
   { key: 'status', label: 'Status', display: 'chip' },
   { key: 'sf', label: 'Square Feet', numeric: true },
   { key: 'start', label: 'Lease Start', numeric: true },
@@ -57,11 +57,11 @@ export default async function TenantPage({ params }: { params: Promise<{ id: str
   ]
   const rows: GridRow[] = leases.map((lease) => ({
     id: lease.id,
-    href: `/dashboard/assets/${lease.assetId}?screen=_leases`,
+    href: `/dashboard/leases/${lease.id}`,
     cells: {
       asset: lease.assetName,
       property: lease.propertyName,
-      unit: lease.unitName ?? '',
+      unit: lease.unitName ? `Unit ${lease.unitName}` : 'Open Lease',
       status: lease.status === 'active' ? 'Active' : 'Past',
       sf: lease.squareFeet === null ? '' : whole(lease.squareFeet),
       start: day(lease.startDate),
@@ -107,7 +107,7 @@ export default async function TenantPage({ params }: { params: Promise<{ id: str
             </div>
           ))}
         </div>
-        <p className="doc-sub">Added up from the active leases. A lease is active while its property&apos;s latest rent roll shows it.</p>
+        <p className="doc-sub">Added up from the active leases. A lease is active while its property&apos;s latest rent roll shows it. Open a lease to load its lease agreement and see its terms.</p>
         <DataGrid columns={COLUMNS} rows={rows} noun="leases" searchColumns={['asset', 'property', 'unit']} searchPlaceholder="Search by asset, property or unit" emptyText="This tenant has no leases in the rent rolls loaded now." />
       </section>
     </>

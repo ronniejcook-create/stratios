@@ -66,6 +66,14 @@ export async function readUploadedDocument(id: string): Promise<{ ok: true; rent
   return result.ok ? { ok: true, rentRollRows: Number(result.rentRollRows) || 0 } : { ok: false, error: result.error ?? 'The document could not be read.' }
 }
 
+/** Asks the agent to read an uploaded lease agreement or amendment into one lease. This can take a few minutes. */
+export async function readLeaseDocument(leaseId: string, documentId: string): Promise<{ ok: true; assetId: string; filled: number; replaced: number; decisions: number; listRows: number } | { ok: false; error: string }> {
+  const result = await call(`/api/leases/${leaseId}/read`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ documentId }) })
+  if (!result.ok) return { ok: false, error: result.error ?? 'The document could not be read.' }
+  const counts = (result.counts ?? {}) as Record<string, number>
+  return { ok: true, assetId: String(result.assetId), filled: Number(counts.filled) || 0, replaced: Number(counts.replaced) || 0, decisions: Number(counts.decision) || 0, listRows: Number(result.listRows) || 0 }
+}
+
 /**
  * Calculates an asset's KPIs from its stored leases, following the KPI skill
  * for each property's kind. Takes up to a minute or two per property.
