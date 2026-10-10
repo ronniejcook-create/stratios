@@ -3,6 +3,7 @@ import { PROPERTY_TYPES } from '@/lib/assets'
 import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
 import { loadAccess } from '@/lib/permissions'
 import { listMainPhotos } from '@/lib/photos'
+import { listAssetLocations, type AssetLocations } from '@/lib/locationFacts'
 import { listAssets, type AssetSummary } from '@/lib/records'
 import type { GridRow } from '@/components/DataGrid'
 import { AssetsGrid } from './AssetsGrid'
@@ -69,6 +70,17 @@ export default async function AssetsPage() {
     }
   }
 
+  // The Location columns (flood zone, school district) are loaded on their own too, and only those the person may see.
+  let locations: AssetLocations = { columns: [], byAsset: new Map() }
+  if (problem === 'none' && assets.length > 0) {
+    try {
+      locations = await withOrg(orgId, (client) => listAssetLocations(client, orgId, userId, orgRole === 'org:admin'))
+    } catch (error) {
+      if (!isMissingSchema(error)) console.error('listAssetLocations failed', error)
+    }
+  }
+  const locationOf = (assetId: string, key: string) => locations.byAsset.get(assetId)?.[key] ?? []
+
   const rows: GridRow[] = assets.map((asset) => ({
     id: asset.id,
     href: `/dashboard/assets/${asset.id}`,
@@ -78,10 +90,11 @@ export default async function AssetsPage() {
       properties: String(asset.propertyCount),
       type: asset.propertyTypes.join(', '),
       city: asset.cities.join(', '),
+      ...Object.fromEntries(locations.columns.map((column) => [column.key, locationOf(asset.id, column.key).join(', ')])),
     },
     order: { properties: asset.propertyCount },
     // An asset with several properties can have several types and cities; each can be ticked on its own.
-    values: { type: asset.propertyTypes, city: asset.cities },
+    values: { type: asset.propertyTypes, city: asset.cities, ...Object.fromEntries(locations.columns.map((column) => [column.key, locationOf(asset.id, column.key)])) },
   }))
 
   return (
@@ -94,7 +107,7 @@ export default async function AssetsPage() {
         {problem === 'failed' ? (
           <p className="form-error" role="alert">The assets could not be loaded. Check the database connection and that the migrations have been run.</p>
         ) : (
-          <AssetsGrid rows={rows} canAdd={canAdd} propertyTypes={PROPERTY_TYPES} />
+          <AssetsGrid rows={rows} canAdd={canAdd} propertyTypes={PROPERTY_TYPES} extraColumns={locations.columns} />
         )}
       </section>
     </>

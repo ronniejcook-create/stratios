@@ -881,6 +881,8 @@ td.muted { color: var(--dim); }
 /* Addresses: one-box lookup, the match found, and the actions beside each saved address. */
 .address-lookup { flex-basis: 100%; max-width: 760px; }
 .shell-main .address-note { margin-top: 2px; }
+.address-refresh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.address-refresh .address-note, .address-refresh .address-error { margin: 0; }
 .address-note .link-button, .address-lookup .form-error .link-button { min-height: 0; font-size: inherit; }
 .address-found { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--bg); }
 .address-match { font-size: 14px; color: var(--heading); }

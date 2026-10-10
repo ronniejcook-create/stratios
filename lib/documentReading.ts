@@ -5,6 +5,7 @@
 // Each reading takes three steps, so no database transaction is held open
 // while Claude reads: claim the document, read it, then apply what was found.
 
+import { followAddressChange, pointOfProperty, type Point } from './locationFacts'
 import { createAssetWithDefaults } from './assets'
 import { withOrg } from './db'
 import { describeFailure, NO_PERMISSION, type Caller } from './documentRequests'
@@ -155,7 +156,8 @@ export async function addAddresses(caller: Caller, assetId: string, found: Docum
         return { address, match: result.ok ? result.matches[0] ?? null : null }
       }),
     )
-    return await withOrg(caller.orgId, async (client) => {
+    const before = new Map<string, Point | null>()
+    const added = await withOrg(caller.orgId, async (client) => {
       const tree = await getAssetTree(client, caller.orgId, assetId)
       if (!tree) return 0
       let added = 0
@@ -171,6 +173,7 @@ export async function addAddresses(caller: Caller, assetId: string, found: Docum
           if (type === 'property') propertyStreet.set(property.id, current.find((existing) => existing.street)?.street ?? street)
           if (current.some((existing) => existing.street)) continue
           if (type === 'building' && sameStreet(propertyStreet.get(property.id) ?? property.addresses.find((existing) => existing.street)?.street ?? null, street)) continue
+          if (!before.has(property.id)) before.set(property.id, await pointOfProperty(client, caller.orgId, property.id))
           const saved = await insertAddress(client, caller.orgId, caller.userId, type, address.recordId, {
             street,
             suite: null,
@@ -186,6 +189,9 @@ export async function addAddresses(caller: Caller, assetId: string, found: Docum
       }
       return added
     })
+    // A property that now sits somewhere new on the map gets its Location fields looked up.
+    for (const [propertyId, point] of before) await followAddressChange(caller.orgId, caller.userId, propertyId, point)
+    return added
   } catch (error) {
     console.error('Setting addresses from a document failed', error)
     return 0

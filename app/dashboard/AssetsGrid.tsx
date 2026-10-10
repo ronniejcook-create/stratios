@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { DataGrid, Modal, type GridColumn, type GridRow } from '@/components/DataGrid'
 import { AddAssetForm } from './AddAssetForm'
 
@@ -12,12 +12,14 @@ const COLUMNS: GridColumn[] = [
 ]
 
 /** The Assets list as a grid, with Add Asset in a pop-up for people allowed to add. */
-export function AssetsGrid({ rows, canAdd, propertyTypes }: { rows: GridRow[]; canAdd: boolean; propertyTypes: readonly string[] }) {
+export function AssetsGrid({ rows, canAdd, propertyTypes, extraColumns = [] }: { rows: GridRow[]; canAdd: boolean; propertyTypes: readonly string[]; extraColumns?: { key: string; label: string }[] }) {
   const [adding, setAdding] = useState(false)
+  // Location columns (flood zone, school district) follow the built-in ones when the person may see them.
+  const columns = useMemo<GridColumn[]>(() => [...COLUMNS, ...extraColumns.map((column) => ({ key: column.key, label: column.label }))], [extraColumns])
   return (
     <>
       <DataGrid
-        columns={COLUMNS}
+        columns={columns}
         rows={rows}
         noun="assets"
         searchColumns={['name', 'city']}

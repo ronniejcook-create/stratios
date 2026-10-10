@@ -992,6 +992,53 @@ work and how data is isolated; this file covers how we work and where things sta
       `get_asset`, the lookup's refusals, a failed source, a value set and read back). The
       summaries were run on made-up answers only. **Not run against the real Claude API or
       with the real services answering**, so his first question is the real test.
+  - **Location fields, filled in from the map's sources** (October 9, evening;
+    `db/migrations/022_location_fields.sql`; Ronnie chose "automatically when an address is
+    added"). A standard **Location** section on the property's Overview (after Property
+    Summary) with eleven standard fields: Flood Zone, Flood Risk, Special Flood Hazard Area
+    (yes/no), School District, Nearest Rail Station, Distance to Rail Station (miles),
+    Natural Hazard Rating, Highest Natural Hazards, Jobs Within 1 Mile, Jobs Within 3 Miles,
+    Walkability Score. Demographics are **not** saved (left out on purpose; see the note on
+    counsel). All logic is in `lib/locationFacts.ts`.
+    - When: whenever a property's place on the map changes. `pointOfProperty` is the
+      property's own located address, else its first building's. Every address change
+      (`addAddress`, and `changeAddress` behind Find Location and Remove, in the asset page's
+      `actions.ts`; `addAddresses` in `lib/documentReading.ts` for documents) reads the point
+      before, saves, then calls `followAddressChange`: same point, nothing; no point left, the
+      fields are emptied; a new point, `refreshLocationFacts` with `moved`. The lookups run
+      with no transaction open, five sources at once, 9 seconds each, so Add Address takes a
+      few seconds longer (the asset page has `maxDuration` 60). **Refresh Location**
+      (`RefreshLocationButton` in `AddForms.tsx`, beside the property's address, for people
+      with `canAddRecords`) asks again and says how many fields changed and which sources
+      could not be reached.
+    - How values are stored: `saveManualValue` gained `fromLookup: { note }`: source
+      **Market Data** (`marketData`), not a manual override, with a note such as "From FEMA's
+      National Flood Hazard Layer, for <address>" (jobs notes say 2017), a history entry and a
+      `field_source_values` row. **A value a person typed over one stays** (when the field's
+      hand-entered values stay); the source's value is still recorded beside it. After a move,
+      the fields of a source that could not be reached are emptied with a note, because a
+      flood zone left from the old address would be wrong; the Refresh button never empties.
+      "Nothing there" (no FEMA map, no rail station within 3 miles) is an empty field, not a
+      failure. The person who changed the address is recorded as who brought the value in;
+      these writes are not checked against field permissions (like starting values).
+    - `factsFrom` is the pure part (answers in, field values out); new facts go there, in
+      `LOCATION_FIELDS`, and in a migration. Fields missing from the database are skipped, so
+      everything works before 022 is run, just without the fields.
+    - Assets list: **Flood Zone** and **School District** columns
+      (`listAssetLocations`, `extraColumns` on `AssetsGrid`), each shown only when the field
+      exists and the person may see it.
+    - 022 also moves an organization's own Flood Zone, School District and similar fields
+      (same key, or `femaFloodZone` and the like) onto the standard ones, as 017 did.
+    - The fields are offered to the reading agent like any others, so a flood zone printed in a
+      memorandum that differs from FEMA's shows up as a decision.
+    - Checked: 022 twice as a role without BYPASSRLS; `factsFrom` with made-up answers; and
+      on the scratch database saving, history, hand-entered values staying, the fallback to a
+      building's address, a move with every source down, no address left, Refresh, the Assets
+      list columns for an administrator, a member with a hidden field and another
+      organization. **Not run with the real services answering inside the app**, and the
+      button and the Location section were not opened in a browser. Assets that already had
+      an address before this (Knoll Trail) are filled the first time Refresh Location is
+      pressed.
   - Not built yet (later stages): stored formulas
     (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
@@ -1016,12 +1063,9 @@ work and how data is isolated; this file covers how we work and where things sta
 
 ## Where we left off (October 9, 2026, evening)
 
-Everything described above is committed, pushed to `main` and copied to his folder. The last
-piece of work is "The analyst can look around a property and set a value". Nothing is half
-done. **Agreed next step:** save what the map layers find as fields on the property (flood
-zone, school district, nearest rail station, hazard ratings, jobs nearby), filled in when an
-address is added, with a Refresh button; he was asked to confirm "automatically" and has not
-answered that part yet.
+Everything described above is committed, pushed to `main` and copied to his folder. Nothing is half done. The latest piece is "Location fields, filled in from the
+map's sources". **He needs to run migration 022** in Supabase, then press Refresh Location on
+Knoll Trail; neither is confirmed yet.
 
 **The day's last stretch was the Map tab.** It now has a row of tabs, one layer at a time: None,
 Demographics, Schools, Jobs and Commuting, Transit, Flood Zones, Natural Hazards, plus a separate
@@ -1034,8 +1078,8 @@ figures; and readings work again after the answer-format fix (he deleted and rel
 Trail rent roll). Every migration through 021 is on Supabase. Notes above that say "whether
 Vercel can reach ... is not known" are answered by this.
 
-**Not yet tried by him:** asking the analyst about a property's surroundings, and asking it to
-set a value.
+**Not yet tried by him:** asking the analyst about a property's surroundings, asking it to
+set a value, and the Location fields.
 
 **How the federal services were checked:** the cloud workspace can't reach them, so questions
 were run in the built-in browser on his computer (he allowed hazards.fema.gov, nces.ed.gov and
@@ -1046,9 +1090,6 @@ The same route works for checking any new public service.
 
 - More map layers he asked about: crime (city by city only; Dallas publishes incidents),
   traffic counts (state by state; Texas has them), Opportunity Zones, EPA environmental sites.
-- Saving what the layers find onto the property as fields (flood zone, school district,
-  nearest rail station, hazard ratings, jobs within 3 miles), so they show on Overview and in
-  the Assets list. Today every layer is looked up when its tab is opened and nothing is stored.
 - Fresher job counts by importing the Census Bureau's yearly bulk job files into the database
   (the EPA figures in the Jobs tab are from 2017).
 - A portfolio-wide map of all assets.
@@ -1065,7 +1106,8 @@ The same route works for checking any new public service.
 - Agents must follow field permissions, and a KPI built from a hidden field must be hidden.
 - Organizations can't rename, reorder or hide standard sections and screens yet.
 - The design document "Stratios Data Design" is behind: its build order and Starter Fields tab
-  do not yet cover stages 4 to 6, the 22 fields from migration 017, or rent rolls.
+  do not yet cover stages 4 to 6, the 22 fields from migration 017, the 11 Location fields
+  from 022, or rent rolls.
 
 ## Ideas offered but not started
 

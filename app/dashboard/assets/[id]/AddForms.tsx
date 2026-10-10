@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState, useTransition } from 'reac
 import { useRouter } from 'next/navigation'
 import type { FoundAddress } from '@/lib/geocode'
 import type { Suggestion } from '@/lib/googlePlaces'
-import { addAddress, addChild, findAddress, locateAddress, pickSuggestedAddress, removeAddress, suggestAddress, type AddState } from './actions'
+import { addAddress, addChild, findAddress, locateAddress, pickSuggestedAddress, refreshLocation, removeAddress, suggestAddress, type AddState } from './actions'
 
 const initialState: AddState = { error: null, done: 0 }
 
@@ -444,5 +444,39 @@ export function AddressList({ addresses, canEdit }: { addresses: AddressRow[]; c
       {extras && canEdit ? <p className="note address-note">There should be one address here. Remove the extras, or use Change Address to replace them all with one.</p> : null}
       {error ? <p className="form-error address-error" role="alert">{error}</p> : null}
     </>
+  )
+}
+
+/**
+ * Asks the public sources about the property's address again and saves what
+ * they say into its Location fields. That already happens by itself when the
+ * address changes; this is for trying again after a source was down, or for
+ * picking up newer data.
+ */
+export function RefreshLocationButton({ propertyId, assetId }: { propertyId: string; assetId: string }) {
+  const router = useRouter()
+  const [busy, start] = useTransition()
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const refresh = () => {
+    setMessage(null)
+    setError(null)
+    start(async () => {
+      const result = await refreshLocation({ propertyId, assetId })
+      if (!result.ok) setError(result.error)
+      else {
+        setMessage(result.message)
+        router.refresh()
+      }
+    })
+  }
+  return (
+    <div className="address-refresh">
+      <button type="button" className="link-button address-action" disabled={busy} onClick={refresh} title="Looks up the flood zone, school district, nearest rail station, natural hazards and jobs for this address again">
+        {busy ? 'Refreshing Location…' : 'Refresh Location'}
+      </button>
+      {message ? <span className="note address-note" role="status">{message}</span> : null}
+      {error ? <span className="form-error address-error" role="alert">{error}</span> : null}
+    </div>
   )
 }

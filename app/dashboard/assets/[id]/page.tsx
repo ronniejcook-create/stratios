@@ -13,7 +13,7 @@ import { typeAheadEnabled } from '@/lib/googlePlaces'
 import { listRentRollRows, listRentRolls, type RentRollRow } from '@/lib/rentRolls'
 import { loadAccess, type Access } from '@/lib/permissions'
 import { formatAddress, getAssetTree, type Address, type AssetTree, type RecordType } from '@/lib/records'
-import { AddAddressForm, AddChildForm, AddressList } from './AddForms'
+import { AddAddressForm, AddChildForm, AddressList, RefreshLocationButton } from './AddForms'
 import { AssetMap } from './AssetMap'
 import { listPhotos, listPlanPages, PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, type Photo, type PlanPage } from '@/lib/photos'
 import { RentRollPanel, type RentRollChoice } from './RentRollPanel'
@@ -25,6 +25,8 @@ import { DeleteAssetButton } from './DeleteAssetButton'
 import { ScreenTabs } from './ScreenTabs'
 
 export const dynamic = 'force-dynamic'
+// Adding or changing an address looks its surroundings up in several public sources before the page comes back.
+export const maxDuration = 60
 
 type Loaded = {
   tree: AssetTree
@@ -381,6 +383,9 @@ export default async function AssetPage({
                     <div className="record-addresses">
                       <AddressList addresses={addressRows(property.addresses)} canEdit={access.canAddRecords} />
                       {access.canAddRecords ? <AddAddressForm ownerType="property" ownerId={property.id} assetId={tree.id} typeAhead={addressTypeAhead} replacing={property.addresses.length > 0} /> : null}
+                      {access.canAddRecords && [...property.addresses, ...property.buildings.flatMap((building) => building.addresses)].some((address) => address.latitude !== null && address.longitude !== null) ? (
+                        <RefreshLocationButton propertyId={property.id} assetId={tree.id} />
+                      ) : null}
                     </div>
                   ) : null}
 

@@ -183,6 +183,13 @@ export type SaveInput = {
    * as a hand-entered value that later sources must leave alone.
    */
   fromDocument?: { id: string; name: string } | null
+  /**
+   * Set when the value was looked up from a public source (for example a
+   * property's flood zone from FEMA): it is recorded as Market Data with this
+   * note. A value a person entered by hand is left alone when the field says
+   * hand-entered values stay; what the source says is still kept beside it.
+   */
+  fromLookup?: { note: string } | null
 }
 
 export type SaveResult = { ok: true; changed: boolean } | { ok: false; error: string }
@@ -202,6 +209,7 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
   const field = fields.find((candidate) => candidate.id === input.fieldId)
   if (!field || field.appliesTo !== input.recordType) return { ok: false, error: 'That field could not be found.' }
   if (field.calculated) return { ok: false, error: `${field.name} is calculated, so it can't be entered by hand.` }
+  const fromLookup = input.fromDocument ? null : input.fromLookup ?? null
 
   // A list's column needs a row of that list on this record; any other field must not have one.
   const rowId = input.rowId ?? null
@@ -230,13 +238,13 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
   if (field.coreColumn === 'name' && isEmptyValue(next)) return { ok: false, error: `${field.name} can't be empty.` }
 
   const fromDocument = input.fromDocument ?? null
-  const source = fromDocument ? 'documents' : 'manual'
-  const note = input.note?.trim() ? input.note.trim().slice(0, 2000) : fromDocument ? `From "${fromDocument.name}"`.slice(0, 2000) : null
+  const source = fromDocument ? 'documents' : fromLookup ? 'marketData' : 'manual'
+  const note = input.note?.trim() ? input.note.trim().slice(0, 2000) : fromDocument ? `From "${fromDocument.name}"`.slice(0, 2000) : fromLookup ? fromLookup.note.trim().slice(0, 2000) || null : null
   const table = tableFor(input.recordType)
 
   // Lock the golden row (if there is one) so two saves can't cross.
   const existing = await client.query(
-    `select id::text as id, ${VALUE_COLUMNS}
+    `select id::text as id, ${VALUE_COLUMNS}, manual_override
      from field_values
      where org_id = $1 and record_type = $2 and record_id = $3 and field_id = $4
        and period is not distinct from $5::date and row_id is not distinct from $6::uuid
@@ -277,10 +285,15 @@ export async function saveManualValue(client: Queryable, orgId: string, userId: 
       await client.query(
         `insert into field_source_values
            (org_id, record_type, record_id, field_id, period, source_type, value_text, value_number, value_date, value_bool, received_by, row_id)
-         values ($1, $2, $3, $4, $5::date, 'manual', $6, $7::numeric, $8::date, $9::boolean, $10, $11::uuid)`,
-        [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, userId, rowId],
+         values ($1, $2, $3, $4, $5::date, $12, $6, $7::numeric, $8::date, $9::boolean, $10, $11::uuid)`,
+        [orgId, input.recordType, input.recordId, field.id, period, next.text, next.number, next.date, next.bool, userId, rowId, source],
       )
     }
+  }
+
+  // A looked-up value never replaces one a person entered by hand on a field whose hand-entered values stay.
+  if (fromLookup && existing.rows.length > 0 && existing.rows[0].manual_override === true && field.manualOverride === 'stays' && !isEmptyValue(current)) {
+    return { ok: true, changed: false }
   }
 
   const changed = !sameValue(current, next)

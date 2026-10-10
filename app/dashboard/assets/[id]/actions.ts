@@ -14,6 +14,7 @@ import { isPhotoCategory, removePhoto, savePhotosFromDocument, setMainPhoto, upd
 import { LOCATION_SOURCE, lookUpAddress, type AddressMatch, type FoundAddress } from '@/lib/geocode'
 import { addressOfSuggestion, suggestAddresses, type Suggestion } from '@/lib/googlePlaces'
 import { deleteRentRoll, getRentRoll, setRentRollDate } from '@/lib/rentRolls'
+import { followAddressChange, pointOfProperty, propertyOfAddress, propertyOfOwner, refreshLocationFacts, type Point } from '@/lib/locationFacts'
 import { deleteAddress, formatAddress, getAddress, insertAddress, insertChild, isRecordType, isUuid, setAddressLocation, type AddressOwner, type Queryable } from '@/lib/records'
 
 const NO_PERMISSION = "You don't have permission to change this."
@@ -189,11 +190,17 @@ export async function addAddress(prev: AddState, formData: FormData): Promise<Ad
   }
   if (!input.street && !input.city) return { error: 'Enter at least a street or a city.', done: prev.done }
 
+  let moved: { propertyId: string; before: Point | null } | null = null
   try {
     const added = await withOrg(orgId, async (client) => {
       const access = await loadAccess(client, orgId, userId, orgRole === 'org:admin')
       if (!access.canAddRecords) return 'denied' as const
-      return insertAddress(client, orgId, userId, ownerType, ownerId, input)
+      // Where the property was before, so its Location fields are looked up again if this moves it.
+      const propertyId = await propertyOfOwner(client, orgId, ownerType, ownerId)
+      const before = propertyId ? await pointOfProperty(client, orgId, propertyId) : null
+      const saved = await insertAddress(client, orgId, userId, ownerType, ownerId, input)
+      if (saved && propertyId) moved = { propertyId, before }
+      return saved
     })
     if (added === 'denied') return { error: NO_PERMISSION, done: prev.done }
     if (!added) return { error: 'That address could not be added.', done: prev.done }
@@ -201,6 +208,8 @@ export async function addAddress(prev: AddState, formData: FormData): Promise<Ad
     console.error('addAddress failed', error)
     return { error: 'That address could not be added. Try again.', done: prev.done }
   }
+  const change = moved as { propertyId: string; before: Point | null } | null
+  if (change) await followAddressChange(orgId, userId, change.propertyId, change.before)
 
   revalidatePath(`/dashboard/assets/${assetId}`)
   revalidatePath('/dashboard')
@@ -429,9 +438,13 @@ async function changeAddress<T>(addressId: string, work: (client: Queryable, org
       if (!access.canAddRecords) return { ok: false as const, error: NO_PERMISSION }
       const address = await getAddress(client, orgId, addressId)
       if (!address) return { ok: false as const, error: 'That address could not be found.' }
-      return { ok: true as const, value: await work(client, orgId, address), assetId: address.assetId }
+      const propertyId = await propertyOfAddress(client, orgId, addressId)
+      const before = propertyId ? await pointOfProperty(client, orgId, propertyId) : null
+      return { ok: true as const, value: await work(client, orgId, address), assetId: address.assetId, propertyId, before }
     })
     if (!result.ok) return result
+    // The property's Location fields follow its place on the map.
+    if (result.propertyId) await followAddressChange(orgId, userId, result.propertyId, result.before)
     revalidatePath(`/dashboard/assets/${result.assetId}`)
     revalidatePath('/dashboard')
     return { ok: true, value: result.value }
@@ -466,6 +479,32 @@ export async function locateAddress(input: { addressId: string }): Promise<SaveF
   if (!match) return { ok: false, error: 'The lookup did not find this address. Check the street, city and state, or remove it and add it again.' }
   const saved = await changeAddress(input.addressId, (client, org) => setAddressLocation(client, org, input.addressId, match.latitude, match.longitude, LOCATION_SOURCE))
   return saved.ok ? { ok: true } : saved
+}
+
+/**
+ * Looks the property's address up again in the public sources and saves what
+ * they say into its Location fields. The same happens by itself whenever the
+ * address changes; this is for trying again, or picking up newer data.
+ */
+export async function refreshLocation(input: { propertyId: string; assetId: string }): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  const { userId, orgId, orgRole } = await auth()
+  if (!userId || !orgId) return { ok: false, error: 'You need to be signed in to an organization.' }
+  if (!isUuid(input.propertyId) || !isUuid(input.assetId)) return { ok: false, error: 'That property could not be found.' }
+  try {
+    const allowed = await withOrg(orgId, async (client) => (await loadAccess(client, orgId, userId, orgRole === 'org:admin')).canAddRecords)
+    if (!allowed) return { ok: false, error: NO_PERMISSION }
+  } catch (error) {
+    console.error('refreshLocation failed', error)
+    return { ok: false, error: 'That could not be done. Try again.' }
+  }
+  const result = await refreshLocationFacts(orgId, userId, input.propertyId)
+  if (!result.ok) {
+    return { ok: false, error: result.reason === 'no-location' ? 'This property has no address with a map location yet. Add its address, or use Find Location on it.' : 'The location details could not be refreshed. Try again.' }
+  }
+  revalidatePath(`/dashboard/assets/${input.assetId}`)
+  revalidatePath('/dashboard')
+  const missed = result.failed.length > 0 ? ` Could not be reached this time: ${result.failed.join(', ')}. Try again in a minute.` : ''
+  return { ok: true, message: `${result.changed === 0 ? 'Checked: nothing has changed.' : result.changed === 1 ? '1 field was updated.' : `${result.changed} fields were updated.`}${missed}` }
 }
 
 /** Removes an address, for example one picked by mistake. */
