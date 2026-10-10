@@ -625,7 +625,33 @@ async function runTool(session: Session, name: string, input: Record<string, unk
  * the person is looking at, if any, and `references` are fields they clicked
  * to point the agent at.
  */
-export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; pageAssetId: string | null; references: string[] }): Promise<AgentReply> {
+/** What the person is told while a tool runs, in a few words. Tools not listed show "Working…". */
+const TOOL_STATUS: Record<string, string> = {
+  create_asset_from_document: 'Reading the document and creating the asset. This can take a few minutes…',
+  read_document_into_asset: 'Reading the document. This can take a few minutes…',
+  read_lease_document: 'Reading the lease. This can take a few minutes…',
+  create_asset: 'Creating the asset…',
+  list_assets: 'Looking through the assets…',
+  get_asset: 'Opening the asset…',
+  look_up_surroundings: 'Looking up what is around the property…',
+  set_field_value: 'Saving the value…',
+  recalculate_kpis: 'Calculating KPIs from the leases. This takes a minute or two…',
+  search_portfolio: 'Searching…',
+  list_tenants: 'Looking through the tenants…',
+  get_lease: 'Opening the lease…',
+  get_rent_roll: 'Opening the rent roll…',
+  get_dates_and_commentary: 'Reading the dates and commentary…',
+  list_documents: 'Looking through the documents…',
+  get_cash_flow: 'Opening the cash flow…',
+  rebuild_leases: 'Rebuilding the leases from the rent rolls…',
+  set_tenant_ruling: 'Updating the tenant and its leases…',
+  read_skill: 'Reading a skill…',
+}
+
+/** How a reply is followed while it is being written: pieces of text, a line saying what is being done, and "start the text over". */
+export type AgentProgress = { text: (piece: string) => void; status: (line: string) => void; reset: () => void }
+
+export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; pageAssetId: string | null; references: string[] }, progress?: AgentProgress): Promise<AgentReply> {
   const apiKey = claudeApiKey()
   if (!apiKey) return { ok: false, error: 'No Anthropic API key is set (ANTHROPIC_API_KEY).' }
   const turns = input.turns.slice(-MAX_TURNS)
@@ -671,15 +697,22 @@ export async function runAgent(caller: Caller, input: { turns: AgentTurn[]; page
 
   try {
     for (let step = 0; step < MAX_STEPS; step += 1) {
-      const answer = await converse(apiKey, { system, messages, tools, timeoutMs: Math.max(10000, Math.min(60000, session.deadline - Date.now())) })
+      let wrote = false
+      const answer = await converse(apiKey, {
+        system, messages, tools, timeoutMs: Math.max(10000, Math.min(60000, session.deadline - Date.now())),
+        ...(progress ? { onText: (piece: string) => { wrote = true; progress.text(piece) } } : {}),
+      })
       const said = answer.content.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text').map((block) => block.text).join('\n').trim()
       const requests = answer.content.filter((block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use')
       if (answer.stopReason !== 'tool_use' || requests.length === 0) {
         return { ok: true, text: said || 'Done.', links: dedupe(session.links), changed: session.changed, pages: session.pages, kpis: session.kpis, statements: session.statements, choices: session.choices }
       }
       messages.push({ role: 'assistant', content: answer.content })
+      // Words written before a tool is used ("Let me check…") are not the reply; the reply starts over after the tool.
+      if (wrote) progress?.reset()
       const results: ContentBlock[] = []
       for (const request of requests) {
+        if (request.name !== 'offer_choices') progress?.status(TOOL_STATUS[request.name] ?? 'Working…')
         const result = await runTool(session, request.name, request.input ?? {})
         results.push({ type: 'tool_result', tool_use_id: request.id, content: result.content, ...(result.isError ? { is_error: true } : {}) })
       }

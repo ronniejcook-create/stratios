@@ -1592,6 +1592,38 @@ work and how data is isolated; this file covers how we work and where things sta
     - Checked: 032 twice; 7 scripted cases (the skill in the prompt, choices returned and
       tidied, one choice refused); the ruling and lookup suites again. **The buttons were not
       opened in a browser, and nothing was run against the real Claude API.**
+  - **Saved chats, and replies that appear as they are written** (October 10, evening;
+    `db/migrations/033_agent_conversations.sql`; Ronnie picked both from the remaining list).
+    - **Saved**: `agent_conversations` (one per chat, owned by one person; title is the start
+      of the first message) and `agent_messages` (text, attachments, link buttons, answer
+      buttons). `lib/conversations.ts` holds all reads and writes and only ever touches the
+      signed-in person's own chats; nobody else in the organization sees them, administrators
+      included. `POST /api/agent` takes `conversationId`, saves the person's message before
+      the analyst starts and the reply when it ends (a failed reply is not saved). The turns
+      sent to Claude still come from the browser. `GET /api/agent/conversations`, and `GET` /
+      `DELETE /api/agent/conversations/[id]`.
+    - Panel: **Chats** in the header opens the list (title, day, a delete cross on hover; no
+      "are you sure"), **New Chat** starts a fresh one. The browser remembers which chat was
+      open (`localStorage` `stratios.agentChat`) and a reload comes back to it. Before 033 is
+      run nothing is saved and the Chats button does not show; the chat works as before.
+      Not saved: the status lines for plan pages, KPIs and cash flow that follow a reply.
+      There is no search, rename or limit on how many chats are kept (50 are listed).
+    - **Written as it comes**: `converse` in `lib/claude.ts` takes `onText` and then asks
+      Claude to stream (`readStream` reads the server-sent events and returns the same shape
+      as a whole answer). `runAgent` takes a third argument, `progress` (text, status,
+      reset); the route answers with one JSON object per line (`text`, `status`, `reset`,
+      `conversation`, then `done` with the whole reply or `error`), and `askAgent` in
+      `lib/documentClient.ts` reads it. Words the analyst writes before using a tool are
+      cleared (`reset`) and replaced by a line saying what it is doing (`TOOL_STATUS` in
+      `lib/agent.ts`; add a line there for any new tool). Buttons appear when the reply is
+      complete. A long document reading still shows only its status line until it finishes.
+    - Checked: 033 twice as a role without BYPASSRLS; 18 cases (saving, order, titles, another
+      person, another organization, deleting, and a scripted Claude stream cut into 7-byte
+      pieces through `runAgent`); the real panel in Chromium against a stand-in server
+      (list, open, new, streaming with a reset and a status line, answer buttons, reload,
+      delete). **The route itself, and streaming through Vercel and from the real Claude
+      API, were not run**; if replies arrive all at once on dev.stratios.app, something
+      between Vercel and the browser is holding the stream back.
   - **Empty fields show a dash** (October 9, night; Ronnie found a page of "Not set" hard to read):
     field blocks and tiles show "–" for an empty value (`FieldGroup.tsx`; the words stay as a
     tooltip, for screen readers and in the field's pop-up).
@@ -1625,7 +1657,7 @@ Everything described above is committed, pushed to `main` and copied to his fold
 of October 10 built cash flow from operating statements (stage 6, third part, under "What's
 built"), against the Yardi statement he supplied for Knoll Trail.
 
-**Migrations 031 and 032 are run** (Ronnie, October 10, evening). He has not yet said how the Journey House fix through the analyst, or its answer buttons, came out. Earlier the same day: He ran 030 and said (October 10, afternoon) "Cash Flow looks
+**Migrations 031 and 032 are run** (Ronnie, October 10, evening). He said of the Journey House fix and its answer buttons: "It works." **Waiting on Ronnie:** run `db/migrations/033_agent_conversations.sql` (saved chats). Earlier the same day: He ran 030 and said (October 10, afternoon) "Cash Flow looks
 good for now". The same afternoon his twelve list and sizing requests were built ("Lists
 clean-up" under "What's built"); he has not yet said how they look inside the app.
 
@@ -1692,7 +1724,7 @@ The same route works for checking any new public service.
 
 ## Ideas offered but not started
 
-- Give the Portfolio Analyst more tools (edit a value, portfolio-wide questions), saved conversations and streaming.
+- Give the Portfolio Analyst portfolio-wide questions that need arithmetic.
 - Move document files from Postgres to Supabase Storage if they grow.
 - A read-only member list for non-admins.
 - Before real customer data: a restricted database role without BYPASSRLS, production Clerk and

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { askAgent, CANNOT_UPLOAD, canUpload, DOCUMENT_ACCEPT, loadCashFlow, recalculateKpis, uploadDocument, type AgentLink, type AgentPages, type AgentStatement } from '@/lib/documentClient'
+import { askAgent, CANNOT_UPLOAD, canUpload, deleteChat, DOCUMENT_ACCEPT, listChats, loadCashFlow, openChat, recalculateKpis, uploadDocument, type AgentLink, type AgentPages, type AgentStatement, type ChatSummary } from '@/lib/documentClient'
 import { addDocumentPages } from '@/lib/pagePictures'
 import { toHtml } from '@/lib/richText'
 import { useAgentReferences } from './AgentContext'
@@ -15,6 +15,23 @@ type Message = { role: 'user' | 'assistant'; text: string; attachments?: Attachm
 type Pending = { key: number; name: string; progress: number; id: string | null; error: string | null }
 
 const MAX_MB = 20
+/** Where the browser remembers which chat was open, so a reload comes back to it. */
+const OPEN_CHAT_KEY = 'stratios.agentChat'
+const remember = (id: string | null) => {
+  try {
+    if (id) window.localStorage.setItem(OPEN_CHAT_KEY, id)
+    else window.localStorage.removeItem(OPEN_CHAT_KEY)
+  } catch {
+    // Private windows may refuse; the chat still works, it just isn't reopened after a reload.
+  }
+}
+/** "Today", "Yesterday" or "Oct 8", for the list of chats. */
+function dayOf(stamp: string): string {
+  const then = new Date(stamp)
+  if (Number.isNaN(then.getTime())) return ''
+  const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(then).setHours(0, 0, 0, 0)) / 86400000)
+  return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 const SUGGESTIONS = ['Create an asset from this Offering Memorandum', 'Which assets do we have?', 'What is the purchase price of this asset?']
 
 /**
@@ -30,6 +47,15 @@ export function AgentPanel() {
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<Pending[]>([])
   const [working, setWorking] = useState(false)
+  // The reply while it is being written, and a line saying what the analyst is doing.
+  const [writing, setWriting] = useState('')
+  const [doing, setDoing] = useState<string | null>(null)
+  // Saved chats: the one that is open, the list, and whether the list is showing.
+  const [chatId, setChatId] = useState<string | null>(null)
+  const [chats, setChats] = useState<ChatSummary[]>([])
+  const [canSave, setCanSave] = useState(false)
+  const [showChats, setShowChats] = useState(false)
+  const [opening, setOpening] = useState(false)
   const [planStatus, setPlanStatus] = useState<string | null>(null)
   const [kpiStatus, setKpiStatus] = useState<string | null>(null)
   const [statementStatus, setStatementStatus] = useState<string | null>(null)
@@ -44,7 +70,74 @@ export function AgentPanel() {
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' })
-  }, [messages, working, pending.length])
+  }, [messages, working, writing, doing, pending.length])
+
+  const refreshChats = async () => {
+    const found = await listChats()
+    setCanSave(found.ready)
+    setChats(found.chats)
+    return found
+  }
+
+  // On arrival: the list of saved chats, and the chat that was open before a reload.
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      const found = await listChats()
+      if (!live) return
+      setCanSave(found.ready)
+      setChats(found.chats)
+      let wanted: string | null = null
+      try {
+        wanted = window.localStorage.getItem(OPEN_CHAT_KEY)
+      } catch {
+        wanted = null
+      }
+      if (!wanted || !found.chats.some((chat) => chat.id === wanted)) return
+      const saved = await openChat(wanted)
+      if (!live || !saved) return
+      // Leave alone a chat the person has already started typing into.
+      setMessages((current) => (current.length === 0 ? saved : current))
+      setChatId((current) => current ?? wanted)
+    })()
+    return () => {
+      live = false
+    }
+  }, [])
+
+  const newChat = () => {
+    setMessages([])
+    setChatId(null)
+    remember(null)
+    setShowChats(false)
+    setPlanStatus(null)
+    setKpiStatus(null)
+    setStatementStatus(null)
+  }
+
+  const showChat = async (id: string) => {
+    setOpening(true)
+    const saved = await openChat(id)
+    setOpening(false)
+    if (!saved) {
+      void refreshChats()
+      return
+    }
+    setMessages(saved)
+    setChatId(id)
+    remember(id)
+    setShowChats(false)
+    setPlanStatus(null)
+    setKpiStatus(null)
+    setStatementStatus(null)
+  }
+
+  const removeChat = async (id: string) => {
+    setChats((current) => current.filter((chat) => chat.id !== id))
+    if (id === chatId) newChat()
+    await deleteChat(id)
+    void refreshChats()
+  }
 
   const addFiles = (files: File[]) => {
     for (const file of files) {
@@ -81,12 +174,33 @@ export function AgentPanel() {
     if (chosen === undefined) setDraft('')
     setPending([])
     setWorking(true)
-    const answer = await askAgent({
-      turns: history.filter((message) => !message.failed).map((message) => ({ role: message.role, text: message.text, attachments: message.attachments })),
-      pageAssetId,
-      references: references.map((item) => item.reference),
-    })
+    setWriting('')
+    setDoing(null)
+    setShowChats(false)
+    const answer = await askAgent(
+      {
+        turns: history.filter((message) => !message.failed).map((message) => ({ role: message.role, text: message.text, attachments: message.attachments })),
+        pageAssetId,
+        references: references.map((item) => item.reference),
+        conversationId: chatId,
+      },
+      {
+        onText: (piece) => {
+          setDoing(null)
+          setWriting((current) => current + piece)
+        },
+        onStatus: (line) => setDoing(line),
+        onReset: () => setWriting(''),
+        onConversation: (id) => {
+          setChatId(id)
+          remember(id)
+        },
+      },
+    )
     setWorking(false)
+    setWriting('')
+    setDoing(null)
+    void refreshChats()
     if (!answer.ok) {
       setMessages((current) => [...current, { role: 'assistant', text: answer.error, failed: true }])
       return
@@ -158,10 +272,35 @@ export function AgentPanel() {
       <div className="agent-picker">
         <AiIcon />
         <span>Portfolio Analyst</span>
-        {messages.length > 0 ? (
-          <button type="button" className="link-button agent-new" disabled={working} onClick={() => setMessages([])}>New Chat</button>
-        ) : null}
+        <span className="agent-picker-actions">
+          {canSave && chats.length > 0 ? (
+            <button type="button" className="link-button agent-new" aria-expanded={showChats} onClick={() => setShowChats((current) => !current)}>{showChats ? 'Hide Chats' : 'Chats'}</button>
+          ) : null}
+          {messages.length > 0 ? (
+            <button type="button" className="link-button agent-new" disabled={working} onClick={newChat}>New Chat</button>
+          ) : null}
+        </span>
       </div>
+
+      {showChats ? (
+        <div className="agent-chats">
+          <ul>
+            {chats.map((chat) => (
+              <li key={chat.id} className={chat.id === chatId ? 'agent-chat-open' : undefined}>
+                <button type="button" className="agent-chat-title" disabled={working || opening} onClick={() => void showChat(chat.id)}>
+                  <span>{chat.title}</span>
+                  <span className="agent-chat-day">{dayOf(chat.updatedAt)}</span>
+                </button>
+                <button type="button" className="icon-button" disabled={working} title="Delete Chat" aria-label={`Delete the chat ${chat.title}`} onClick={() => void removeChat(chat.id)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="agent-thread" aria-live="polite">
         {messages.length === 0 ? (
@@ -206,10 +345,16 @@ export function AgentPanel() {
             </div>
           ))
         )}
-        {working ? (
+        {working && writing ? (
+          // The reply as it is written. toHtml escapes every piece of text.
+          <div className="agent-message agent-assistant">
+            <div className="agent-text" dangerouslySetInnerHTML={{ __html: toHtml(writing) }} />
+          </div>
+        ) : null}
+        {working && !writing ? (
           <div className="agent-message agent-assistant agent-working" role="status">
             <span className="agent-dots" aria-hidden="true"><span /><span /><span /></span>
-            <span>{hasAttachmentIn(messages) ? 'Working. Reading a document can take a few minutes; keep this page open.' : 'Working…'}</span>
+            <span>{doing ?? (hasAttachmentIn(messages) ? 'Working. Reading a document can take a few minutes; keep this page open.' : 'Working…')}</span>
           </div>
         ) : null}
         {planStatus ? <p className="agent-status" role="status">{planStatus}</p> : null}

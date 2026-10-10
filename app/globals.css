@@ -377,7 +377,17 @@ th { font-size: 14px; font-weight: 500; color: var(--dim); }
   background: var(--panel); border: 1px solid var(--line); border-radius: 6px; color: var(--heading); font-size: 15px; font-weight: 500;
 }
 .agent-picker .ai-icon { color: var(--link); }
-.agent-picker .agent-new { margin-left: auto; min-height: 0; font-size: 12px; }
+.agent-picker .agent-picker-actions { margin-left: auto; display: inline-flex; gap: 12px; }
+.agent-picker .agent-new { min-height: 0; font-size: 12px; }
+.agent-chats { flex: none; max-height: 40%; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.agent-chats ul { margin: 0; padding: 6px; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.agent-chats li { display: flex; align-items: center; gap: 4px; border-radius: 6px; }
+.agent-chats li:hover, .agent-chats li.agent-chat-open { background: color-mix(in srgb, var(--heading) 7%, transparent); }
+.agent-chat-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; background: none; border: 0; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.agent-chat-title span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-chat-day { flex: none; font-size: 11px; color: var(--muted); }
+.agent-chats .icon-button { visibility: hidden; flex: none; }
+.agent-chats li:hover .icon-button, .agent-chats .icon-button:focus-visible { visibility: visible; }
 .agent-thread { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; scrollbar-width: none; }
 .agent-thread::-webkit-scrollbar { display: none; }
 .agent-empty {

@@ -55,11 +55,104 @@ export type AgentPages = { assetId: string; documentId: string; pages: { page: n
 export type AgentStatement = { assetId: string; documentId: string }
 export type AgentAnswer = { ok: true; text: string; links: AgentLink[]; changed: boolean; pages?: AgentPages[]; kpis?: string[]; statements?: AgentStatement[]; choices?: string[] } | { ok: false; error: string }
 
-/** Sends the conversation so far to the agent and returns its reply. A turn that reads a document can take a few minutes. */
-export async function askAgent(input: { turns: AgentTurn[]; pageAssetId: string | null; references: string[] }): Promise<AgentAnswer> {
-  const result = await call('/api/agent', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
-  if (!result.ok) return { ok: false, error: result.error ?? 'The agent could not answer. Try again.' }
-  return { ok: true, text: String(result.text ?? ''), links: Array.isArray(result.links) ? (result.links as AgentLink[]) : [], changed: result.changed === true, pages: Array.isArray(result.pages) ? (result.pages as AgentPages[]) : [], kpis: Array.isArray(result.kpis) ? result.kpis.map(String) : [], statements: Array.isArray(result.statements) ? (result.statements as AgentStatement[]) : [], choices: Array.isArray(result.choices) ? result.choices.map(String).slice(0, 4) : [] }
+/** What the panel is told while a reply is being written. */
+export type AgentProgress = {
+  /** A piece of the reply's text. */
+  onText?: (piece: string) => void
+  /** A line saying what the analyst is doing, such as "Opening the rent roll…". */
+  onStatus?: (line: string) => void
+  /** The text so far was not the reply (the analyst went on to look something up); start over. */
+  onReset?: () => void
+  /** The saved conversation this turn belongs to. */
+  onConversation?: (id: string) => void
+}
+
+const asAnswer = (result: Record<string, unknown>): AgentAnswer => ({
+  ok: true,
+  text: String(result.text ?? ''),
+  links: Array.isArray(result.links) ? (result.links as AgentLink[]) : [],
+  changed: result.changed === true,
+  pages: Array.isArray(result.pages) ? (result.pages as AgentPages[]) : [],
+  kpis: Array.isArray(result.kpis) ? result.kpis.map(String) : [],
+  statements: Array.isArray(result.statements) ? (result.statements as AgentStatement[]) : [],
+  choices: Array.isArray(result.choices) ? result.choices.map(String).slice(0, 4) : [],
+})
+
+/**
+ * Sends the conversation so far to the agent and returns its reply. The reply
+ * arrives as it is written, one JSON object per line; `progress` is told
+ * about each piece. A turn that reads a document can take a few minutes.
+ */
+export async function askAgent(input: { turns: AgentTurn[]; pageAssetId: string | null; references: string[]; conversationId?: string | null }, progress: AgentProgress = {}): Promise<AgentAnswer> {
+  const LOST = 'The connection was lost. Check your internet and try again.'
+  let response: Response
+  try {
+    response = await fetch('/api/agent', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })
+  } catch {
+    return { ok: false, error: LOST }
+  }
+  // A refusal before the reply starts (not signed in, nothing typed) is plain JSON.
+  if (!response.ok || !response.body || !(response.headers.get('content-type') ?? '').includes('ndjson')) {
+    const body = (await response.json().catch(() => null)) as Answer | null
+    if (body && body.ok === true) return asAnswer(body)
+    return { ok: false, error: body?.error ?? (response.status === 504 ? 'The analyst took too long and was stopped. Try again.' : `The analyst could not answer (code ${response.status}). Try again.`) }
+  }
+  let answer: AgentAnswer | null = null
+  const handle = (line: string) => {
+    if (!line.trim()) return
+    let event: Record<string, unknown>
+    try {
+      event = JSON.parse(line)
+    } catch {
+      return
+    }
+    if (event.type === 'text') progress.onText?.(String(event.piece ?? ''))
+    else if (event.type === 'status') progress.onStatus?.(String(event.line ?? ''))
+    else if (event.type === 'reset') progress.onReset?.()
+    else if (event.type === 'conversation') progress.onConversation?.(String(event.id ?? ''))
+    else if (event.type === 'done') answer = asAnswer((event.reply ?? {}) as Record<string, unknown>)
+    else if (event.type === 'error') answer = { ok: false, error: String(event.error ?? 'The analyst could not answer. Try again.') }
+  }
+  try {
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+      let cut = buffer.indexOf('\n')
+      while (cut >= 0) {
+        handle(buffer.slice(0, cut))
+        buffer = buffer.slice(cut + 1)
+        cut = buffer.indexOf('\n')
+      }
+      if (done) break
+    }
+    handle(buffer)
+  } catch {
+    return answer ?? { ok: false, error: LOST }
+  }
+  return answer ?? { ok: false, error: 'The analyst stopped before it finished, most likely because it ran out of time. Try again.' }
+}
+
+export type ChatSummary = { id: string; title: string; updatedAt: string; messages: number }
+export type ChatMessage = { role: 'user' | 'assistant'; text: string; attachments: { id: string; name: string }[]; links: AgentLink[]; choices: string[] }
+
+/** The person's saved chats, latest first. `ready` is false while the database has not been updated to save chats. */
+export async function listChats(): Promise<{ ready: boolean; chats: ChatSummary[] }> {
+  const result = await call('/api/agent/conversations', { method: 'GET' })
+  return { ready: result.ok && result.ready === true, chats: result.ok && Array.isArray(result.conversations) ? (result.conversations as ChatSummary[]) : [] }
+}
+
+/** One saved chat's messages, or null when it can't be opened. */
+export async function openChat(id: string): Promise<ChatMessage[] | null> {
+  const result = await call(`/api/agent/conversations/${encodeURIComponent(id)}`, { method: 'GET' })
+  const conversation = result.ok ? (result.conversation as { messages?: ChatMessage[] } | undefined) : undefined
+  return conversation && Array.isArray(conversation.messages) ? conversation.messages : null
+}
+
+export async function deleteChat(id: string): Promise<boolean> {
+  return (await call(`/api/agent/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' })).ok
 }
 
 /** Asks the agent to read an uploaded document. This can take a few minutes. */

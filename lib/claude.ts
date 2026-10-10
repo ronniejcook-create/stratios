@@ -136,7 +136,7 @@ export type ToolDefinition = { name: string; description: string; input_schema: 
  */
 export async function converse(
   apiKey: string,
-  input: { system: string; messages: ChatMessage[]; tools: ToolDefinition[]; maxTokens?: number; timeoutMs?: number },
+  input: { system: string; messages: ChatMessage[]; tools: ToolDefinition[]; maxTokens?: number; timeoutMs?: number; onText?: (piece: string) => void },
 ): Promise<{ content: ContentBlock[]; stopReason: string }> {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -153,6 +153,7 @@ export async function converse(
       system: input.system,
       messages: input.messages,
       tools: input.tools,
+      ...(input.onText ? { stream: true } : {}),
     }),
   })
   if (!response.ok) {
@@ -160,6 +161,74 @@ export async function converse(
     console.error('Claude request failed:', error)
     throw new ApiError(error)
   }
+  if (input.onText && response.body) return readStream(response.body, input.onText)
   const data = (await response.json()) as { content?: ContentBlock[]; stop_reason?: string }
   return { content: Array.isArray(data.content) ? data.content : [], stopReason: data.stop_reason ?? 'unknown' }
+}
+
+/**
+ * Reads Claude's answer as it is written (server-sent events), handing each
+ * piece of text to `onText`, and returns the same shape as a whole answer.
+ */
+async function readStream(body: ReadableStream<Uint8Array>, onText: (piece: string) => void): Promise<{ content: ContentBlock[]; stopReason: string }> {
+  type Building = { type: 'text'; text: string } | { type: 'tool_use'; id: string; name: string; json: string }
+  const blocks: (Building | undefined)[] = []
+  let stopReason = 'unknown'
+  const handle = (data: string) => {
+    let event: Record<string, any>
+    try {
+      event = JSON.parse(data)
+    } catch {
+      return
+    }
+    if (event.type === 'content_block_start') {
+      const block = event.content_block ?? {}
+      if (block.type === 'text') blocks[event.index] = { type: 'text', text: String(block.text ?? '') }
+      else if (block.type === 'tool_use') blocks[event.index] = { type: 'tool_use', id: String(block.id), name: String(block.name), json: '' }
+    } else if (event.type === 'content_block_delta') {
+      const block = blocks[event.index]
+      const delta = event.delta ?? {}
+      if (block?.type === 'text' && delta.type === 'text_delta') {
+        block.text += String(delta.text ?? '')
+        if (delta.text) onText(String(delta.text))
+      } else if (block?.type === 'tool_use' && delta.type === 'input_json_delta') {
+        block.json += String(delta.partial_json ?? '')
+      }
+    } else if (event.type === 'message_delta') {
+      if (event.delta?.stop_reason) stopReason = String(event.delta.stop_reason)
+    } else if (event.type === 'error') {
+      throw new ApiError(describeApiError(529, JSON.stringify(event)))
+    }
+  }
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+    let cut = buffer.indexOf('\n')
+    while (cut >= 0) {
+      const line = buffer.slice(0, cut).replace(/\r$/, '')
+      buffer = buffer.slice(cut + 1)
+      if (line.startsWith('data:')) handle(line.slice(5).trim())
+      cut = buffer.indexOf('\n')
+    }
+    if (done) break
+  }
+  if (buffer.startsWith('data:')) handle(buffer.slice(5).trim())
+  const content: ContentBlock[] = []
+  for (const block of blocks) {
+    if (!block) continue
+    if (block.type === 'text') content.push({ type: 'text', text: block.text })
+    else {
+      let parsed: Record<string, unknown> = {}
+      try {
+        parsed = block.json ? JSON.parse(block.json) : {}
+      } catch {
+        parsed = {}
+      }
+      content.push({ type: 'tool_use', id: block.id, name: block.name, input: parsed })
+    }
+  }
+  return { content, stopReason }
 }
