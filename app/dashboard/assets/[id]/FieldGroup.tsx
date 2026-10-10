@@ -95,7 +95,11 @@ export function FieldGroup({
                     {field.monthly && field.period ? <span className="field-meta">{formatPeriod(field.period)}</span> : null}
                   </>
                 ) : (
-                  <span className="field-unset">{field.calculated ? 'Not calculated yet' : 'Not set'}</span>
+                  // An empty field shows a quiet dash: a page of "Not set" was hard to read. The pop-up still says it in words.
+                  <span className="field-unset" title={field.calculated ? 'Not calculated yet' : 'Not set'}>
+                    <span aria-hidden="true">–</span>
+                    <span className="sr-only">{field.calculated ? 'Not calculated yet' : 'Not set'}</span>
+                  </span>
                 )}
               </span>
             </button>

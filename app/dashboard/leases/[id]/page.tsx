@@ -141,7 +141,7 @@ export default async function LeasePage({ params }: { params: Promise<{ id: stri
           {tiles.map((tile) => (
             <div key={tile.label} className="field-card rent-roll-tile">
               <span className="field-card-label">{tile.label}</span>
-              <span className={tile.value ? 'field-card-value' : 'field-card-value field-unset'}>{tile.value || 'Not shown'}</span>
+              <span className={tile.value ? 'field-card-value' : 'field-card-value field-unset'}>{tile.value || '–'}</span>
             </div>
           ))}
         </div>
