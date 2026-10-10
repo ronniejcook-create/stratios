@@ -1294,6 +1294,8 @@ work and how data is isolated; this file covers how we work and where things sta
       prompts, the calls for a memorandum then a rent roll then an older rent roll, a typed
       value, KPIs replacing a memorandum's figure); the KPI, analyst and option suites again.
       **Not run against the real Claude API.**
+  - **Navigation icons** (October 9, night; his request): Assets uses the buildings icon that
+    Tenants had, and Tenants has a key (`SideNav.tsx`).
   - Not built yet (later stages): stored formulas
     (calculated fields with no value show "Not calculated yet"), tenants, leases, rent roll, cash flow, feeds and
     the source waterfall. Only Manual Entry writes values today. There is no history view for a
