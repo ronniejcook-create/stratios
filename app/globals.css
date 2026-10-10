@@ -1158,3 +1158,5 @@ td.muted { color: var(--dim); }
 @supports not selector(::-webkit-scrollbar) {
   * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 38%, transparent) transparent; }
 }
+.table-tools { display: flex; justify-content: flex-end; margin-top: 6px; }
+.panel-head h3 { margin: 0; }

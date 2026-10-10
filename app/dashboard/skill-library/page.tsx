@@ -6,6 +6,7 @@ import { countSkillCustomizations, listSkills, type Skill } from '@/lib/skills'
 import { isStratiosAdmin } from '@/lib/stratios'
 import { SkillEditor } from '../skills/SkillEditor'
 import { addLibrarySkill, saveLibrarySkill } from './actions'
+import { DownloadButton } from '@/components/DownloadButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +53,15 @@ export default async function SkillsPage() {
       </div>
 
       <section className="panel">
-        <h2>Skills</h2>
+        <div className="panel-head">
+          <h2>Skills</h2>
+          <DownloadButton
+            name="Standard Skills"
+            header={['Skill', 'Use When', 'Status', 'Last Changed', 'Customized By']}
+            rows={skills.map((skill) => [skill.name, skill.useWhen, skill.enabled ? 'In Use' : 'Turned Off', when(skill.updatedAt), String(customized.get(skill.key) ?? 0)])}
+            figures={[3, 4]}
+          />
+        </div>
         {skills.length === 0 ? (
           <p className="empty">No skills yet. Add the first one below.</p>
         ) : (

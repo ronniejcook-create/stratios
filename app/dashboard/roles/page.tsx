@@ -4,6 +4,7 @@ import { auth } from '@clerk/nextjs/server'
 import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
 import { LEVEL_LABELS, listRoles, type Role } from '@/lib/permissions'
 import { AddRoleForm } from './AddRoleForm'
+import { DownloadButton } from '@/components/DownloadButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,7 +46,17 @@ export default async function RolesPage() {
       <p className="lede">Roles decide who can see and change each field. A person with several roles gets the most generous access among them.</p>
 
       <section className="panel">
-        <h2>Roles</h2>
+        <div className="panel-head">
+          <h2>Roles</h2>
+          <DownloadButton
+            name="Roles"
+            header={['Role', 'Default Access', 'People']}
+            rows={[
+              ['Administrator', 'Full access to everything, always', 'Chosen on the Users page'],
+              ...roles.map((role) => [role.name, LEVEL_LABELS[role.defaultLevel], role.isMember ? 'Everyone in the organization' : role.memberCount === 1 ? '1 person' : `${role.memberCount} people`]),
+            ]}
+          />
+        </div>
         <div className="table-scroll">
           <table>
             <thead>

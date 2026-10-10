@@ -7,6 +7,7 @@ import { DataGrid, type GridColumn, type GridRow } from '@/components/DataGrid'
 import { rollover, tenantShares, type Lease, type TenantQuestion } from '@/lib/tenants'
 import { rebuildLeases } from '../../tenants/actions'
 import { TenantQuestions } from '../../tenants/TenantQuestions'
+import { DownloadButton } from '@/components/DownloadButton'
 
 const whole = (value: number) => Math.round(value).toLocaleString('en-US')
 const money = (value: number | null, cents = false) =>
@@ -163,7 +164,15 @@ export function LeasesPanel({
 
             <div className="lease-summaries">
               <div>
-                <h3>Lease Expirations</h3>
+                <div className="panel-head">
+                  <h3>Lease Expirations</h3>
+                  <DownloadButton
+                    name="Lease Expirations"
+                    header={['Year', 'Leases', 'Square Feet', 'Share of Leased', 'Annual Rent']}
+                    rows={years.map((year) => [String(year.year), whole(year.leases), whole(year.squareFeet), percent(year.share), money(year.annualRent)])}
+                    figures={[1, 2, 3, 4]}
+                  />
+                </div>
                 <div className="table-scroll">
                   <table className="lease-table">
                     <thead>
@@ -184,7 +193,15 @@ export function LeasesPanel({
                 </div>
               </div>
               <div>
-                <h3>Largest Tenants</h3>
+                <div className="panel-head">
+                  <h3>Largest Tenants</h3>
+                  <DownloadButton
+                    name="Tenants by Size"
+                    header={['Tenant', 'Square Feet', 'Share of Leased', 'Annual Rent', 'Next Lease End']}
+                    rows={tenants.map((tenant) => [tenant.tenantName, whole(tenant.squareFeet), percent(tenant.share), money(tenant.annualRent), day(tenant.nextEnd)])}
+                    figures={[1, 2, 3, 4]}
+                  />
+                </div>
                 <div className="table-scroll">
                   <table className="lease-table">
                     <thead>

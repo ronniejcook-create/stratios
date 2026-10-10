@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { changeRole, removeMember, revokeInvitation } from './actions'
 import { InviteForm } from './InviteForm'
+import { DownloadButton } from '@/components/DownloadButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +52,10 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
       ) : null}
 
       <section className="panel">
-        <h2>Users</h2>
+        <div className="panel-head">
+          <h2>Users</h2>
+          <DownloadButton name="Users" header={['Name', 'Email', 'Role']} rows={members.map((member) => [member.name || '', member.email, roleLabel(member.role)])} />
+        </div>
         <div className="table-scroll">
           <table>
             <thead>
@@ -100,7 +104,10 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
 
       {invitations ? (
         <section className="panel">
-          <h2>Pending Invitations</h2>
+          <div className="panel-head">
+            <h2>Pending Invitations</h2>
+            <DownloadButton name="Pending Invitations" header={['Email', 'Role']} rows={invitations.data.map((invitation) => [invitation.emailAddress, roleLabel(invitation.role)])} />
+          </div>
           {invitations.data.length === 0 ? (
             <p className="empty">No invitations are waiting to be accepted.</p>
           ) : (

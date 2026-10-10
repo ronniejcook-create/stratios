@@ -2,13 +2,27 @@ import type { FieldDefinition } from '@/lib/fields'
 import type { Screen } from '@/lib/layout'
 import type { ListDefinition } from '@/lib/lists'
 import { RECORD_LABELS } from '@/lib/records'
+import { DownloadButton } from '@/components/DownloadButton'
 
 const STYLE_LABELS: Record<string, string> = { form: 'Form', tiles: 'Tiles', list: 'List' }
 
 /** Every screen with its sections, and what each section holds. Shared by Layouts and the Stratios Master Layouts. */
 export function LayoutTable({ screens, lists, fields }: { screens: Screen[]; lists: ListDefinition[]; fields: FieldDefinition[] }) {
   if (screens.length === 0) return <p className="empty">No screens yet.</p>
+  const contains = (section: Screen['sections'][number]) => {
+    const sectionLists = lists.filter((list) => list.sectionId === section.id)
+    const columns = fields.filter((field) => sectionLists.some((list) => list.id === field.listId)).length
+    return section.displayStyle === 'list' ? `${columns} ${columns === 1 ? 'column' : 'columns'}` : `${section.fieldIds.length} ${section.fieldIds.length === 1 ? 'field' : 'fields'}`
+  }
+  // In the download every row names its screen, so the rows can be sorted and filtered.
+  const exported = screens.flatMap((screen) =>
+    screen.sections.length === 0 ? [[screen.name, '', '', '', '']] : screen.sections.map((section) => [screen.name, section.name, RECORD_LABELS[section.appliesTo], STYLE_LABELS[section.displayStyle], contains(section)]),
+  )
   return (
+    <>
+    <div className="table-tools">
+      <DownloadButton name="Layout" header={['Screen', 'Section', 'Belongs To', 'Shown As', 'Contains']} rows={exported} />
+    </div>
     <div className="table-scroll">
       <table>
         <thead>
@@ -46,5 +60,6 @@ export function LayoutTable({ screens, lists, fields }: { screens: Screen[]; lis
         </tbody>
       </table>
     </div>
+    </>
   )
 }

@@ -1491,7 +1491,10 @@ work and how data is isolated; this file covers how we work and where things sta
       of the rows on screen (after search and filters, in the order shown), without the
       buttons column. `exportName` names the file; without it the grid's noun is used. The
       Cash Flow tab has the same button and saves whichever view is showing. Lists that are
-      not a `DataGrid` (Users, Skills, Layouts, the small summary tables) have none.
+      plain tables use `components/DownloadButton.tsx` (the page hands it the table's text
+      and says which columns are figures): Users, Pending Invitations, Roles, both Skills
+      Library pages, both Layouts pages, Lease Expirations and Largest Tenants (which saves
+      every tenant, not only the ten shown).
     - `lib/excelExport.ts` writes the workbook in the browser with no library: a few XML
       files in a zip stored without compression. `cellFromText` turns a cell of a numeric
       column into a real number, money, percentage or date so Excel can add and sort it; any

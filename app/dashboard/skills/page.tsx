@@ -5,6 +5,7 @@ import { isDatabaseConfigured, isMissingSchema, withOrg } from '@/lib/db'
 import { listSkills, type Skill } from '@/lib/skills'
 import { SkillEditor } from './SkillEditor'
 import { addOrgSkill, saveOrgSkill } from './actions'
+import { DownloadButton } from '@/components/DownloadButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +52,10 @@ export default async function SkillsPage() {
       </div>
 
       <section className="panel">
-        <h2>Your Organization&apos;s Skills</h2>
+        <div className="panel-head">
+          <h2>Your Organization&apos;s Skills</h2>
+          <DownloadButton name="Skills" header={['Skill', 'Use When', 'From', 'Status']} rows={skills.map((skill) => [skill.name, skill.useWhen, SOURCE_LABELS[skill.source], skill.enabled ? 'In Use' : 'Turned Off'])} />
+        </div>
         {skills.length === 0 ? (
           <p className="empty">No skills yet. Add the first one below.</p>
         ) : (
